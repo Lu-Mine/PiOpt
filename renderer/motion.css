@@ -114,9 +114,11 @@ button:focus-visible, input:focus-visible {
   max-width: 920px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-items: start;
+  /* Stretch, not start: two cards of the same width should also be the same
+     height, otherwise the pair reads as one wide card next to one tall card. */
+  align-items: stretch;
 }
 .panel {
   min-width: 0;
