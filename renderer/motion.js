@@ -104,8 +104,9 @@ async function invoke(channel, payload = {}) {
 }
 function resolvedBase() {
   if (state.config.mode === "light" || state.config.mode === "dark") return state.config.mode;
+  // "Auto" is the system, not the last colour chosen in the host.
+  if (typeof lightQuery.matches === "boolean") return lightQuery.matches ? "light" : "dark";
   if (state.preference === "light" || state.preference === "dark") return state.preference;
-  if (lightQuery.matches) return "light";
   return "dark";
 }
 
@@ -373,6 +374,10 @@ function bindEvents() {
   };
   if (typeof reducedQuery.addEventListener === "function") reducedQuery.addEventListener("change", onReducedChange);
   else reducedQuery.addListener(onReducedChange);
+  // The page's own reading of the system is the most direct signal for "auto":
+  // follow it even when the host does not announce an appearance change.
+  if (typeof lightQuery.addEventListener === "function") lightQuery.addEventListener("change", scheduleFollow);
+  else lightQuery.addListener(() => scheduleFollow());
   window.pluginBridge?.on?.("appearance:changed", applyAppearance);
 }
 

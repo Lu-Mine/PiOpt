@@ -177,11 +177,16 @@ function preferenceFrom(theme) {
   return null;
 }
 
+// "Auto" means the system, full stop. A preference recorded earlier only says
+// what the user picked in the host back then — following it would make "auto"
+// copy whichever colour they last switched to, which is exactly what it must not
+// do. The system reading is therefore checked first; the recorded preference and
+// then the host's own base are only fallbacks for when the page cannot report it.
 function resolveBase(mode, appearance = {}, hints = {}) {
   if (mode === "light" || mode === "dark") return mode;
+  if (typeof hints.prefersLight === "boolean") return hints.prefersLight ? "light" : "dark";
   const preference = preferenceFrom(hints.preference);
   if (preference === "light" || preference === "dark") return preference;
-  if (typeof hints.prefersLight === "boolean") return hints.prefersLight ? "light" : "dark";
   if (appearance.base === "light" || appearance.theme === "light") return "light";
   return "dark";
 }
