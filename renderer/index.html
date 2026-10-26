@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="./base.css" />
     <link rel="stylesheet" href="./market.css" />
     <link rel="stylesheet" href="./motion.css" />
+    <link rel="stylesheet" href="./gateway.css" />
   </head>
   <body>
     <header class="opt-dragbar">
@@ -35,6 +36,14 @@
             <path d="M1.6 9.2h2.1l1.2-3.6 1.9 7 1.6-10 1.5 6.6h4.5" />
           </svg>
           <span class="rail-label">动效实验室</span>
+        </button>
+        <button type="button" role="tab" id="tab-gateway" data-feature="gateway" aria-selected="false" aria-controls="view-gateway" title="AI 网关" aria-label="AI 网关">
+          <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.1" />
+            <path d="M8 1.4v2.2M8 12.4v2.2M1.4 8h2.2M12.4 8h2.2" />
+            <path d="M3.4 3.4l1.5 1.5M11.1 11.1l1.5 1.5M12.6 3.4l-1.5 1.5M4.9 11.1l-1.5 1.5" opacity=".55" />
+          </svg>
+          <span class="rail-label">AI 网关</span>
         </button>
       </div>
     </nav>
@@ -81,8 +90,8 @@
       </header>
 
       <main class="workspace">
-        <aside class="controls" aria-label="动效设置">
-          <section class="control-section preset-section">
+        <div class="panels">
+          <section class="panel">
             <div class="section-heading">
               <div>
                 <h1>动效调校</h1>
@@ -97,28 +106,30 @@
               <button type="button" data-preset="gentle">柔和</button>
               <button type="button" data-preset="reduced">减弱</button>
             </div>
+
+            <div class="range-stack">
+              <label class="range-control" for="intensity">
+                <span><strong>运动强度</strong><output id="intensity-value">100%</output></span>
+                <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
+                <span class="range-ends" aria-hidden="true"><small>克制</small><small>清晰</small></span>
+              </label>
+
+              <label class="range-control" for="speed">
+                <span><strong>响应速度</strong><output id="speed-value">1.00×</output></span>
+                <input id="speed" type="range" min="60" max="160" step="5" value="100" />
+                <span class="range-ends" aria-hidden="true"><small>舒缓</small><small>迅速</small></span>
+              </label>
+            </div>
           </section>
 
-          <section class="control-section range-section">
-            <label class="range-control" for="intensity">
-              <span><strong>运动强度</strong><output id="intensity-value">100%</output></span>
-              <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
-              <span class="range-ends" aria-hidden="true"><small>克制</small><small>清晰</small></span>
-            </label>
-
-            <label class="range-control" for="speed">
-              <span><strong>响应速度</strong><output id="speed-value">1.00×</output></span>
-              <input id="speed" type="range" min="60" max="160" step="5" value="100" />
-              <span class="range-ends" aria-hidden="true"><small>舒缓</small><small>迅速</small></span>
-            </label>
-          </section>
-
-          <section class="control-section">
-            <div class="field-label">外观基底</div>
-            <div class="segmented mode-options" role="group" aria-label="外观基底">
-              <button type="button" data-mode="auto" title="跟随系统外观">自动</button>
-              <button type="button" data-mode="light" title="固定浅色基底">浅色</button>
-              <button type="button" data-mode="dark" title="固定深色基底">深色</button>
+          <section class="panel">
+            <div>
+              <div class="field-label">外观基底</div>
+              <div class="segmented mode-options" role="group" aria-label="外观基底">
+                <button type="button" data-mode="auto" title="跟随系统外观">自动</button>
+                <button type="button" data-mode="light" title="固定浅色基底">浅色</button>
+                <button type="button" data-mode="dark" title="固定深色基底">深色</button>
+              </div>
             </div>
 
             <label class="switch-row">
@@ -129,130 +140,37 @@
               <input id="follow-reduced" type="checkbox" checked />
               <span class="switch" aria-hidden="true"><span></span></span>
             </label>
+
+            <div class="metrics" aria-label="当前动画参数">
+              <div class="field-label">Motion tokens</div>
+              <dl>
+                <div><dt>按压</dt><dd id="token-instant">80 ms</dd></div>
+                <div><dt>控件</dt><dd id="token-fast">130 ms</dd></div>
+                <div><dt>内容</dt><dd id="token-base">190 ms</dd></div>
+                <div><dt>弹层</dt><dd id="token-slow">260 ms</dd></div>
+                <div><dt>位移</dt><dd id="token-distance">7 px</dd></div>
+                <div><dt>缩放</dt><dd id="token-scale">0.985</dd></div>
+              </dl>
+            </div>
           </section>
+        </div>
 
-          <section class="control-section metrics" aria-label="当前动画参数">
-            <div class="field-label">Motion tokens</div>
-            <dl>
-              <div><dt>按压</dt><dd id="token-instant">80 ms</dd></div>
-              <div><dt>控件</dt><dd id="token-fast">130 ms</dd></div>
-              <div><dt>内容</dt><dd id="token-base">190 ms</dd></div>
-              <div><dt>弹层</dt><dd id="token-slow">260 ms</dd></div>
-              <div><dt>位移</dt><dd id="token-distance">7 px</dd></div>
-              <div><dt>缩放</dt><dd id="token-scale">0.985</dd></div>
-            </dl>
-          </section>
-
-          <div class="control-actions">
-            <button type="button" class="button secondary" id="reset-button">恢复平衡</button>
-            <button type="button" class="button quiet" id="stop-button">停止全部动画</button>
-          </div>
-        </aside>
-
-        <section class="preview-area" aria-label="动画预览">
-          <div class="preview-toolbar">
-            <div class="preview-title">
-              <strong>实时场景</strong>
-              <span id="preview-mode">Dark base</span>
-            </div>
-            <div class="demo-actions" role="group" aria-label="预览动作">
-              <button type="button" data-demo="navigate">导航</button>
-              <button type="button" data-demo="message">新消息</button>
-              <button type="button" data-demo="menu" aria-expanded="false">菜单</button>
-              <button type="button" data-demo="dialog">对话框</button>
-            </div>
-          </div>
-
-          <div class="stage-wrap">
-            <div class="motion-stage" id="motion-preview" data-base="dark">
-              <aside class="stage-sidebar">
-                <div class="stage-window-controls" aria-hidden="true"><i></i><i></i><i></i></div>
-                <div class="stage-project">
-                  <span class="stage-logo">P</span>
-                  <span>Pi Desktop</span>
-                </div>
-                <nav aria-label="预览导航">
-                  <button type="button" class="stage-nav active"><span class="nav-glyph">◫</span><span>当前会话</span></button>
-                  <button type="button" class="stage-nav"><span class="nav-glyph">⌁</span><span>工作区</span></button>
-                  <button type="button" class="stage-nav"><span class="nav-glyph">◇</span><span>插件</span></button>
-                </nav>
-                <div class="stage-recents">
-                  <small>今天</small>
-                  <button type="button" class="recent-row active">Motion Lab 动画设计</button>
-                  <button type="button" class="recent-row">主题系统边界确认</button>
-                  <button type="button" class="recent-row">插件面板规范</button>
-                </div>
-              </aside>
-
-              <section class="stage-main">
-                <header class="stage-topbar">
-                  <div>
-                    <strong>Motion Lab 动画设计</strong>
-                    <span class="stage-presence"><i></i> Agent</span>
-                  </div>
-                  <button type="button" class="stage-more" data-menu-anchor aria-label="更多操作">•••</button>
-                  <div class="stage-menu" id="stage-menu" hidden>
-                    <button type="button">重命名</button>
-                    <button type="button">复制链接</button>
-                    <button type="button">归档会话</button>
-                  </div>
-                </header>
-
-                <div class="stage-thread" id="stage-thread">
-                  <article class="stage-message user-message">
-                    <div class="message-role">你</div>
-                    <p>让 PI-Desktop 的动画更克制、更连贯。</p>
-                  </article>
-                  <article class="stage-message assistant-message">
-                    <div class="message-role">Pi</div>
-                    <p>已将交互反馈收敛为短时长、小位移，并为弹层保留清晰的空间层级。</p>
-                    <div class="result-line"><span></span>Motion tokens 已同步</div>
-                  </article>
-                </div>
-
-                <div class="stage-composer">
-                  <div class="composer-field">
-                    <span>继续调整动效…</span>
-                    <button type="button" class="send-button" aria-label="发送">↑</button>
-                  </div>
-                </div>
-              </section>
-
-              <div class="stage-dialog-layer" id="stage-dialog-layer" hidden>
-                <button type="button" class="stage-dialog-backdrop" data-close-dialog aria-label="关闭对话框"></button>
-                <section class="stage-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
-                  <h2 id="dialog-title">应用动画主题</h2>
-                  <p>当前颜色主题将切换到匹配的宿主基底。</p>
-                  <div class="dialog-actions">
-                    <button type="button" data-close-dialog>取消</button>
-                    <button type="button" class="dialog-primary" data-close-dialog>应用</button>
-                  </div>
-                </section>
-              </div>
-            </div>
-
-            <div class="motion-ruler" aria-hidden="true">
-              <div class="ruler-track"><span id="ruler-indicator"></span></div>
-              <div class="ruler-labels"><span>0</span><span>80</span><span>130</span><span>190</span><span>260 ms</span></div>
-            </div>
-          </div>
-
-          <div class="preview-footer">
-            <span><i class="legend-dot response"></i>响应</span>
-            <span><i class="legend-dot transition"></i>过渡</span>
-            <span><i class="legend-dot settle"></i>归位</span>
-            <span class="footer-note" id="footer-note">参数调整会实时应用到 PI-Desktop</span>
-          </div>
-        </section>
+        <div class="control-actions">
+          <button type="button" class="button secondary" id="reset-button">恢复平衡</button>
+          <button type="button" class="button quiet" id="stop-button">停止全部动画</button>
+        </div>
       </main>
 
       <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     </div>
-    <style id="preview-token-style"></style>
+    </section>
+
+    <section id="view-gateway" class="opt-view" role="tabpanel" aria-labelledby="tab-gateway" hidden>
     </section>
 
     <script src="./market.js"></script>
     <script src="./motion.js"></script>
+    <script src="./gateway.js"></script>
     <script src="./shell.js"></script>
   </body>
 </html>

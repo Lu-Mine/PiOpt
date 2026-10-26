@@ -12,8 +12,10 @@
   const views = {
     market: document.getElementById("view-market"),
     motion: document.getElementById("view-motion"),
+    gateway: document.getElementById("view-gateway"),
   };
-  const booted = { market: false, motion: false };
+  const booted = { market: false, motion: false, gateway: false };
+  const KNOWN = ["market", "motion", "gateway"];
   let current = "market";
 
   function reportFailure(feature, detail) {
@@ -32,7 +34,7 @@
   function start(feature) {
     if (booted[feature]) return;
     booted[feature] = true;
-    const api = feature === "market" ? window.PiOptMarket : window.PiOptMotion;
+    const api = { market: window.PiOptMarket, motion: window.PiOptMotion, gateway: window.PiOptGateway }[feature];
     const tab = tabs.find((item) => item.dataset.feature === feature);
     if (!api || typeof api.boot !== "function") {
       if (tab) tab.title = "该功能未能加载";
@@ -153,20 +155,20 @@
 
   document.addEventListener("keydown", (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key !== "1" && event.key !== "2") return;
+    if (!["1", "2", "3"].includes(event.key)) return;
     event.preventDefault();
-    show(event.key === "1" ? "market" : "motion", true);
+    show({ 1: "market", 2: "motion", 3: "gateway" }[event.key], true);
   });
 
   let stored = null;
   try { stored = window.localStorage.getItem(STORAGE_KEY); } catch { stored = null; }
-  show(stored === "motion" || stored === "market" ? stored : "market", false);
+  show(KNOWN.includes(stored) ? stored : "market", false);
 
   Promise.resolve()
     .then(() => (bridge && typeof bridge.invoke === "function" ? bridge.invoke("plugin.getSettings") : null))
     .then((settings) => {
       const target = settings && settings.panelFeature;
-      if ((target === "motion" || target === "market") && target !== current) show(target, false);
+      if (KNOWN.includes(target) && target !== current) show(target, false);
     })
     .catch(() => { /* keep the remembered view */ });
 })();

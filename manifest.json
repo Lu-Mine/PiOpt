@@ -99,6 +99,19 @@
           "减弱动态"
         ],
         "category": "Appearance"
+      },
+      {
+        "id": "gateway.open",
+        "title": "网关: 打开 AI 网关面板",
+        "keywords": [
+          "gateway",
+          "网关",
+          "模型",
+          "积分",
+          "workbuddy",
+          "antigravity"
+        ],
+        "category": "PiOpt"
       }
     ],
     "agentTools": [
@@ -135,6 +148,42 @@
           "required": [
             "id"
           ]
+        }
+      },
+      {
+        "name": "gateway_status",
+        "description": "Report whether the local AI gateway is running: supervisor pid, which component ports are up, and the tail of its log. Read-only.",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "gateway_restart",
+        "description": "Restart the local AI gateway by stopping the supervisor (which kills its children) and starting a fresh one.",
+        "risk": "medium",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "gateway_logs",
+        "description": "Read the tail of a gateway component log: supervisor, gateway, or workbuddy.",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "component": {
+              "type": "string",
+              "description": "supervisor (default), gateway or workbuddy."
+            },
+            "lines": {
+              "type": "number",
+              "description": "How many trailing lines, default 40."
+            }
+          }
         }
       }
     ],

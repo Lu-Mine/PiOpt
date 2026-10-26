@@ -10,14 +10,16 @@
 
 const market = require("./features/market/index.js");
 const motion = require("./features/motion/index.js");
+const gateway = require("./features/gateway/index.js");
 
-const FEATURES = { market, motion };
+const FEATURES = { market, motion, gateway };
 const PANEL_COMMAND = "piopt.open";
 
 function featureFor(channel) {
   if (typeof channel !== "string") return null;
   if (channel.startsWith("market.")) return FEATURES.market;
   if (channel.startsWith("motion.")) return FEATURES.motion;
+  if (channel.startsWith("gateway.")) return FEATURES.gateway;
   return null;
 }
 
@@ -51,11 +53,18 @@ async function onRendererCall(method, args = {}) {
 async function onLoad() {
   await market.onLoad();
   await motion.onLoad();
+  await gateway.onLoad();
   await pi.commands.register({
     id: PANEL_COMMAND,
     title: "PiOpt: 打开控制台",
     keywords: ["piopt", "market", "motion", "控制台", "市场", "动效"],
     run: () => openPanel("market"),
+  });
+  await pi.commands.register({
+    id: "gateway.open",
+    title: "网关: 打开 AI 网关面板",
+    keywords: ["gateway", "网关", "模型", "积分"],
+    run: () => openPanel("gateway"),
   });
 }
 
@@ -65,6 +74,12 @@ async function onUnload() {
   } catch {
     /* already gone */
   }
+  try {
+    await pi.commands.unregister("gateway.open");
+  } catch {
+    /* already gone */
+  }
+  await gateway.onUnload();
   await motion.onUnload();
   await market.onUnload();
 }
