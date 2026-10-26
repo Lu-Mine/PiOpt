@@ -146,4 +146,4 @@ node --check main.js
 
 ## 迁移说明
 
-本仓库由 `Pi-Market`（市场）与 `Pi-Modify`（动效）合并而来，两个原始目录仍保留在磁盘上作为来源存档，未被本仓库跟踪。功能与历史提交分别对应那两个仓库。
+本仓库由 `Pi-Market`（市场）与 `Pi-Modify`（动效）合并而来。两个原始目录曾作为来源存档留在磁盘上，已于清理时删除（它们当时没有 remote，历史随目录一并丢弃）；合并后的功能全部在本仓库，当前历史从 `feat: merge Pi-Market and Pi-Modify into the PiOpt console` 开始。
