@@ -291,6 +291,46 @@ function parseCredits() {
   };
 }
 
+// Antigravity 账号：宿主给的是请求计数与模型级冷却，没有剩余额度百分比
+// （ProviderSupportsQuotaObservation 白名单只有 claude/codex/devin）。
+function buildAntigravity(files) {
+  const list = (files || []).filter(f => String(f.provider || "").toLowerCase() === "antigravity");
+  const accounts = list.map(f => {
+    const buckets = Array.isArray(f.recent_requests) ? f.recent_requests : [];
+    let ok = 0;
+    let bad = 0;
+    for (const b of buckets) {
+      ok += Number(b.success) || 0;
+      bad += Number(b.failed) || 0;
+    }
+    const cooldowns = (Array.isArray(f.cooldowns) ? f.cooldowns : []).map(c => ({
+      model: c.model_key || c.scope || "",
+      reason: c.reason || "",
+      seconds: Number(c.remaining_seconds) || 0,
+      until: c.retry_at || "",
+    }));
+    return {
+      email: f.email || f.account || f.label || "—",
+      status: f.status || (f.disabled ? "disabled" : "active"),
+      unavailable: Boolean(f.unavailable),
+      failed: Number(f.failed) || 0,
+      success: ok,
+      windowFailed: bad,
+      buckets: buckets.length,
+      cooldowns,
+    };
+  });
+  // 每个桶按 10 分钟计，窗口长度由宿主决定（当前 20 桶 ≈ 3.3 小时）
+  const windowMinutes = (accounts[0] && accounts[0].buckets ? accounts[0].buckets : 0) * 10;
+  return {
+    accounts,
+    total: accounts.length,
+    active: accounts.filter(a => !a.unavailable && a.status === "active").length,
+    cooling: accounts.reduce((n, a) => n + a.cooldowns.length, 0),
+    windowMinutes,
+  };
+}
+
 // 一次拿全，供面板渲染
 async function fetchOverview() {
   const out = { ok: true, protocols: PROTOCOLS, errors: [] };
@@ -358,6 +398,7 @@ async function fetchOverview() {
     });
   }
   out.upstreams = upstreams;
+  out.antigravity = buildAntigravity(files);
   return out;
 }
 

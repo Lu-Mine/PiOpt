@@ -256,19 +256,29 @@
   white-space: nowrap;
 }
 
-.gw-bar {
-  height: 6px;
+.gw-qbar {
+  height: 8px;
+  min-height: 8px;
   border-radius: 999px;
-  background: var(--ds-bg-inset);
+  background: var(--ds-bg-under);
   border: 1px solid var(--ds-border-subtle);
   overflow: hidden;
 }
 
-.gw-bar-fill {
+.gw-qbar-fill {
   height: 100%;
+  min-height: 2px;
   border-radius: 999px;
-  background: var(--ds-accent);
+  background: var(--ds-success);
   transition: width 0.35s ease;
+}
+
+.gw-qbar-fill[data-level="low"] {
+  background: var(--ds-warning);
+}
+
+.gw-qbar-fill[data-level="empty"] {
+  background: var(--ds-error);
 }
 
 .gw-quota-num {
@@ -494,4 +504,79 @@
   .gw-top {
     grid-template-columns: 1fr;
   }
+}
+
+/* --------------------------------------------------- antigravity accounts */
+
+.gw-ag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.gw-ag-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) auto minmax(140px, 1.6fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--ds-bg-inset);
+  border: 1px solid var(--ds-border-subtle);
+  font-size: 12px;
+}
+
+.gw-ag-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.gw-ag-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ds-text-faint);
+  flex: none;
+}
+
+.gw-ag-dot[data-state="ok"] { background: var(--ds-success); }
+.gw-ag-dot[data-state="bad"] { background: var(--ds-error); }
+.gw-ag-dot[data-state="idle"] { background: var(--ds-warning); }
+
+.gw-ag-mail {
+  color: var(--ds-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gw-ag-stat {
+  color: var(--ds-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gw-ag-cd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.gw-ag-chip {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-warning) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ds-warning) 32%, transparent);
+  color: var(--ds-warning);
+  white-space: nowrap;
+}
+
+.gw-ag-ok {
+  font-size: 11px;
+  color: var(--ds-text-faint);
 }

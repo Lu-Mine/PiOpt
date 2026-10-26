@@ -86,6 +86,13 @@
     return m ? m[1] : "";
   }
 
+  function fmtDuration(seconds) {
+    const n = Number(seconds) || 0;
+    if (n <= 0) return "";
+    if (n < 3600) return `${Math.ceil(n / 60)} 分`;
+    const h = n / 3600;
+    return h >= 10 ? `${Math.round(h)} 小时` : `${h.toFixed(1)} 小时`;
+  }
   function card(title, opts = {}) {
     const box = el("div", "gw-card" + (opts.wide ? " gw-card-wide" : ""));
     const head = el("div", "gw-card-head");
@@ -173,9 +180,10 @@
           const row = el("div", "gw-quota-row");
           row.append(el("span", "gw-quota-name", g.name || g.kind || "—"));
           const pct = g.total > 0 ? Math.max(0, Math.min(100, (g.remain / g.total) * 100)) : 0;
-          const track = el("div", "gw-bar");
-          const fill = el("div", "gw-bar-fill");
+          const track = el("div", "gw-qbar");
+          const fill = el("div", "gw-qbar-fill");
           fill.style.width = pct.toFixed(1) + "%";
+          fill.dataset.level = pct <= 5 ? "empty" : pct <= 25 ? "low" : "ok";
           track.append(fill);
           row.append(track);
           row.append(el("span", "gw-quota-num", `${fmtNum(g.remain)} / ${fmtNum(g.total)}`));
@@ -204,6 +212,55 @@
     pairs.push([T.accounts, (d.upstreams || []).filter(u => u.kind === "oauth").length]);
     box.append(metricRow(pairs));
     box.append(el("p", "gw-hint", q.hint || "余额快照尚未生成，插件启动约 20 秒后可用。"));
+    return box;
+  }
+
+  function antigravityCard() {
+    const d = state.data || {};
+    const ag = d.antigravity || {};
+    const list = ag.accounts || [];
+    const box = card("Antigravity 配额", { wide: true, badge: list.length });
+    if (!list.length) {
+      box.append(el("p", "gw-hint", "没有 Antigravity 账号"));
+      return box;
+    }
+    box.append(metricRow([
+      ["账号", ag.total || list.length, "accent"],
+      ["可用", ag.active || 0],
+      ["冷却中模型", ag.cooling || 0],
+      ["统计窗口", ag.windowMinutes ? `${(ag.windowMinutes / 60).toFixed(1)} 时` : "—"],
+    ]));
+
+    const table = el("div", "gw-ag-list");
+    for (const a of list) {
+      const row = el("div", "gw-ag-row");
+      const head = el("div", "gw-ag-head");
+      const dot = el("i", "gw-ag-dot");
+      dot.dataset.state = a.unavailable ? "bad" : a.status === "active" ? "ok" : "idle";
+      head.append(dot);
+      head.append(el("span", "gw-ag-mail", a.email));
+      row.append(head);
+      row.append(el("span", "gw-ag-stat",
+        `窗口内 ${a.success} 成功${a.windowFailed ? ` / ${a.windowFailed} 失败` : ""}`));
+      const cd = el("div", "gw-ag-cd");
+      if (!a.cooldowns.length) {
+        cd.append(el("span", "gw-ag-ok", "无冷却"));
+      } else {
+        for (const c of a.cooldowns) {
+          const chip = el("span", "gw-ag-chip");
+          chip.append(el("b", "", c.model || "模型"));
+          const left = fmtDuration(c.seconds);
+          chip.append(document.createTextNode(`${left ? ` · ${left}后恢复` : ""}`));
+          cd.append(chip);
+        }
+      }
+      row.append(cd);
+      table.append(row);
+    }
+    box.append(table);
+    box.append(el("p", "gw-hint",
+      "上游不返回剩余额度百分比：CLIProxyAPI 的 quota 观察仅覆盖 claude/codex/devin，"
+      + "Antigravity 的 retrieveUserQuota 对个人账号返回 403。上面是真实可得的请求计数与冷却恢复时间。"));
     return box;
   }
 
@@ -347,6 +404,7 @@
     body.append(top);
 
     body.append(upstreamCard());
+    body.append(antigravityCard());
     body.append(apiKeyCard());
     body.append(creditsCard());
     body.append(modelsCard());
