@@ -19,9 +19,9 @@ async function readConfig() {
   return motion.normalizeConfig(settings && settings[motion.SETTINGS_KEY]);
 }
 
-// What the user had picked in PI-Desktop before a Motion Lab theme took the
-// selection: "system", "light" or "dark". Once our own theme is selected the host
-// reports that theme's base instead of this preference, so it has to be kept.
+// What the user had picked in PI-Desktop before Motion Lab took the selection:
+// "system", "light" or "dark". Only a fallback — "auto" prefers the system
+// reading the page reports, because this record just says what was picked once.
 async function readPreference() {
   try {
     const settings = await pi.plugin.getSettings();
@@ -39,34 +39,62 @@ async function savePreference(preference) {
   }
 }
 
-async function registerThemes(config) {
+function activeThemeId(appearance) {
+  if (typeof appearance.pluginTheme === "string") return appearance.pluginTheme;
+  if (appearance.pluginTheme && typeof appearance.pluginTheme.id === "string") {
+    return appearance.pluginTheme.id;
+  }
+  return "";
+}
+
+// The host namespaces plugin themes as `plugin:<plugin id>:<theme id>`, so the id
+// is asked for rather than rebuilt. Hard-coding the pre-merge `local.pi-modify`
+// namespace is what once produced `unknown theme id`.
+async function registeredThemeId() {
+  const pluginId = pi.plugin.getId();
+  const fullId = `plugin:${pluginId}:${motion.THEME_ID}`;
+  let entries = [];
+  try {
+    if (pi.themes && typeof pi.themes.list === "function") entries = await pi.themes.list();
+  } catch {
+    entries = [];
+  }
+  const list = Array.isArray(entries) ? entries : [];
+  if (list.some((entry) => entry && entry.id === fullId)) return fullId;
+  const byThemeId = list.find((entry) => entry && entry.themeId === motion.THEME_ID);
+  return byThemeId && typeof byThemeId.id === "string" ? byThemeId.id : fullId;
+}
+
+// One theme whose base follows the setting. Upserting the same id with a new base
+// is what makes "auto" work: the host re-broadcasts the appearance, so the shell
+// recolours without the user switching themes.
+async function registerTheme(config, base) {
   if (!pi.themes || typeof pi.themes.upsert !== "function") {
     throw new Error("当前 PI-Desktop 版本不支持运行时主题 API，请升级后重试。");
   }
-
-  await Promise.all([
-    pi.themes.upsert({
-      id: motion.THEME_IDS.light,
-      label: "Motion Lab · Light",
-      base: "light",
-      css: motion.buildThemeCss(config, "light"),
-    }),
-    pi.themes.upsert({
-      id: motion.THEME_IDS.dark,
-      label: "Motion Lab · Dark",
-      base: "dark",
-      css: motion.buildThemeCss(config, "dark"),
-    }),
-  ]);
+  await pi.themes.upsert({
+    id: motion.THEME_ID,
+    label: "Motion Lab",
+    base,
+    css: motion.buildThemeCss(config, base),
+  });
+  // The old light/dark pair must not linger in the host's theme list.
+  for (const legacy of motion.LEGACY_THEME_IDS) {
+    try {
+      await pi.themes.remove(legacy);
+    } catch {
+      /* never registered, or already gone */
+    }
+  }
 }
 
-async function saveConfig(input) {
-  const config = motion.normalizeConfig(input);
-  await registerThemes(config);
-  await pi.plugin.setSettings({ [motion.SETTINGS_KEY]: config });
-  currentConfig = config;
-  return config;
+function resolveNow(config, appearance, preference, hints) {
+  return motion.resolveBase(config.mode, appearance, {
+    preference,
+    prefersLight: hints.prefersLight,
+  });
 }
+
 async function statePayload(hints = {}) {
   const appearance = await getAppearance();
   const themes = pi.themes && typeof pi.themes.list === "function"
@@ -78,57 +106,28 @@ async function statePayload(hints = {}) {
     appearance,
     themes,
     preference,
-    resolvedBase: motion.resolveBase(currentConfig.mode, appearance, {
-      preference,
-      prefersLight: hints.prefersLight,
-    }),
+    resolvedBase: resolveNow(currentConfig, appearance, preference, hints),
   };
 }
 
-// The host namespaces every plugin theme as `plugin:<plugin id>:<theme id>`.
-// This used to be hard-coded to the pre-merge `local.pi-modify`, so once the two
-// plugins became `local.piopt` the id it applied no longer existed and the host
-// answered `unknown theme id`. Ask the theme list what was actually registered
-// instead of rebuilding the host's naming rule.
-async function themeIdForBase(base, pluginId) {
-  const themeId = motion.THEME_IDS[base];
-  const fullId = `plugin:${pluginId}:${themeId}`;
-  let registered = [];
-  try {
-    if (pi.themes && typeof pi.themes.list === "function") registered = await pi.themes.list();
-  } catch {
-    registered = [];
-  }
-  const entries = Array.isArray(registered) ? registered : [];
-  const byId = entries.find((entry) => entry && entry.id === fullId);
-  if (byId) return fullId;
-  const byThemeId = entries.find((entry) => entry && entry.themeId === themeId && entry.pluginId === pluginId);
-  if (byThemeId && typeof byThemeId.id === "string") return byThemeId.id;
-  return fullId;
-}
-
-// `hints` carries what only the renderer can know: whether the system currently
-// prefers light. "auto" needs it because, once a Motion Lab theme owns the
-// selection, appearance.base is that theme's base rather than the user's choice.
 async function applyConfig(input, hints = {}) {
-  const config = await saveConfig(input);
+  const config = motion.normalizeConfig(input);
   const appearance = await getAppearance();
   const hostPreference = motion.preferenceFrom(appearance.theme);
   const recorded = await readPreference();
+  // The user's own pick wins while the host still holds it; otherwise the value
+  // recorded before Motion Lab took over is the only truth left.
   const preference = hostPreference ?? recorded;
   if (hostPreference && hostPreference !== recorded) await savePreference(hostPreference);
 
-  const base = motion.resolveBase(config.mode, appearance, {
-    preference,
-    prefersLight: hints.prefersLight,
-  });
-  const themeId = await themeIdForBase(base, pi.plugin.getId());
-  const activeTheme = typeof appearance.pluginTheme === "string"
-    ? appearance.pluginTheme
-    : appearance.pluginTheme && typeof appearance.pluginTheme.id === "string"
-      ? appearance.pluginTheme.id
-      : "";
-  if (activeTheme !== themeId) await pi.app.setTheme(themeId);
+  const base = resolveNow(config, appearance, preference, hints);
+  await registerTheme(config, base);
+  await pi.plugin.setSettings({ [motion.SETTINGS_KEY]: config });
+  currentConfig = config;
+
+  const themeId = await registeredThemeId();
+  if (activeThemeId(appearance) !== themeId) await pi.app.setTheme(themeId);
+
   return {
     ...(await statePayload({ preference, prefersLight: hints.prefersLight })),
     appliedTheme: themeId,
@@ -139,7 +138,16 @@ async function applyConfig(input, hints = {}) {
 
 async function onLoad() {
   currentConfig = await readConfig();
-  await registerThemes(currentConfig);
+  const appearance = await getAppearance();
+  const preference = motion.preferenceFrom(appearance.theme) ?? await readPreference();
+  await registerTheme(currentConfig, resolveNow(currentConfig, appearance, preference, {}));
+  // Removing the old pair would otherwise leave a user who had selected one of
+  // them on the host's fallback theme; take the selection over instead.
+  const previous = activeThemeId(appearance);
+  if (previous.startsWith(`plugin:${pi.plugin.getId()}:`)) {
+    const themeId = await registeredThemeId();
+    if (previous !== themeId) await pi.app.setTheme(themeId);
+  }
   await pi.commands.register({
     id: COMMAND_ID,
     title: "PiOpt: 打开动效实验室",
@@ -165,11 +173,11 @@ async function onPanelInvoke(channel, payload = {}) {
       return { config, css: motion.buildPreviewCss(config), tokens: motion.motionTokens(config) };
     }
     case "motion.save":
-      return { ok: true, config: await saveConfig(payload.config) };
+      return { ok: true, config: await applyConfig(payload.config, payload.hints ?? {}) };
     case "motion.apply":
       return { ok: true, ...(await applyConfig(payload.config, payload.hints ?? {})) };
     case "motion.reset":
-      return { ok: true, config: await saveConfig(motion.DEFAULT_CONFIG) };
+      return { ok: true, ...(await applyConfig(motion.DEFAULT_CONFIG, payload.hints ?? {})) };
     default:
       throw new Error(`Unsupported panel action: ${channel}`);
   }

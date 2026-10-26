@@ -1,6 +1,11 @@
 "use strict";
 
-const THEME_IDS = Object.freeze({ light: "motion-light", dark: "motion-dark" });
+// One theme, not two. Its base is whatever the user chose (or the system, for
+// "auto"), so the host lists a single "Motion Lab" entry instead of a light and
+// a dark one that the user has to pick between.
+const THEME_ID = "motion";
+// The pre-merge pair; registered by older versions and removed on sight.
+const LEGACY_THEME_IDS = Object.freeze(["motion-light", "motion-dark"]);
 const SETTINGS_KEY = "motionLab";
 const CSS_LIMIT_BYTES = 256 * 1024;
 
@@ -196,7 +201,8 @@ module.exports = {
   DEFAULT_CONFIG,
   PRESETS,
   SETTINGS_KEY,
-  THEME_IDS,
+  THEME_ID,
+  LEGACY_THEME_IDS,
   preferenceFrom,
   buildPreviewCss,
   buildThemeCss,

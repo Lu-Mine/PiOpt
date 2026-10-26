@@ -49,12 +49,12 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 状态点与标题栏显示「正在同步 / 实时应用已就绪 / 实时同步失败」。失败时参数保留在本地，调整任一选项即可重试。
 
-插件写两套运行时主题：
+插件只写**一个**运行时主题 `Motion Lab`，它的基底由上面那三档决定：
 
-- `Motion Lab · Light`
-- `Motion Lab · Dark`
+- **自动**：跟随系统外观（浅/深），系统换色时自动跟过去；
+- **浅色 / 深色**：固定使用该基底，不再看系统。
 
-它们只含动效规则，不覆盖任何 `--ds-*` 颜色 token。
+同一时刻宿主里只会出现这一个 Motion Lab 主题，旧版本注册的 `Motion Lab · Light` / `Motion Lab · Dark` 会被自动移除。它只含动效规则，不覆盖任何 `--ds-*` 颜色 token。
 
 ## 侧边栏入口
 
@@ -94,7 +94,7 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 - 市场功能不安装、不卸载、不启用/禁用、不改 `registry.json`、不启动任何进程。
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
-- 动效功能不访问网络与文件；`ui.theme` 只用于两套动效主题。
+- 动效功能不访问网络与文件；`ui.theme` 只用于那一个 `Motion Lab` 主题（基底随设定切换）。
 - `agent.prompt.inject` 只用于收录 `skills/piopt.md`（按需加载），不会自动往消息里注入内容。
 - `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；不读文件、不访问网络、不改动其他插件的界面，卸载时移除自己挂的东西。
 
