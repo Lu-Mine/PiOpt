@@ -98,7 +98,7 @@ test("the rail opens and closes from a toggle above the tabs", () => {
 
   const css = read("renderer/base.css");
   assert.match(css, /body\[data-rail="expanded"\] \.opt-rail \{ width: 176px/);
-  assert.match(css, /body\[data-rail="expanded"\] \.rail-label \{ display: inline; \}/);
+  assert.match(css, /body\[data-rail="expanded"\] \.rail-label \{\n  display: inline;\n  animation: rail-label-in 120ms[^;]* 100ms both;/);
   assert.match(css, /\.rail-label \{\n  display: none;/);
   assert.match(css, /body\[data-rail="expanded"\] \.rail-glyph \{ transform: rotate\(180deg\); \}/);
   // Opening the rail must not change row heights or the gap between rows.
@@ -106,6 +106,12 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   assert.doesNotMatch(css, /body\[data-rail="expanded"\] \.opt-rail button \{[^}]*height:/);
   assert.doesNotMatch(css, /\.rail-toggle \{/);
 
+  // The reveal itself must stay smooth: the button eases to its stretched width
+  // and the names fade in only once the rail is nearly open, so no frame shows
+  // text squeezed into a sliver.
+  assert.match(css, /\.opt-rail button \{[^}]*transition: width 180ms/);
+  assert.match(css, /@keyframes rail-label-in \{\n  from \{ opacity: 0; \}/);
+  assert.match(css, /body\[data-rail="expanded"\] \.rail-label \{ animation: none; \}/);
   const shell = read("renderer/shell.js");
   assert.match(shell, /const RAIL_KEY = "piopt\.rail";/);
   assert.match(shell, /railToggle\.addEventListener\("click"/);
