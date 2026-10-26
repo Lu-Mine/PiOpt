@@ -51,11 +51,14 @@
 
   function show(feature, remember) {
     if (!views[feature]) feature = "market";
+    const changed = feature !== current;
     current = feature;
     for (const tab of tabs) {
       tab.setAttribute("aria-selected", String(tab.dataset.feature === feature));
     }
     for (const name of Object.keys(views)) views[name].hidden = name !== feature;
+    placeMarker(feature);
+    if (changed) replayEnter(views[feature]);
     start(feature);
     if (remember) {
       try { window.localStorage.setItem(STORAGE_KEY, feature); } catch { /* private mode */ }
@@ -67,6 +70,54 @@
   const RAIL_KEY = "piopt.rail";
   const rail = document.getElementById("optRail");
   const railToggle = document.getElementById("railToggle");
+
+  // One marker slides between the two rows instead of each row drawing its own
+  // bar, so switching views reads as movement. It lives outside the tablist
+  // (aria-hidden, absolutely placed) to keep the tab semantics untouched.
+  const reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const marker = rail ? document.createElement("span") : null;
+  if (rail && marker) {
+    marker.className = "rail-marker";
+    marker.setAttribute("aria-hidden", "true");
+    rail.append(marker);
+  }
+  let markerPlaced = false;
+
+  function placeMarker(feature) {
+    if (!rail || !marker) return;
+    const tab = tabs.find((item) => item.dataset.feature === feature) || tabs[0];
+    if (!tab) return;
+    const railBox = rail.getBoundingClientRect();
+    const box = tab.getBoundingClientRect();
+    const offset = `translateY(${Math.round(box.top - railBox.top)}px)`;
+    if (!markerPlaced) {
+      // First placement has nothing to travel from: land it, then let go.
+      marker.style.transition = "none";
+      marker.style.transform = offset;
+      marker.style.height = `${Math.round(box.height)}px`;
+      void marker.offsetWidth;
+      marker.style.transition = "";
+      marker.dataset.ready = "true";
+      markerPlaced = true;
+      return;
+    }
+    marker.style.transform = offset;
+    marker.style.height = `${Math.round(box.height)}px`;
+  }
+
+  function replayEnter(view) {
+    if (!view) return;
+    if (reduceQuery.matches) {
+      delete view.dataset.enter;
+      return;
+    }
+    delete view.dataset.enter;
+    void view.offsetWidth;
+    view.dataset.enter = "true";
+    view.addEventListener("animationend", () => {
+      delete view.dataset.enter;
+    }, { once: true });
+  }
 
   function setRail(expanded, remember) {
     const open = Boolean(expanded);

@@ -201,6 +201,15 @@ function renderMode() {
   elements.previewMode.textContent = `${base === "light" ? "Light" : "Dark"} base`;
 }
 
+/* Feeds the filled track in renderer/motion.css with the current value ratio. */
+function paintRange(input) {
+  if (!input) return;
+  const min = Number(input.min) || 0;
+  const span = (Number(input.max) || 100) - min || 1;
+  const ratio = Math.max(0, Math.min(1, (Number(input.value) - min) / span));
+  input.style.setProperty("--fill", `${Math.round(ratio * 1000) / 10}%`);
+}
+
 function renderConfig() {
   renderPressed("[data-preset]", "preset", state.config.preset);
   elements.presetSummary.textContent = PRESET_COPY[state.config.preset] || PRESET_COPY.balanced;
@@ -208,6 +217,8 @@ function renderConfig() {
   elements.speed.value = String(Math.round(state.config.speed * 100));
   elements.intensityValue.textContent = `${Math.round(state.config.intensity * 100)}%`;
   elements.speedValue.textContent = `${state.config.speed.toFixed(2)}×`;
+  paintRange(elements.intensity);
+  paintRange(elements.speed);
   elements.followReduced.checked = state.config.followReducedMotion;
   renderMode();
 }
@@ -351,8 +362,14 @@ function bindEvents() {
       setConfig({ mode: button.dataset.mode }, 0);
     });
   });
-  elements.intensity.addEventListener("input", () => setConfig({ intensity: Number(elements.intensity.value) / 100 }));
-  elements.speed.addEventListener("input", () => setConfig({ speed: Number(elements.speed.value) / 100 }));
+  elements.intensity.addEventListener("input", () => {
+    paintRange(elements.intensity);
+    setConfig({ intensity: Number(elements.intensity.value) / 100 });
+  });
+  elements.speed.addEventListener("input", () => {
+    paintRange(elements.speed);
+    setConfig({ speed: Number(elements.speed.value) / 100 });
+  });
   elements.followReduced.addEventListener("change", () => setConfig({ followReducedMotion: elements.followReduced.checked }, 0));
   elements.resetButton.addEventListener("click", resetConfig);
   elements.stopButton.addEventListener("click", stopMotion);

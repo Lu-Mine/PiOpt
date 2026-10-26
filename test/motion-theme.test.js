@@ -131,14 +131,19 @@ test("the first apply selects the theme", async () => {
   }
 });
 
-test("the palette cross-fade follows the speed and preset settings", () => {
+test("the palette cross-fade ignores the speed and preset settings", () => {
+  // A theme swap is a system-level change, not part of the motion design, so the
+  // user's speed and preset must not stretch it. Only "reduced" shortens it.
   const base = motion.motionTokens({ preset: "balanced", speed: 1 }).themeSwitch;
   const faster = motion.motionTokens({ preset: "balanced", speed: 1.4 }).themeSwitch;
   const slower = motion.motionTokens({ preset: "balanced", speed: 0.65 }).themeSwitch;
+  const gentle = motion.motionTokens({ preset: "gentle", speed: 0.65 }).themeSwitch;
   const reduced = motion.motionTokens({ preset: "reduced", speed: 1 }).themeSwitch;
   assert.equal(base, 160);
-  assert.ok(faster < base && slower > base, `${faster} < ${base} < ${slower}`);
-  assert.ok(reduced < base);
+  assert.equal(faster, 160);
+  assert.equal(slower, 160);
+  assert.equal(gentle, 160);
+  assert.equal(reduced, 90);
 
   const css = motion.buildThemeCss({}, "dark");
   assert.match(css, /--pm-switch:160ms/);

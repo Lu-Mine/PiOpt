@@ -66,11 +66,12 @@ function motionTokens(input = {}) {
     distanceMd: Math.round(7 * distanceFactor * 100) / 100,
     distancePanel: Math.round(8 * distanceFactor * 100) / 100,
     scaleFrom: reduced ? 1 : Math.round((1 - 0.015 * distanceFactor) * 10000) / 10000,
-    // Length of the cross-fade when the app swaps its light and dark palette.
-    // It is its own token because a whole-window recolour reads better slightly
-    // slower than a panel entrance, and because the user's speed setting has to
-    // reach this one too.
-    themeSwitch: Math.round((reduced ? 90 : 160) * durationFactor),
+    // Fixed on purpose: the palette cross-fade is not part of the speed/preset
+    // tuning. A theme swap is a system-level change rather than part of the
+    // motion design, and scaling it made the whole window feel sluggish at slow
+    // settings. The reduced preset (and prefers-reduced-motion, in the generated
+    // CSS) still shortens it, because that is an accessibility guarantee.
+    themeSwitch: reduced ? 90 : 160,
     exitRatio: 0.72,
     continuous: preset.continuous,
     easeOut: config.preset === "gentle"
