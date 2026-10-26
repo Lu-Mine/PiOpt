@@ -155,12 +155,15 @@ test("the palette cross-fade follows the speed and preset settings", () => {
   const faster = motion.motionTokens({ preset: "balanced", speed: 1.4 }).themeSwitch;
   const slower = motion.motionTokens({ preset: "balanced", speed: 0.65 }).themeSwitch;
   const reduced = motion.motionTokens({ preset: "reduced", speed: 1 }).themeSwitch;
-  assert.equal(base, 300);
+  assert.equal(base, 160);
   assert.ok(faster < base && slower > base, `${faster} < ${base} < ${slower}`);
   assert.ok(reduced < base);
-  assert.match(motion.buildThemeCss({}, "dark"), /--pm-switch:300ms/);
+  const css = motion.buildThemeCss({}, "dark");
+  assert.match(css, /--pm-switch:160ms/);
+  // Cheap on purpose: one property, on solid surfaces only, never html/body.
   assert.match(
-    motion.buildThemeCss({}, "dark"),
-    /:is\(html,body,\.app-shell[^)]*\)\{transition:background-color var\(--pm-switch\)/
+    css,
+    /:is\(\.app-shell,\.main-pane,\.chat-surface,\.sidebar-surface,\.topbar,\.settings-content\)\{transition:background-color var\(--pm-switch\) var\(--pm-ease-standard\)\}/
   );
+  assert.doesNotMatch(css, /:is\(html,body/);
 });

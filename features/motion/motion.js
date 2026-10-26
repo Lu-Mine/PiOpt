@@ -65,7 +65,7 @@ function motionTokens(input = {}) {
     // It is its own token because a whole-window recolour reads better slightly
     // slower than a panel entrance, and because the user's speed setting has to
     // reach this one too.
-    themeSwitch: Math.round((reduced ? 90 : 300) * durationFactor),
+    themeSwitch: Math.round((reduced ? 90 : 160) * durationFactor),
     exitRatio: 0.72,
     continuous: preset.continuous,
     easeOut: config.preset === "gentle"
@@ -108,13 +108,19 @@ function buildThemeCss(input = {}, base = "dark") {
 :root{${tokenDeclarations(tokens)}}
 /* A palette swap is a colour change on surfaces that do not otherwise animate,
    so it needs its own transition: without this the app cuts over in one frame
-   listed; never the all keyword. */
-:is(html,body,.app-shell,.sidebar-surface,.main-pane,.chat-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard),border-color var(--pm-switch) var(--pm-ease-standard),color var(--pm-switch) var(--pm-ease-standard)}
+   and no duration setting can be felt.
+
+   Cheap on purpose. Only background-color is animated: text colour and borders
+   are spread over thousands of elements, and transitioning them re-paints text
+   on every frame. The root and the body stay out as well — recolouring them
+   dirties the whole document. This keeps the cross-fade on a handful of solid
+   surfaces, which is what the eye actually reads as the theme changing. */
+:is(.app-shell,.main-pane,.chat-surface,.sidebar-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard)}
+:is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) both;transform-origin:center}
+:is(.message-row,.message-item,.assistant-message,.user-message):last-child{animation:pm-message-in var(--pm-base) var(--pm-ease-out) both}
 .app-shell{animation:pm-surface-in var(--pm-base) var(--pm-ease-out) both}
 :is(.main-pane,.chat-surface,.settings-content,[role=tabpanel]){animation:pm-content-in var(--pm-base) var(--pm-ease-out) both}
 :is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab]){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
-:is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) both;transform-origin:center}
-:is(.message-row,.message-item,.assistant-message,.user-message):last-child{animation:pm-message-in var(--pm-base) var(--pm-ease-out) both}
 :is(.tool-result,.thinking-content,[data-state=open]>.collapsible-content){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) both}
 :is(button,[role=button],input,textarea,select){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard),transform var(--pm-instant) var(--pm-ease-out)}
 :is(button,[role=button]):active:not(:disabled){transform:translateY(1px)}

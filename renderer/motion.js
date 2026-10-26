@@ -35,6 +35,7 @@ const state = {
   syncPromise: null,
   followTimer: null,
   messageCount: 0,
+  followInFlight: false,
 };
 
 const elements = {};
@@ -79,6 +80,7 @@ function localTokens(config) {
   };
 }
 
+
 function previewCss(tokens) {
   return `#motion-preview{--pm-instant:${tokens.instant}ms;--pm-fast:${tokens.fast}ms;--pm-base:${tokens.base}ms;--pm-slow:${tokens.slow}ms;--pm-distance-sm:${tokens.distanceSm}px;--pm-distance-md:${tokens.distanceMd}px;--pm-distance-panel:${Math.round(tokens.distanceMd * 1.14 * 100) / 100}px;--pm-scale-from:${tokens.scaleFrom};--pm-ease-out:${tokens.easeOut};--pm-ease-standard:${tokens.easeStandard};--pm-ease-in:${tokens.easeIn}}`;
 }
@@ -112,37 +114,44 @@ function applyAppearance(appearance) {
   if (typeof state.appearance.locale === "string" && state.appearance.locale) {
     document.documentElement.lang = state.appearance.locale;
   }
-  // Paint from the resolved base, not from the host's: with a Motion Lab theme
-  // selected the host reports that theme's base, while the user may have picked
-  // the other one here.
-  const base = resolvedBase();
-  document.documentElement.dataset.base = base;
   renderMode();
-  scheduleFollow(base);
+  scheduleFollow();
 }
 
-// "auto" means "keep up with the appearance". A manual light/dark choice does
-// not follow anything, and anything already on screen is left alone.
-function scheduleFollow(base) {
-  if (state.config.mode !== "auto" || base === state.appliedBase) return;
+// One place that takes the process's answer. `preference` and `resolvedBase` come
+// from the process, so the page and the process cannot disagree about what "auto"
+// means — that disagreement is what used to re-apply on every appearance event
+// and flip the theme back and forth several times a second.
+function applyResult(result) {
+  if (!result || typeof result !== "object") return;
+  if (result.config) state.config = { ...DEFAULT_CONFIG, ...result.config };
+  if (typeof result.preference === "string") state.preference = result.preference;
+  if (result.appearance) state.appearance = result.appearance;
+  if (typeof result.resolvedBase === "string") state.appliedBase = result.resolvedBase;
+  document.documentElement.dataset.base = state.appliedBase;
+  renderConfig();
+}
+
+// "auto" keeps up with the appearance; an explicit light or dark choice follows
+// nothing. When the resolved base already matches what is on screen nothing is
+// sent, so a single appearance change settles in a single call.
+function scheduleFollow() {
+  if (state.config.mode !== "auto") return;
+  if (resolvedBase() === state.appliedBase) return;
   window.clearTimeout(state.followTimer);
-  state.followTimer = window.setTimeout(() => { void followAppearance(); }, 120);
+  state.followTimer = window.setTimeout(() => { void followAppearance(); }, 200);
 }
 
 async function followAppearance() {
-  if (state.config.mode !== "auto") return;
-  const base = resolvedBase();
-  if (base === state.appliedBase) return;
+  if (state.config.mode !== "auto" || state.followInFlight) return;
+  if (resolvedBase() === state.appliedBase) return;
+  state.followInFlight = true;
   try {
-    const result = await invoke("motion.apply", { config: state.config, hints: hints() });
-    if (result && result.config) state.config = { ...DEFAULT_CONFIG, ...result.config };
-    if (result && typeof result.preference === "string") state.preference = result.preference;
-    if (result && result.appearance) state.appearance = result.appearance;
-    state.appliedBase = (result && result.resolvedBase) || base;
-    document.documentElement.dataset.base = state.appliedBase;
-    renderConfig();
+    applyResult(await invoke("motion.apply", { config: state.config, hints: hints() }));
   } catch {
     /* keep what is applied; the next appearance change tries again */
+  } finally {
+    state.followInFlight = false;
   }
 }
 
@@ -301,9 +310,9 @@ function flushSync(version) {
   const config = { ...state.config };
   state.syncPromise = (async () => {
     try {
-      const result = await invoke("motion.apply", { config });
+      const result = await invoke("motion.apply", { config, hints: hints() });
       if (requestedVersion === state.syncVersion) {
-        if (result.appearance) applyAppearance(result.appearance);
+        applyResult(result);
         markDirty(false);
       }
     } catch (error) {
@@ -383,11 +392,7 @@ async function initialize() {
   setBusy(true);
   try {
     const result = await invoke("motion.getState", { hints: hints() });
-    state.config = { ...DEFAULT_CONFIG, ...(result.config || {}) };
-    if (typeof result.preference === "string") state.preference = result.preference;
-    applyAppearance(result.appearance || state.appearance);
-    state.appliedBase = result.resolvedBase || state.appliedBase;
-    document.documentElement.dataset.base = state.appliedBase;
+    applyResult({ ...result, config: result.config || state.config });
     renderConfig();
     await updatePreview();
     markDirty(false);
