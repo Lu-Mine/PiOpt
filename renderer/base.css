@@ -185,3 +185,21 @@ body[data-rail="expanded"] .opt-rail button[aria-selected="true"]::before { left
   font-size: var(--text-sm);
   line-height: 1.5;
 }
+
+/*
+ * The host draws its own window controls (minimise / maximise / close) inside a
+ * closed shadow root, from two variables it copies off this page once, when the
+ * panel document is ready. PiOpt paints itself light or dark a moment later, as
+ * soon as the host reports its appearance, so those copies can end up inverted:
+ * white glyphs on the white title bar of a light panel, which is unreadable.
+ *
+ * The capsule is not addressable, but the variables it reads are inherited ones,
+ * so they are pinned here to our own tokens. `--ds-text-primary` and
+ * `--ds-bg-primary` already flip with `data-base`, which keeps the controls in
+ * step with whatever the panel is actually showing. `!important` is required to
+ * outrank the inline values the host wrote.
+ */
+pi-plugin-panel-chrome {
+  --pi-plugin-panel-page-foreground: var(--ds-text-primary) !important;
+  --pi-plugin-panel-page-background: var(--ds-bg-primary) !important;
+}

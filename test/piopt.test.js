@@ -119,3 +119,22 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   assert.match(shell, /const RAIL_KEY = "piopt\.rail";/);
   assert.match(shell, /railToggle\.addEventListener\("click"/);
 });
+
+test("the host's window controls follow the panel's own light/dark tokens", () => {
+  const css = read("renderer/base.css");
+  // The capsule lives in a closed shadow root and paints from these two
+  // variables, which the host copies off the page before the panel has picked
+  // its palette. Pinning them to our tokens keeps white glyphs off a white
+  // title bar; !important is what outranks the host's inline copies.
+  assert.match(
+    css,
+    /pi-plugin-panel-chrome \{\n  --pi-plugin-panel-page-foreground: var\(--ds-text-primary\) !important;/
+  );
+  assert.match(css, /--pi-plugin-panel-page-background: var\(--ds-bg-primary\) !important;/);
+
+  // Both tokens have to flip with data-base, or the override would freeze one mode.
+  const tokens = read("renderer/tokens.css");
+  const light = tokens.slice(tokens.indexOf(':root[data-base="light"]'));
+  assert.match(light, /--ds-text-primary: #1a1c1f;/);
+  assert.match(light, /--ds-bg-primary: #fff;/);
+});
