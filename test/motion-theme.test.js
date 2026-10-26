@@ -149,3 +149,16 @@ test("the palette cross-fade follows the speed and preset settings", () => {
   );
   assert.doesNotMatch(css, /:is\(html,body/);
 });
+
+test("release hands the selection back so the page can read the system", async () => {
+  // The host pins nativeTheme.themeSource to our base, so the page can only see
+  // the real system value while the selection belongs to the host again.
+  const host = installHost({ pluginTheme: { id: THEME } });
+  try {
+    const answer = await feature.onPanelInvoke("motion.release");
+    assert.deepEqual(answer, { ok: true });
+    assert.deepEqual(host.applied, ["system"]);
+  } finally {
+    delete global.pi;
+  }
+});

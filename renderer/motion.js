@@ -33,9 +33,9 @@ const state = {
   syncVersion: 0,
   syncTimer: null,
   syncPromise: null,
-  followTimer: null,
+  // The measured system base for "auto", or null when it still has to be read.
+  systemBase: null,
   messageCount: 0,
-  followInFlight: false,
 };
 
 const elements = {};
@@ -104,10 +104,9 @@ async function invoke(channel, payload = {}) {
 }
 function resolvedBase() {
   if (state.config.mode === "light" || state.config.mode === "dark") return state.config.mode;
-  // "Auto" is the system, not the last colour chosen in the host.
-  if (typeof lightQuery.matches === "boolean") return lightQuery.matches ? "light" : "dark";
-  if (state.preference === "light" || state.preference === "dark") return state.preference;
-  return "dark";
+  // "Auto" shows what the process last resolved, not this page's media query:
+  // the host pins that query to our own base while our theme is applied.
+  return state.appliedBase;
 }
 
 function applyAppearance(appearance) {
@@ -116,13 +115,11 @@ function applyAppearance(appearance) {
     document.documentElement.lang = state.appearance.locale;
   }
   renderMode();
-  scheduleFollow();
 }
 
 // One place that takes the process's answer. `preference` and `resolvedBase` come
 // from the process, so the page and the process cannot disagree about what "auto"
-// means — that disagreement is what used to re-apply on every appearance event
-// and flip the theme back and forth several times a second.
+// means — that disagreement is what once flipped the theme several times a second.
 function applyResult(result) {
   if (!result || typeof result !== "object") return;
   if (result.config) state.config = { ...DEFAULT_CONFIG, ...result.config };
@@ -133,27 +130,28 @@ function applyResult(result) {
   renderConfig();
 }
 
-// "auto" keeps up with the appearance; an explicit light or dark choice follows
-// nothing. When the resolved base already matches what is on screen nothing is
-// sent, so a single appearance change settles in a single call.
-function scheduleFollow() {
-  if (state.config.mode !== "auto") return;
-  if (resolvedBase() === state.appliedBase) return;
-  window.clearTimeout(state.followTimer);
-  state.followTimer = window.setTimeout(() => { void followAppearance(); }, 200);
+// The host pins `nativeTheme.themeSource` to our theme's base, so this page's
+// `prefers-color-scheme` reports our own base back at us — reading it while the
+// theme is applied can only confirm what we already applied, which is why "auto"
+// appeared to do nothing on a dark system. Handing the selection back to the host
+// for a moment is the only way to see the real system value; the answer is cached
+// until the user picks "auto" again.
+async function measureSystemBase() {
+  await invoke("motion.release");
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  return lightQuery.matches ? "light" : "dark";
 }
 
-async function followAppearance() {
-  if (state.config.mode !== "auto" || state.followInFlight) return;
-  if (resolvedBase() === state.appliedBase) return;
-  state.followInFlight = true;
-  try {
-    applyResult(await invoke("motion.apply", { config: state.config, hints: hints() }));
-  } catch {
-    /* keep what is applied; the next appearance change tries again */
-  } finally {
-    state.followInFlight = false;
-  }
+async function ensureSystemBase() {
+  if (state.systemBase === "light" || state.systemBase === "dark") return state.systemBase;
+  state.systemBase = await measureSystemBase();
+  return state.systemBase;
+}
+
+// What the page contributes to "auto": the measured system base, never the
+// locked-down media query.
+async function autoHints() {
+  return { prefersLight: (await ensureSystemBase()) === "light" };
 }
 
 function setBusy(busy) {
@@ -311,7 +309,8 @@ function flushSync(version) {
   const config = { ...state.config };
   state.syncPromise = (async () => {
     try {
-      const result = await invoke("motion.apply", { config, hints: hints() });
+      const appliedHints = config.mode === "auto" ? await autoHints() : hints();
+      const result = await invoke("motion.apply", { config, hints: appliedHints });
       if (requestedVersion === state.syncVersion) {
         applyResult(result);
         markDirty(false);
@@ -346,7 +345,11 @@ function bindEvents() {
     button.addEventListener("click", () => setConfig({ preset: button.dataset.preset }, 0));
   });
   document.querySelectorAll("[data-mode]").forEach((button) => {
-    button.addEventListener("click", () => setConfig({ mode: button.dataset.mode }, 0));
+    button.addEventListener("click", () => {
+      // Picking "auto" re-reads the system; the other two need no measurement.
+      if (button.dataset.mode === "auto") state.systemBase = null;
+      setConfig({ mode: button.dataset.mode }, 0);
+    });
   });
   elements.intensity.addEventListener("input", () => setConfig({ intensity: Number(elements.intensity.value) / 100 }));
   elements.speed.addEventListener("input", () => setConfig({ speed: Number(elements.speed.value) / 100 }));
@@ -374,10 +377,9 @@ function bindEvents() {
   };
   if (typeof reducedQuery.addEventListener === "function") reducedQuery.addEventListener("change", onReducedChange);
   else reducedQuery.addListener(onReducedChange);
-  // The page's own reading of the system is the most direct signal for "auto":
-  // follow it even when the host does not announce an appearance change.
-  if (typeof lightQuery.addEventListener === "function") lightQuery.addEventListener("change", scheduleFollow);
-  else lightQuery.addListener(() => scheduleFollow());
+  // No media-query listener for colour scheme on purpose: while our theme is
+  // applied the host pins that query to our own base, so a change there would
+  // only echo our own writes back.
   window.pluginBridge?.on?.("appearance:changed", applyAppearance);
 }
 
@@ -396,10 +398,13 @@ async function initialize() {
   renderConfig();
   setBusy(true);
   try {
-    const result = await invoke("motion.getState", { hints: hints() });
+    const result = await invoke("motion.getState");
     applyResult({ ...result, config: result.config || state.config });
     renderConfig();
     await updatePreview();
+    // "Auto" has to read the real system, which costs a release, so it happens
+    // once here rather than on every slider move.
+    if (state.config.mode === "auto") await flushSync();
     markDirty(false);
   } catch (error) {
     applyAppearance(state.appearance);

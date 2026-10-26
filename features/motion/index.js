@@ -174,6 +174,13 @@ async function onPanelInvoke(channel, payload = {}) {
     }
     case "motion.save":
       return { ok: true, config: await applyConfig(payload.config, payload.hints ?? {}) };
+    // The host sets nativeTheme.themeSource to our theme's base, so the page's
+    // prefers-color-scheme reports our own base back at us and "auto" can never
+    // see the real system. Handing the selection back to the host for a moment is
+    // the only way to read it.
+    case "motion.release":
+      await pi.app.setTheme("system");
+      return { ok: true };
     case "motion.apply":
       return { ok: true, ...(await applyConfig(payload.config, payload.hints ?? {})) };
     case "motion.reset":
