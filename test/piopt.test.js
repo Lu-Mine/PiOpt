@@ -57,6 +57,16 @@ test("panel loads shared tokens, scoped feature styles and both features", () =>
   assert.match(html, /id="view-motion"/);
 });
 
+test("panel opts into the paint-through chrome that has no development hint", () => {
+  const html = read("renderer/index.html");
+  // v2 panels get the host's "top 46px is drag-only" dev hint; v3 does not.
+  assert.match(html, /<meta name="pi-plugin-chrome" content="v3" \/>/);
+  // The strip still reserves the host band and stays draggable on its own.
+  const css = read("renderer/base.css");
+  assert.match(css, /grid-template-rows: 46px/);
+  assert.match(css, /\.opt-dragbar \{[^}]*-webkit-app-region: drag/);
+});
+
 test("feature styles are scoped so the two views cannot collide", () => {
   assert.match(read("renderer/market.css"), /@scope \(#view-market\)/);
   assert.match(read("renderer/motion.css"), /@scope \(#view-motion\)/);

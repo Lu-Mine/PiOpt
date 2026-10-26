@@ -22,9 +22,11 @@ body {
 }
 
 /*
- * The host reserves a 46px transparent drag band and only its own window-control
- * capsule is clickable inside it, so this strip carries the brand and nothing
- * interactive. Feature switching lives in the rail below, which is clickable.
+ * The panel declares `pi-plugin-chrome: v3` (paint-through), so the host keeps
+ * its 46px band, splits it into drag segments around interactive elements, and
+ * no longer prints the development hint it adds to v2 panels. This strip
+ * carries the brand and nothing interactive; feature switching lives in the
+ * rail below, which is clickable.
  */
 .opt-dragbar {
   grid-column: 1 / -1;

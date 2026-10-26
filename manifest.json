@@ -12,7 +12,7 @@
     "developer-tools"
   ],
   "engines": {
-    "piDesktop": ">=0.20.0"
+    "piDesktop": ">=0.21.0"
   },
   "main": "main.js",
   "ui": {

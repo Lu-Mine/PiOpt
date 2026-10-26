@@ -19,21 +19,18 @@ const STYLE_ATTR = "data-piopt-entry-style";
 const BUSY_ATTR = "data-piopt-busy";
 const SCAN_DELAY_MS = 120;
 
-// The host draws its footer icons at 14px with a 1.75 stroke; this one matches,
-// so the row reads as five of the same kind.
+// PiOpt's own mark: the three bars that sit beside the product name inside the
+// panel, drawn in the current icon colour so the host's row stays one family.
 const ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"' +
-  ' fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"' +
-  ' stroke-linejoin="round" aria-hidden="true" focusable="false">' +
-  '<line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/>' +
-  '<line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/>' +
-  '<line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/>' +
-  '<line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/>' +
-  '<line x1="16" y1="18" x2="16" y2="22"/>' +
-  "</svg>";
+  '<span class="piopt-mark" aria-hidden="true"><i></i><i></i><i></i></span>';
 
 const STYLE = [
   `[${ENTRY_ATTR}]{border:0;background:transparent;padding:0;margin:0;cursor:pointer}`,
+  `[${ENTRY_ATTR}] .piopt-mark{width:11px;height:13px;display:grid;grid-template-columns:repeat(3,3px);align-items:end;gap:2px}`,
+  `[${ENTRY_ATTR}] .piopt-mark i{display:block;border-radius:1px;background:currentColor}`,
+  `[${ENTRY_ATTR}] .piopt-mark i:nth-child(1){height:6px;opacity:.55}`,
+  `[${ENTRY_ATTR}] .piopt-mark i:nth-child(2){height:13px}`,
+  `[${ENTRY_ATTR}] .piopt-mark i:nth-child(3){height:9px;opacity:.75}`,
   `[${ENTRY_ATTR}] svg{display:block}`,
   `[${ENTRY_ATTR}][${BUSY_ATTR}="true"]{opacity:.55}`,
 ].join("\n");

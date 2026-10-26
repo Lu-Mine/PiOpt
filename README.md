@@ -60,12 +60,15 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）之后：
 
-- 外观跟随宿主：复用 `.footer-action` 的 32×32 命中区与 hover 态，图标 14px、1.75 描边，与相邻四个一致；悬停显示「PiOpt 控制台」。
+- 图标就是面板标题栏里 PiOpt 名字左边那三根竖条（6 / 13 / 9 px，3px 柱、2px 间距），用当前图标的颜色画，所以静止时和相邻四个一样灰、悬停一起变亮；命中区仍是宿主的 32×32 `.footer-action`，悬停显示「PiOpt 控制台」。
 - 点一下打开 PiOpt 面板，停在上次看到的视图（命令 `PiOpt: 打开控制台` 才会固定切到市场）。
 - 宿主没有给这个位置提供插槽，所以入口由 `renderer/entry.mjs` 直接挂在宿主窗口里：定位 `.sidebar-footer .footer-actions`，插到 `[data-nav="plugins"]` 之后，宿主重新渲染把它冲掉时自动补回，插件卸载时移除。
 - 宿主要是改了底部按钮栏的结构、找不到那个锚点，入口退回放在这一排的末尾而不消失。
+- 面板自己声明 `pi-plugin-chrome: v3`（paint-through）：顶部 46px 仍归宿主，由它按可交互元素切成拖拽段，并且**不再插那行「开发提示 · 顶部 46px 为拖拽区」**——v2 面板才会显示。
 
 ## 安装与使用
+
+要求 PI-Desktop **0.21.0 或更高**（`manifest.engines` 据此声明）：面板的 `pi-plugin-chrome: v3` 与左下角入口都依赖这一代宿主。
 打包时校验器会给出两类提示，都不代表功能缺失：
 
 - `permission.high-risk`：`renderer.extension`、`net.fetch`、`agent.tool.register`、`agent.prompt.inject` 需要在安装时由你明确授权，这是设计如此。

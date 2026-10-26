@@ -220,6 +220,9 @@ test("the entry mounts right after the host's plugin button and leaves on unload
     assert.equal(button.previousElementSibling, plugins);
     assert.ok(button.className.includes("footer-action"));
     assert.equal(button.getAttribute("aria-label"), "PiOpt 控制台");
+    // PiOpt's own mark: three bars, same as the panel's product bar.
+    assert.equal((button.innerHTML.match(/<i><\/i>/g) ?? []).length, 3);
+    assert.equal(button.innerHTML.includes("<svg"), false);
     // One style element, mounted next to the host's own styles.
     assert.equal(doc.head.querySelectorAll("[data-piopt-entry-style]").length, 1);
 
