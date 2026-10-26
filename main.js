@@ -10,9 +10,10 @@
 
 const market = require("./features/market/index.js");
 const motion = require("./features/motion/index.js");
+const glass = require("./features/glass/index.js");
 const gateway = require("./features/gateway/index.js");
 
-const FEATURES = { market, motion, gateway };
+const FEATURES = { market, motion, glass, gateway };
 const PANEL_COMMAND = "piopt.open";
 
 function featureFor(channel) {
@@ -20,6 +21,7 @@ function featureFor(channel) {
   if (channel.startsWith("market.")) return FEATURES.market;
   if (channel.startsWith("motion.")) return FEATURES.motion;
   if (channel.startsWith("gateway.")) return FEATURES.gateway;
+  if (channel.startsWith("glass.")) return FEATURES.glass;
   return null;
 }
 
@@ -53,6 +55,10 @@ async function onRendererCall(method, args = {}) {
 async function onLoad() {
   await market.onLoad();
   await motion.onLoad();
+  await glass.onLoad();
+  // The glass layer rides the Motion Lab theme, so the two features are wired
+  // here instead of importing each other.
+  glass.bindTheme(() => motion.refreshTheme());
   await gateway.onLoad();
   await pi.commands.register({
     id: PANEL_COMMAND,
@@ -79,6 +85,7 @@ async function onUnload() {
   } catch {
     /* already gone */
   }
+  await glass.onUnload();
   await gateway.onUnload();
   await motion.onUnload();
   await market.onUnload();

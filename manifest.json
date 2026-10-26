@@ -3,7 +3,7 @@
   "id": "local.piopt",
   "name": "PiOpt",
   "version": "1.0.0",
-  "description": "PiOpt 是 PI-Desktop 的控制台插件：插件市场与更新准备（读取官方目录，经镜像下载并按 sha256 校验），界面动效调校（克制预设、实时预览、减弱动态保护），并在侧边栏左下角第二个按钮后提供一个控制台入口。",
+  "description": "PiOpt 是 PI-Desktop 的控制台插件：插件市场与更新准备（读取官方目录，经镜像下载并按 sha256 校验），界面动效调校（克制预设、实时预览、减弱动态保护），窗口材质（在窗口内绘制磨砂玻璃分层，可即时开关），并在侧边栏左下角第二个按钮后提供一个控制台入口。",
   "author": "local",
   "license": "MIT",
   "categories": [
@@ -112,6 +112,20 @@
           "antigravity"
         ],
         "category": "PiOpt"
+      },
+      {
+        "id": "piopt.glass",
+        "title": "PiOpt: 打开窗口材质",
+        "keywords": [
+          "piopt",
+          "glass",
+          "mica",
+          "acrylic",
+          "磨砂",
+          "玻璃",
+          "材质"
+        ],
+        "category": "Appearance"
       }
     ],
     "agentTools": [
@@ -217,7 +231,7 @@
       }
     ]
   },
-  "safetyNotes": "PiOpt bundles two features that each stay inside their own boundary. The market feature reads the plugin registry and market catalog with Node fs inside the plugin process, writes only its own data folder, and downloads .piplug files over https from four hard-coded hosts, verifying sizeBytes and sha256 before a package is kept; it never installs and never edits registry.json. The motion feature registers two runtime themes whose CSS contains motion rules only: no color tokens, no remote resources, no file or network access. Both features keep their state in the plugin own settings. ui.theme is used only for the two Motion Lab runtime themes. agent.prompt.inject only indexes skills/piopt.md for on-demand loading. renderer.extension is used for one module that mounts a single entry button into the host window's sidebar footer, right after the second button, and removes it on unload; the click goes through plugin.call back to the plugin process, and the module reads no files, sends no network requests and touches no other plugin's UI.",
+  "safetyNotes": "PiOpt bundles four features that each stay inside their own boundary. The market feature reads the plugin registry and market catalog with Node fs inside the plugin process, writes only its own data folder, and downloads .piplug files over https from four hard-coded hosts, verifying sizeBytes and sha256 before a package is kept; it never installs and never edits registry.json. The motion and glass features share one runtime theme whose CSS carries motion rules and an optional glass layer made only of background fills, gradients and backdrop filters: no color tokens of its own, no remote resources, no file or network access. The gateway feature only reads and restarts a local process. Each feature keeps its state in the plugin's own settings. ui.theme is used only for that one Motion Lab runtime theme. agent.prompt.inject only indexes skills/piopt.md for on-demand loading. renderer.extension is used for one module that mounts a single entry button into the host window's sidebar footer, right after the second button, and removes it on unload; the click goes through plugin.call back to the plugin process, and the module reads no files, sends no network requests and touches no other plugin's UI.",
   "i18n": {
     "en": {
       "name": "PiOpt",
@@ -235,6 +249,8 @@
     "onCommand:piopt.open",
     "onCommand:pimarket.open",
     "onCommand:pimarket.prepare-updates",
-    "onCommand:pi-modify.open"
+    "onCommand:pi-modify.open",
+    "onCommand:gateway.open",
+    "onCommand:piopt.glass"
   ]
 }

@@ -13,9 +13,10 @@
     market: document.getElementById("view-market"),
     motion: document.getElementById("view-motion"),
     gateway: document.getElementById("view-gateway"),
+    glass: document.getElementById("view-glass"),
   };
-  const booted = { market: false, motion: false, gateway: false };
-  const KNOWN = ["market", "motion", "gateway"];
+  const booted = { market: false, motion: false, gateway: false, glass: false };
+  const KNOWN = ["market", "motion", "gateway", "glass"];
   let current = "market";
 
   function reportFailure(feature, detail) {
@@ -34,7 +35,7 @@
   function start(feature) {
     if (booted[feature]) return;
     booted[feature] = true;
-    const api = { market: window.PiOptMarket, motion: window.PiOptMotion, gateway: window.PiOptGateway }[feature];
+    const api = { market: window.PiOptMarket, motion: window.PiOptMotion, gateway: window.PiOptGateway, glass: window.PiOptGlass }[feature];
     const tab = tabs.find((item) => item.dataset.feature === feature);
     if (!api || typeof api.boot !== "function") {
       if (tab) tab.title = "该功能未能加载";
@@ -155,9 +156,9 @@
 
   document.addEventListener("keydown", (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
-    if (!["1", "2", "3"].includes(event.key)) return;
+    if (!["1", "2", "3", "4"].includes(event.key)) return;
     event.preventDefault();
-    show({ 1: "market", 2: "motion", 3: "gateway" }[event.key], true);
+    show({ 1: "market", 2: "motion", 3: "gateway", 4: "glass" }[event.key], true);
   });
 
   let stored = null;

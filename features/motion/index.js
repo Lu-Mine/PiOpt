@@ -1,6 +1,7 @@
 "use strict";
 
 const motion = require("./motion.js");
+const glass = require("../glass/glass.js");
 
 const COMMAND_ID = "pi-modify.open";
 const PREFERENCE_KEY = "motion.hostPreference";
@@ -79,11 +80,29 @@ function resetThemeCache() {
   lastRegistered = null;
 }
 
+// The glass layer belongs to its own feature, so only its stylesheet builder is
+// required here: the two modules never import each other.
+async function readGlassCss() {
+  try {
+    const settings = await pi.plugin.getSettings();
+    return glass.buildGlassCss(settings && settings[glass.SETTINGS_KEY]);
+  } catch {
+    // An unreadable setting must not cost the motion layer.
+    return "";
+  }
+}
+
 async function registerTheme(config, base) {
   if (!pi.themes || typeof pi.themes.upsert !== "function") {
     throw new Error("当前 PI-Desktop 版本不支持运行时主题 API，请升级后重试。");
   }
-  const css = motion.buildThemeCss(config, base);
+  // Motion rules and the glass layer are one stylesheet: PI-Desktop injects a
+  // runtime theme into the host window, and that is the only channel a plugin
+  // has into the shell's own document.
+  const css = `${motion.buildThemeCss(config, base)}${await readGlassCss()}`;
+  if (Buffer.byteLength(css, "utf8") > motion.CSS_LIMIT_BYTES) {
+    throw new RangeError("Generated theme CSS exceeds the PI-Desktop 256 KB limit.");
+  }
   if (!lastRegistered || lastRegistered.base !== base || lastRegistered.css !== css) {
     await pi.themes.upsert({
       id: motion.THEME_ID,
@@ -149,6 +168,19 @@ async function applyConfig(input, hints = {}) {
     resolvedBase: base,
     preference,
   };
+}
+
+// Re-registers the one theme with whatever the glass feature currently wants.
+// Glass is not a motion setting, so it never travels through applyConfig: that
+// would write a motion config the user never touched.
+async function refreshTheme() {
+  const appearance = await getAppearance();
+  const preference = motion.preferenceFrom(appearance.theme) ?? await readPreference();
+  const base = resolveNow(currentConfig, appearance, preference, {});
+  await registerTheme(currentConfig, base);
+  const themeId = await registeredThemeId();
+  if (activeThemeId(appearance) !== themeId) await pi.app.setTheme(themeId);
+  return { appliedTheme: themeId, resolvedBase: base };
 }
 
 async function onLoad() {
@@ -250,4 +282,13 @@ async function onPanelInvoke(channel, payload = {}) {
   }
 }
 
-module.exports = { onLoad, onUnload, onPanelInvoke, readSystemBase, resetThemeCache };
+module.exports = {
+  onLoad,
+  onUnload,
+  onPanelInvoke,
+  readSystemBase,
+  resetThemeCache,
+  // The glass feature rides this theme, so main.js calls this after the glass
+  // setting changed: the stylesheet is rebuilt and re-applied from one place.
+  refreshTheme,
+};

@@ -16,13 +16,22 @@ test("manifest declares the merged PiOpt identity and panel", () => {
   assert.ok(manifest.categories.includes("appearance"));
 });
 
-test("manifest keeps both feature command sets", () => {
+test("manifest keeps every feature command set", () => {
   const ids = manifest.contributes.commands.map((item) => item.id);
-  assert.deepEqual(ids, ["piopt.open", "pimarket.open", "pimarket.prepare-updates", "pi-modify.open"]);
+  assert.deepEqual(ids, [
+    "piopt.open",
+    "pimarket.open",
+    "pimarket.prepare-updates",
+    "pi-modify.open",
+    "gateway.open",
+    "piopt.glass",
+  ]);
+  // A command still runs after onStartup without an activation event, but the
+  // two lists describe one surface and are meant to stay in step.
   for (const id of ids) assert.ok(manifest.activationEvents.includes(`onCommand:${id}`), id);
 });
 
-test("manifest unions the two feature permissions without fs access", () => {
+test("manifest unions the feature permissions without fs access", () => {
   for (const permission of ["ui.panel", "ui.theme", "net.fetch", "agent.tool.register"]) {
     assert.ok(manifest.permissions.includes(permission), permission);
   }
@@ -30,9 +39,15 @@ test("manifest unions the two feature permissions without fs access", () => {
   assert.ok(manifest.net.domains.includes("cdn.jsdelivr.net"));
 });
 
-test("market tools and settings survive the merge", () => {
+test("agent tools and settings survive the merge", () => {
   const tools = manifest.contributes.agentTools.map((item) => item.name).sort();
-  assert.deepEqual(tools, ["list_plugin_updates", "prepare_plugin_update"]);
+  assert.deepEqual(tools, [
+    "gateway_logs",
+    "gateway_restart",
+    "gateway_status",
+    "list_plugin_updates",
+    "prepare_plugin_update",
+  ]);
   const keys = manifest.contributes.settings.map((item) => item.key).sort();
   assert.deepEqual(keys, ["dataDir", "mirrorRef", "mirrorRepo"]);
   assert.deepEqual(manifest.contributes.skills, ["skills/piopt.md"]);
@@ -43,18 +58,43 @@ test("host routes panel channels to the owning feature", () => {
   assert.equal(entry._featureFor("market.snapshot"), entry._features.market);
   assert.equal(entry._featureFor("motion.apply"), entry._features.motion);
   assert.equal(entry._featureFor("motion.tokens"), entry._features.motion);
+  assert.equal(entry._featureFor("glass.apply"), entry._features.glass);
+  assert.equal(entry._featureFor("glass.getState"), entry._features.glass);
   assert.equal(entry._featureFor("unknown.channel"), null);
   assert.equal(entry._featureFor(undefined), null);
 });
 
-test("panel loads shared tokens, scoped feature styles and both features", () => {
+test("every feature is composed by the host entry", () => {
+  const entry = require("../main.js");
+  for (const name of ["market", "motion", "glass", "gateway"]) {
+    assert.ok(entry._features[name], name);
+  }
+  // The glass layer rides the motion theme, so main.js owns the wiring: neither
+  // feature imports the other's lifecycle.
+  assert.match(read("main.js"), /glass\.bindTheme\(\(\) => motion\.refreshTheme\(\)\)/);
+  assert.match(read("features/motion/index.js"), /const glass = require\("\.\.\/glass\/glass\.js"\)/);
+  assert.doesNotMatch(read("features/glass/index.js"), /require\("\.\.\/motion/);
+});
+
+test("panel loads shared tokens, scoped feature styles and every feature", () => {
   const html = read("renderer/index.html");
-  for (const asset of ["./tokens.css", "./base.css", "./market.css", "./motion.css", "./market.js", "./motion.js", "./shell.js"]) {
+  for (const asset of [
+    "./tokens.css",
+    "./base.css",
+    "./market.css",
+    "./motion.css",
+    "./glass.css",
+    "./market.js",
+    "./motion.js",
+    "./glass.js",
+    "./shell.js",
+  ]) {
     assert.ok(html.includes(asset), asset);
   }
   assert.equal(/<script>/.test(html), false, "inline scripts would share one global scope");
   assert.match(html, /id="view-market"/);
   assert.match(html, /id="view-motion"/);
+  assert.match(html, /id="view-glass"/);
 });
 
 test("panel opts into the paint-through chrome that has no development hint", () => {
@@ -67,10 +107,11 @@ test("panel opts into the paint-through chrome that has no development hint", ()
   assert.match(css, /\.opt-dragbar \{[^}]*-webkit-app-region: drag/);
 });
 
-test("feature styles are scoped so the two views cannot collide", () => {
+test("feature styles are scoped so the views cannot collide", () => {
   assert.match(read("renderer/market.css"), /@scope \(#view-market\)/);
   assert.match(read("renderer/motion.css"), /@scope \(#view-motion\)/);
-  for (const file of ["renderer/market.css", "renderer/motion.css"]) {
+  assert.match(read("renderer/glass.css"), /@scope \(#view-glass\)/);
+  for (const file of ["renderer/market.css", "renderer/motion.css", "renderer/glass.css"]) {
     const css = read(file);
     assert.equal(!/(^|\n)\s*:root\s*\{/.test(css), true, `${file} must not redefine host root tokens`);
   }
@@ -79,6 +120,7 @@ test("feature styles are scoped so the two views cannot collide", () => {
 test("renderer scripts expose an explicit boot hook and do not self-start", () => {
   assert.match(read("renderer/market.js"), /window\.PiOptMarket = \{ boot \}/);
   assert.match(read("renderer/motion.js"), /window\.PiOptMotion = \{ boot: initialize \}/);
+  assert.match(read("renderer/glass.js"), /window\.PiOptGlass = \{ boot: initialize \}/);
   const motion = read("renderer/motion.js");
   assert.equal(motion.trimEnd().endsWith("})();"), true);
 });
@@ -92,7 +134,7 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   const tabsStart = html.indexOf('class="rail-tabs" role="tablist"');
   const toggleStart = html.indexOf('id="railToggle"');
   assert.ok(toggleStart > navStart && tabsStart > toggleStart);
-  for (const name of ["插件市场", "动效实验室"]) {
+  for (const name of ["插件市场", "动效实验室", "窗口材质"]) {
     assert.ok(html.includes(`<span class="rail-label">${name}</span>`), name);
   }
 
@@ -118,6 +160,16 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   const shell = read("renderer/shell.js");
   assert.match(shell, /const RAIL_KEY = "piopt\.rail";/);
   assert.match(shell, /railToggle\.addEventListener\("click"/);
+});
+
+test("every rail row has a keyboard shortcut and a shell view", () => {
+  const shell = read("renderer/shell.js");
+  // Alt+1..4 must cover exactly the four views the shell knows about.
+  assert.match(shell, /if \(!\["1", "2", "3", "4"\]\.includes\(event\.key\)\) return;/);
+  for (const feature of ["market", "motion", "gateway", "glass"]) {
+    assert.match(shell, new RegExp(`${feature}: document\\.getElementById\\("view-${feature}"\\)`));
+  }
+  assert.match(shell, /const KNOWN = \["market", "motion", "gateway", "glass"\];/);
 });
 
 test("the host's window controls follow the panel's own light/dark tokens", () => {

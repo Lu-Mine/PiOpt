@@ -1,16 +1,18 @@
 ---
 name: PiOpt control console
-description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, or wants to tune PI-Desktop interface motion and animation presets.
+description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, wants to tune PI-Desktop interface motion and animation presets, or asks for frosted glass, Mica, translucency or a window material on the interface.
 ---
 
 # PiOpt
 
-PiOpt bundles two features in one plugin:
+PiOpt bundles four features in one plugin:
 
 - **插件市场 (market)** — the download-and-verify half of a plugin update.
   Installing stays a user action in the Plugins page.
-- **动效实验室 (motion)** — restrained interface motion presets registered as
-  two runtime themes.
+- **动效实验室 (motion)** — restrained interface motion presets.
+- **窗口材质 (glass)** — an optional frosted-glass layer over the shell's own
+  surfaces, carried by the same runtime theme as motion.
+- **AI 网关 (gateway)** — status, restart and logs for the local AI gateway.
 
 ## Market: when to use
 
@@ -63,3 +65,31 @@ PiOpt bundles two features in one plugin:
    and stops continuous animation; do not describe it as "slower motion".
 5. Never claim motion is applied to plugin panels, the terminal or browser
    views: those are separate documents that theme CSS cannot reach.
+
+## Glass: when to use
+
+- The user asks for Windows 11 Mica / acrylic / frosted glass, a translucent
+  window, or for the interface to show what is behind it.
+- The user wants the glass layer turned on or off, or wants it lighter or
+  heavier.
+
+### Glass rules
+
+1. There is no Agent tool for glass. Direct the user to the panel
+   (**PiOpt → 窗口材质**), the command `PiOpt: 打开窗口材质`, or `Alt+4`.
+2. Never promise that the window shows the desktop. PI-Desktop builds its main
+   window opaque on Windows 11 — `transparent: false` is what buys it native
+   rounded corners, and `transparent` is a BrowserWindow construction flag that
+   cannot be changed afterwards. A plugin makes glass *inside* the window, over
+   a soft light field; the Mica backdrop the window already carries stays
+   covered by the compositor. Say that plainly instead of calling it Windows
+   Mica.
+3. The layer rides the one `Motion Lab` runtime theme, so it only exists while
+   PI-Desktop has that theme selected. Switching to another theme removes the
+   glass; the stored on/off setting survives and comes back with the theme.
+4. Settings apply live, about one debounce frame after the last input. Do not
+   tell the user to press an apply button.
+5. 轻薄 / 标准 / 厚重 are glass recipes, not motion presets. Turning glass off
+   writes no glass rules at all, so the interface returns to exactly what it
+   was — that is also the honest answer to "did it work?" when nothing is
+   visible on a dark theme.
