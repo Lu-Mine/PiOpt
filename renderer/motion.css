@@ -366,8 +366,15 @@ h1 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; }
 
 /* The shell already draws the product bar, and the host reserves the drag band. */
 @scope (#view-motion) {
-  .app-shell { height: 100%; grid-template-rows: minmax(0, 1fr); }
+  .app-shell { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
   .titlebar { display: none; }
   .workspace { height: 100%; }
   .controls { padding-top: 0; }
+  .stage-wrap { grid-template-rows: minmax(0, 1fr) 40px; }
+  .motion-stage { height: 100%; aspect-ratio: auto; }
+}
+
+/* Narrow panels scroll instead of clipping the stacked controls. */
+@media (max-width: 820px) {
+  #view-motion { overflow: auto; }
 }

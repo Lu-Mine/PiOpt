@@ -10,9 +10,9 @@ html, body { height: 100%; }
 body {
   margin: 0;
   display: grid;
-  grid-template-rows: 40px minmax(0, 1fr);
+  grid-template-rows: 46px minmax(0, 1fr);
   overflow: hidden;
-  padding: var(--pi-plugin-titlebar-height, 0px) 0 0;
+  padding: 0;
   background: var(--ds-bg-primary);
   color: var(--ds-text-primary);
   font: var(--text-base)/var(--leading-body) -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
@@ -22,14 +22,17 @@ body {
 
 .opt-topbar {
   min-width: 0;
+  height: 46px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 148px 0 14px;
   border-bottom: 1px solid var(--ds-border-default);
   background: var(--ds-bg-secondary);
   user-select: none;
+  -webkit-app-region: drag;
 }
+.opt-topbar button { -webkit-app-region: no-drag; }
 
 .opt-brand {
   display: flex;
@@ -79,14 +82,6 @@ body {
 .opt-switch button:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 1px; }
 
 .opt-spacer { flex: 1 1 auto; }
-.opt-hint {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ds-text-muted);
-  font-size: var(--text-xs);
-}
 
 .opt-view { min-width: 0; min-height: 0; overflow: hidden; }
 #view-market { display: flex; flex-direction: column; }

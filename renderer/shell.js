@@ -7,17 +7,12 @@
 
   const bridge = window.pluginBridge;
   const STORAGE_KEY = "piopt.feature";
-  const HINTS = {
-    market: "插件市场与更新准备",
-    motion: "界面动效调校",
-  };
 
   const tabs = Array.from(document.querySelectorAll("[data-feature]"));
   const views = {
     market: document.getElementById("view-market"),
     motion: document.getElementById("view-motion"),
   };
-  const hint = document.getElementById("opt-hint");
   const booted = { market: false, motion: false };
   let current = "market";
 
@@ -25,14 +20,17 @@
     if (booted[feature]) return;
     booted[feature] = true;
     const api = feature === "market" ? window.PiOptMarket : window.PiOptMotion;
+    const tab = tabs.find((item) => item.dataset.feature === feature);
     if (!api || typeof api.boot !== "function") {
-      hint.textContent = `${HINTS[feature]}不可用`;
+      if (tab) tab.title = "该功能未能加载";
+      console.error(`[PiOpt] ${feature} view is not available`);
       return;
     }
     Promise.resolve()
       .then(() => api.boot())
       .catch((error) => {
-        hint.textContent = String((error && error.message) || error);
+        if (tab) tab.title = "该功能加载失败，详见控制台";
+        console.error(`[PiOpt] ${feature} failed to start`, error);
       });
   }
 
@@ -43,7 +41,6 @@
       tab.setAttribute("aria-selected", String(tab.dataset.feature === feature));
     }
     for (const name of Object.keys(views)) views[name].hidden = name !== feature;
-    hint.textContent = HINTS[feature] || "";
     start(feature);
     if (remember) {
       try { window.localStorage.setItem(STORAGE_KEY, feature); } catch { /* private mode */ }
