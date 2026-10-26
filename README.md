@@ -56,10 +56,19 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 它们只含动效规则，不覆盖任何 `--ds-*` 颜色 token。
 
+## 侧边栏入口
+
+PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）之后：
+
+- 外观跟随宿主：复用 `.footer-action` 的 32×32 命中区与 hover 态，图标 14px、1.75 描边，与相邻四个一致；悬停显示「PiOpt 控制台」。
+- 点一下打开 PiOpt 面板，停在上次看到的视图（命令 `PiOpt: 打开控制台` 才会固定切到市场）。
+- 宿主没有给这个位置提供插槽，所以入口由 `renderer/entry.mjs` 直接挂在宿主窗口里：定位 `.sidebar-footer .footer-actions`，插到 `[data-nav="plugins"]` 之后，宿主重新渲染把它冲掉时自动补回，插件卸载时移除。
+- 宿主要是改了底部按钮栏的结构、找不到那个锚点，入口退回放在这一排的末尾而不消失。
+
 ## 安装与使用
 打包时校验器会给出两类提示，都不代表功能缺失：
 
-- `permission.high-risk`：`net.fetch`、`agent.tool.register`、`agent.prompt.inject` 需要在安装时由你明确授权，这是设计如此。
+- `permission.high-risk`：`renderer.extension`、`net.fetch`、`agent.tool.register`、`agent.prompt.inject` 需要在安装时由你明确授权，这是设计如此。
 - `permission.unused`：校验器只扫描 `main.js`，而实际调用位于 `features/market/index.js`（`net.fetch`、`clipboard.writeText`、`agent.registerTool`）。权限声明与真实调用一致。
 1. 在 PI-Desktop 的 Plugins 页安装 `dist/local.piopt-1.0.0.piplug`。
 2. 命令面板运行 **PiOpt: 打开控制台**，或直接运行功能命令：
@@ -74,7 +83,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 ## 权限与边界
 
-声明：`ui.panel`、`ui.theme`、`clipboard.write`、`net.fetch`、`agent.tool.register`、`agent.prompt.inject`。
+声明：`ui.panel`、`renderer.extension`、`ui.theme`、`clipboard.write`、`net.fetch`、`agent.tool.register`、`agent.prompt.inject`。
 
 | `Pimarket: 准备全部可用更新` | 打开面板并串行准备所有可用更新 |
 
@@ -84,6 +93,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
 - 动效功能不访问网络与文件；`ui.theme` 只用于两套动效主题。
 - `agent.prompt.inject` 只用于收录 `skills/piopt.md`（按需加载），不会自动往消息里注入内容。
+- `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；不读文件、不访问网络、不改动其他插件的界面，卸载时移除自己挂的东西。
 
 ### 主题互斥
 
@@ -95,7 +105,7 @@ PI-Desktop 一次只能选择一个主题，动画层不能叠加在另一个第
 
 ```text
 PiOpt/
-├─ manifest.json            统一清单：4 条命令、2 个 agent 工具、6 项权限
+├─ manifest.json            统一清单：4 条命令、2 个 agent 工具、7 项权限
 ├─ main.js                  组装两个功能，按通道前缀路由面板 RPC
 ├─ features/
 │  ├─ market/               市场功能
@@ -114,7 +124,8 @@ PiOpt/
 │  ├─ motion.css            动效视图样式（@scope 隔离）
 │  ├─ market.js             市场视图逻辑
 │  ├─ motion.js             动效视图逻辑
-│  └─ shell.js              视图切换与按需启动
+│  ├─ shell.js              视图切换与按需启动
+│  └─ entry.mjs             宿主窗口侧边栏的入口按钮（renderer.extension）
 ├─ skills/piopt.md          Agent 使用规则
 └─ test/                    结构测试与动效模型测试
 ```
@@ -133,6 +144,7 @@ PiOpt/
 
 - 开发期间请**禁用**已安装的 `local.pimarket` 与 `local.pi-modify`。PiOpt 复用了 `pimarket.open`、`pi-modify.open` 等命令 id，同时启用会出现重复命令，插件列表里也会多出一套旧的 Motion Lab 主题。
 - 面板是独立窗口，保存文件触发的重载会关闭当前面板，重新打开即可。
+- 入口按钮用的是 `renderer.extension`：它是权限项，宿主在授权变化后不会热更新，所以首次加载或改动权限后要重新加载一次插件（必要时重启）按钮才会出现。
 - 纯界面迭代可以先用浏览器打开 `renderer/index.html` 看布局：没有宿主 bridge 时会自动进入独立预览模式。
 
 校验与测试：

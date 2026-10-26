@@ -31,6 +31,23 @@ async function openPanel(feature) {
   await pi.ui.openPanel({ title: "PiOpt" });
 }
 
+// The footer entry in the host window (renderer/entry.mjs) opens the console
+// without naming a view, so it lands on whatever the panel showed last; the
+// command above stays the way to ask for a named view.
+async function openConsole() {
+  await pi.ui.openPanel({ title: "PiOpt" });
+  return { opened: true };
+}
+
+const RENDERER_METHODS = Object.freeze({ openConsole });
+
+async function onRendererCall(method, args = {}) {
+  if (!Object.prototype.hasOwnProperty.call(RENDERER_METHODS, method)) {
+    throw new Error(`Unsupported renderer method: ${method}`);
+  }
+  return RENDERER_METHODS[method](args);
+}
+
 async function onLoad() {
   await market.onLoad();
   await motion.onLoad();
@@ -64,6 +81,7 @@ module.exports = {
   onLoad,
   onUnload,
   onPanelInvoke,
+  onRendererCall,
   openPanel,
   _features: FEATURES,
   _featureFor: featureFor,
