@@ -228,6 +228,7 @@
       ["账号", ag.total || list.length, "accent"],
       ["可用", ag.active || 0],
       ["冷却中模型", ag.cooling || 0],
+      ["每账号模型", ag.modelCount || 0],
       ["统计窗口", ag.windowMinutes ? `${(ag.windowMinutes / 60).toFixed(1)} 时` : "—"],
     ]));
 
@@ -241,7 +242,7 @@
       head.append(el("span", "gw-ag-mail", a.email));
       row.append(head);
       row.append(el("span", "gw-ag-stat",
-        `窗口内 ${a.success} 成功${a.windowFailed ? ` / ${a.windowFailed} 失败` : ""}`));
+        `${a.modelCount || 0} 模型 · ${a.success} 成功${a.windowFailed ? ` / ${a.windowFailed} 失败` : ""}`));
       const cd = el("div", "gw-ag-cd");
       if (!a.cooldowns.length) {
         cd.append(el("span", "gw-ag-ok", "无冷却"));

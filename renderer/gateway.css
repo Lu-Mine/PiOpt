@@ -243,10 +243,12 @@
 
 .gw-quota-row {
   display: grid;
-  grid-template-columns: minmax(88px, 0.9fr) minmax(60px, 2fr) auto;
+  /* 名称吃内容宽，进度条吃满剩余空间，数字列定宽——数字长短不再影响条长 */
+  grid-template-columns: max-content minmax(120px, 1fr) 7.5em;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
+
 
 .gw-quota-name {
   font-size: 12px;
@@ -286,7 +288,9 @@
   color: var(--ds-text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: right;
 }
+
 /* --------------------------------------------------------------------- table */
 
 .gw-table {

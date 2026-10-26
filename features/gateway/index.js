@@ -195,6 +195,36 @@ const MGMT_KEY = "Avencess777";
 const CREDITS_LOG = path.join(GATEWAY_DIR, "dev", "credits.log");
 const QUOTA_FILE = path.join(GATEWAY_DIR, "dev", "quota.json");
 
+// 上游账号供给：直接读 auth 目录 + 管理 API，账号增删自动反映
+const AUTH_DIR = path.join(GATEWAY_DIR, "auth");
+
+function readAuthFiles() {
+  let names = [];
+  try {
+    names = fs.readdirSync(AUTH_DIR).filter(n => n.endsWith(".json") && n.startsWith("antigravity-"));
+  } catch (error) {
+    return [];
+  }
+  const out = [];
+  for (const name of names) {
+    try {
+      const doc = JSON.parse(fs.readFileSync(path.join(AUTH_DIR, name), "utf8"));
+      const hints = doc.antigravity_capability_hints || {};
+      out.push({
+        file: name,
+        email: doc.email || name.replace(/^antigravity-/, "").replace(/\.json$/, ""),
+        projectId: doc.project_id || "",
+        disabled: Boolean(doc.disabled),
+        expired: doc.expired || "",
+        modelCount: Array.isArray(hints.model_ids) ? hints.model_ids.length : 0,
+      });
+    } catch (error) {
+      // 半个 JSON 不该毁掉整张卡
+    }
+  }
+  return out;
+}
+
 // 插件每 5 分钟把真实余额写成快照，这里只读结构化结论
 function readQuota() {
   try {
@@ -293,40 +323,65 @@ function parseCredits() {
 
 // Antigravity 账号：宿主给的是请求计数与模型级冷却，没有剩余额度百分比
 // （ProviderSupportsQuotaObservation 白名单只有 claude/codex/devin）。
+// Antigravity 账号：以 auth 目录为准（账号增删自动反映），
+// 再用管理 API 补上运行态（请求计数、冷却）。上游不返回剩余额度百分比。
 function buildAntigravity(files) {
-  const list = (files || []).filter(f => String(f.provider || "").toLowerCase() === "antigravity");
-  const accounts = list.map(f => {
-    const buckets = Array.isArray(f.recent_requests) ? f.recent_requests : [];
+  const live = new Map();
+  for (const f of files || []) {
+    if (String(f.provider || "").toLowerCase() !== "antigravity") continue;
+    const key = String(f.email || f.account || f.label || "").toLowerCase();
+    if (key) live.set(key, f);
+  }
+
+  const authFiles = readAuthFiles();
+  // auth 目录里没有但管理 API 有的（例如运行时注入的凭证）也要算进来
+  const emails = new Set(authFiles.map(a => a.email.toLowerCase()));
+  const extra = [];
+  for (const [key, f] of live) {
+    if (!emails.has(key)) {
+      extra.push({ email: f.email || f.account || key, modelCount: 0, extra: true });
+    }
+  }
+
+  const accounts = [...authFiles, ...extra].map(a => {
+    const rt = live.get(a.email.toLowerCase()) || {};
+    const buckets = Array.isArray(rt.recent_requests) ? rt.recent_requests : [];
     let ok = 0;
     let bad = 0;
     for (const b of buckets) {
       ok += Number(b.success) || 0;
       bad += Number(b.failed) || 0;
     }
-    const cooldowns = (Array.isArray(f.cooldowns) ? f.cooldowns : []).map(c => ({
+    const cooldowns = (Array.isArray(rt.cooldowns) ? rt.cooldowns : []).map(c => ({
       model: c.model_key || c.scope || "",
       reason: c.reason || "",
       seconds: Number(c.remaining_seconds) || 0,
       until: c.retry_at || "",
     }));
+    const disabled = Boolean(a.disabled) || Boolean(rt.disabled);
+    const unavailable = Boolean(rt.unavailable) || disabled;
     return {
-      email: f.email || f.account || f.label || "—",
-      status: f.status || (f.disabled ? "disabled" : "active"),
-      unavailable: Boolean(f.unavailable),
-      failed: Number(f.failed) || 0,
+      email: a.email,
+      modelCount: a.modelCount || 0,
+      projectId: a.projectId || rt.project_id || "",
+      status: disabled ? "disabled" : (rt.status || "active"),
+      unavailable,
+      failed: Number(rt.failed) || 0,
       success: ok,
       windowFailed: bad,
       buckets: buckets.length,
       cooldowns,
     };
   });
-  // 每个桶按 10 分钟计，窗口长度由宿主决定（当前 20 桶 ≈ 3.3 小时）
-  const windowMinutes = (accounts[0] && accounts[0].buckets ? accounts[0].buckets : 0) * 10;
+
+  const modelCount = accounts.reduce((n, a) => Math.max(n, a.modelCount), 0);
+  const windowMinutes = accounts.reduce((n, a) => Math.max(n, a.buckets), 0) * 10;
   return {
     accounts,
     total: accounts.length,
     active: accounts.filter(a => !a.unavailable && a.status === "active").length,
     cooling: accounts.reduce((n, a) => n + a.cooldowns.length, 0),
+    modelCount,
     windowMinutes,
   };
 }
