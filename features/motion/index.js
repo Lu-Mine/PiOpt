@@ -60,11 +60,33 @@ async function statePayload() {
   };
 }
 
+// The host namespaces every plugin theme as `plugin:<plugin id>:<theme id>`.
+// This used to be hard-coded to the pre-merge `local.pi-modify`, so once the two
+// plugins became `local.piopt` the id it applied no longer existed and the host
+// answered `unknown theme id`. Ask the theme list what was actually registered
+// instead of rebuilding the host's naming rule.
+async function themeIdForBase(base, pluginId) {
+  const themeId = motion.THEME_IDS[base];
+  const fullId = `plugin:${pluginId}:${themeId}`;
+  let registered = [];
+  try {
+    if (pi.themes && typeof pi.themes.list === "function") registered = await pi.themes.list();
+  } catch {
+    registered = [];
+  }
+  const entries = Array.isArray(registered) ? registered : [];
+  const byId = entries.find((entry) => entry && entry.id === fullId);
+  if (byId) return fullId;
+  const byThemeId = entries.find((entry) => entry && entry.themeId === themeId && entry.pluginId === pluginId);
+  if (byThemeId && typeof byThemeId.id === "string") return byThemeId.id;
+  return fullId;
+}
+
 async function applyConfig(input) {
   const config = await saveConfig(input);
   const appearance = await getAppearance();
   const base = motion.resolveBase(config.mode, appearance);
-  const themeId = `plugin:local.pi-modify:${motion.THEME_IDS[base]}`;
+  const themeId = await themeIdForBase(base, pi.plugin.getId());
   const activeTheme = typeof appearance.pluginTheme === "string"
     ? appearance.pluginTheme
     : appearance.pluginTheme && typeof appearance.pluginTheme.id === "string"
