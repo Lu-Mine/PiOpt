@@ -214,6 +214,33 @@
 
             <section class="glass-panel">
               <div>
+                <div class="glass-field-label">背景图</div>
+                <p class="glass-wallpaper-name" id="glass-wallpaper-name">未选择：玻璃背后是柔光场</p>
+              </div>
+
+              <div class="glass-wallpaper-actions">
+                <button type="button" class="glass-button" id="glass-wallpaper-pick">选择图片…</button>
+                <button type="button" class="glass-button quiet" id="glass-wallpaper-clear">清除</button>
+              </div>
+              <input type="file" id="glass-wallpaper-file" accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/*" hidden />
+
+              <div>
+                <div class="glass-field-label">填充</div>
+                <div class="glass-segmented glass-segmented-two" role="group" aria-label="背景图填充">
+                  <button type="button" data-glass-fit="fill">fill</button>
+                  <button type="button" data-glass-fit="scale-down">scale-down</button>
+                </div>
+                <div class="glass-fit-hint" aria-hidden="true"><small>拉伸填满</small><small>等比完整</small></div>
+              </div>
+
+              <p class="glass-note">
+                选图后会同时开启玻璃：不透明表面会把图片整个挡住。图片按绝对路径引用，
+                宿主在注册主题时把它重写成 <strong>plugin-asset</strong> 资源，单张上限 4 MB。
+              </p>
+            </section>
+
+            <section class="glass-panel glass-panel-wide">
+              <div>
                 <div class="glass-field-label">实时读数</div>
                 <dl class="glass-metrics">
                   <div><dt>模糊半径</dt><dd id="glass-token-blur">28 px</dd></div>
@@ -221,7 +248,8 @@
                   <div><dt>侧栏底色</dt><dd id="glass-token-sidebar">44%</dd></div>
                   <div><dt>标题栏底色</dt><dd id="glass-token-chrome">66%</dd></div>
                   <div><dt>弹层底色</dt><dd id="glass-token-overlay">82%</dd></div>
-                  <div><dt>光场强度</dt><dd id="glass-token-glow">16%</dd></div>
+                  <div><dt>光场强度</dt><dd id="glass-token-glow">22%</dd></div>
+                  <div><dt>内容区底色</dt><dd id="glass-token-canvas">100%</dd></div>
                 </dl>
               </div>
 

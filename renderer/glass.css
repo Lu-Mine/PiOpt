@@ -233,10 +233,33 @@ h1 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; }
 .glass-range-ends { display: flex; justify-content: space-between; color: var(--ui-faint); }
 .glass-range-ends small { font-size: 10px; }
 
+/* The wallpaper card: a filename line, two buttons, then the fit switch. */
+.glass-wallpaper-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.glass-wallpaper-name {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text);
+  font: 12px/1.5 var(--ui-mono);
+}
+.glass-wallpaper-name[data-empty="true"] { color: var(--ui-muted); font-family: inherit; }
+.glass-segmented-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.glass-fit-hint { display: flex; justify-content: space-between; margin-top: 7px; color: var(--ui-faint); }
+.glass-fit-hint small { font-size: 10px; }
+
+/* The readings card spans both columns, so it can afford three across. */
+.glass-panel-wide { grid-column: 1 / -1; }
+
 .glass-metrics {
   margin: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-control);
@@ -297,7 +320,8 @@ h1 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; }
 
 @media (max-width: 820px) {
   .glass-panels { grid-template-columns: minmax(0, 1fr); }
-  .glass-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Two cards plus one full-width card: the reading grid keeps three columns
+     across the wide card, and the panel breakpoint only changes the cards. */
 }
 @media (max-width: 580px) {
   .glass-workspace { padding: 16px 14px; }

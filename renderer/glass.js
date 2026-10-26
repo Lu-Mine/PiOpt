@@ -10,17 +10,24 @@
  * the host document — it writes settings and reads back the token numbers it
  * asked for.
  *
+ * The wallpaper upload is the one place where bytes travel: a renderer cannot
+ * hand over a filesystem path (Electron removed `File.path`), so the image is
+ * read here and posted as base64. The plugin process stores it in its own data
+ * folder and the theme references that absolute path.
+ *
  * Mirrors features/glass/glass.js so the readings render before the process
  * answers, which is also what makes the standalone preview mode usable.
  */
 
 const PRESETS = {
-  light: { blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16 },
-  standard: { blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22 },
-  deep: { blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28 },
+  light: { blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16, canvas: 90 },
+  standard: { blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22, canvas: 84 },
+  deep: { blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28, canvas: 78 },
 };
-const DEFAULT_CONFIG = { enabled: false, preset: "standard", intensity: 1 };
+const DEFAULT_CONFIG = { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" };
 const LIMITS = { intensity: [0.6, 1.6] };
+const WALLPAPER_MAX_BYTES = 4 * 1024 * 1024;
+const WALLPAPER_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "avif", "svg"];
 
 const PRESET_COPY = {
   light: "轻薄：柔和分层，几乎不动对比度",
@@ -62,6 +69,8 @@ function normalizeConfig(input) {
     enabled: source.enabled === true,
     preset,
     intensity: Math.round(clamp(finiteNumber(source.intensity, 1), LIMITS.intensity[0], LIMITS.intensity[1]) * 100) / 100,
+    wallpaper: typeof source.wallpaper === "string" ? source.wallpaper : "",
+    fit: source.fit === "scale-down" ? "scale-down" : "fill",
   };
 }
 
@@ -78,7 +87,22 @@ function localTokens(input) {
     sidebar: firmUp(preset.sidebar),
     chrome: firmUp(preset.chrome),
     overlay: firmUp(preset.overlay),
-    glow: Math.round(clamp(preset.glow * scale, 4, 34)),
+    glow: Math.round(clamp(preset.glow * scale, 8, 46)),
+    canvas: config.wallpaper ? firmUp(preset.canvas) : 100,
+  };
+}
+
+function basename(path) {
+  const parts = String(path ?? "").split(/[\\/]/);
+  return parts[parts.length - 1] || "";
+}
+
+function previewState(patch = {}) {
+  return {
+    config: { ...state.config, ...patch },
+    presets: Object.keys(PRESETS),
+    fits: ["fill", "scale-down"],
+    limits: LIMITS,
   };
 }
 
@@ -86,16 +110,21 @@ async function invoke(channel, payload = {}) {
   if (window.pluginBridge && typeof window.pluginBridge.invoke === "function") {
     return window.pluginBridge.invoke(channel, payload);
   }
-  if (channel === "glass.getState") {
-    return { config: { ...DEFAULT_CONFIG }, presets: Object.keys(PRESETS), limits: LIMITS };
-  }
+  if (channel === "glass.getState") return previewState();
   if (channel === "glass.tokens") {
     const config = normalizeConfig(payload.config);
     return { config, tokens: localTokens(config) };
   }
+  if (channel === "glass.saveWallpaper") {
+    return { ok: false, reason: "preview", message: "独立预览模式不会保存背景图", ...previewState(), applied: false };
+  }
+  if (channel === "glass.clearWallpaper") {
+    state.config = { ...state.config, wallpaper: "" };
+    return { ok: true, ...previewState({ wallpaper: "" }), applied: false };
+  }
   if (channel === "glass.apply" || channel === "glass.reset") {
     const config = channel === "glass.reset" ? { ...DEFAULT_CONFIG } : normalizeConfig(payload.config);
-    return { ok: true, config, applied: false };
+    return { ok: true, config, applied: false, ...previewState(config) };
   }
   throw new Error(`Unknown preview channel: ${channel}`);
 }
@@ -103,6 +132,8 @@ async function invoke(channel, payload = {}) {
 function setBusy(busy) {
   state.busy = busy;
   elements.resetButton.disabled = busy;
+  elements.pickButton.disabled = busy;
+  elements.clearButton.disabled = busy || !state.config.wallpaper;
 }
 
 let toastTimer;
@@ -147,6 +178,7 @@ function renderTokens(tokens) {
   elements.tokenChrome.textContent = `${tokens.chrome}%`;
   elements.tokenOverlay.textContent = `${tokens.overlay}%`;
   elements.tokenGlow.textContent = `${tokens.glow}%`;
+  if (elements.tokenCanvas) elements.tokenCanvas.textContent = `${tokens.canvas}%`;
 }
 
 function renderConfig() {
@@ -156,10 +188,19 @@ function renderConfig() {
   document.querySelectorAll("[data-glass-preset]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.glassPreset === config.preset));
   });
+  document.querySelectorAll("[data-glass-fit]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.glassFit === config.fit));
+  });
   elements.intensity.value = String(Math.round(config.intensity * 100));
   elements.intensityValue.textContent = `${Math.round(config.intensity * 100)}%`;
   paintRange(elements.intensity);
   elements.summary.textContent = config.enabled ? (PRESET_COPY[config.preset] || PRESET_COPY.standard) : OFF_COPY;
+
+  const name = basename(config.wallpaper);
+  elements.wallpaperName.textContent = name || "未选择：玻璃背后是柔光场";
+  elements.wallpaperName.dataset.empty = String(!name);
+  elements.wallpaperName.title = config.wallpaper || "";
+  elements.clearButton.disabled = state.busy || !name;
 }
 
 // Last writer wins, exactly like the motion view: dragging the slider fires on
@@ -219,6 +260,80 @@ function flushSync(version) {
   return state.syncPromise;
 }
 
+// ---------------------------------------------------------------- wallpaper
+
+function readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadWallpaper(file) {
+  if (state.busy) return;
+  const extension = (/\.([A-Za-z0-9]+)$/.exec(file.name)?.[1] ?? "").toLowerCase();
+  if (!WALLPAPER_EXTENSIONS.includes(extension)) {
+    toast(`只支持 ${WALLPAPER_EXTENSIONS.join(" / ")} 图片`, true);
+    return;
+  }
+  if (file.size > WALLPAPER_MAX_BYTES) {
+    toast(`图片超过 ${Math.round(WALLPAPER_MAX_BYTES / 1024 / 1024)} MB`, true);
+    return;
+  }
+
+  setBusy(true);
+  setSyncState("pending", "正在导入背景图");
+  try {
+    const data = await readAsBase64(file);
+    const result = await invoke("glass.saveWallpaper", { name: file.name, data });
+    if (result && result.config) state.config = normalizeConfig(result.config);
+    renderConfig();
+    await refreshTokens();
+    if (result && result.ok === false) {
+      setSyncState("error");
+      toast(result.message || "这个文件不能用作背景图", true);
+      return;
+    }
+    markDirty(false);
+    toast(`已应用背景图：${file.name}`);
+  } catch (error) {
+    setSyncState("error");
+    toast(error.message || "无法导入背景图", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function pickWallpaper() {
+  if (state.busy) return;
+  elements.fileInput.value = "";
+  elements.fileInput.click();
+}
+
+async function clearWallpaper() {
+  if (state.busy || !state.config.wallpaper) return;
+  setBusy(true);
+  try {
+    const result = await invoke("glass.clearWallpaper");
+    if (result && result.config) state.config = normalizeConfig(result.config);
+    renderConfig();
+    await refreshTokens();
+    markDirty(false);
+    toast("已清除背景图");
+  } catch (error) {
+    setSyncState("error");
+    toast(error.message || "无法清除背景图", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function resetConfig() {
   if (state.busy) return;
   state.config = { ...DEFAULT_CONFIG };
@@ -245,14 +360,23 @@ function bindEvents() {
   document.querySelectorAll("[data-glass-preset]").forEach((button) => {
     button.addEventListener("click", () => setConfig({ preset: button.dataset.glassPreset }, 0));
   });
+  document.querySelectorAll("[data-glass-fit]").forEach((button) => {
+    button.addEventListener("click", () => setConfig({ fit: button.dataset.glassFit }, 0));
+  });
   elements.intensity.addEventListener("input", () => {
     paintRange(elements.intensity);
     setConfig({ intensity: Number(elements.intensity.value) / 100 });
   });
+  elements.pickButton.addEventListener("click", pickWallpaper);
+  elements.fileInput.addEventListener("change", () => {
+    const file = elements.fileInput.files && elements.fileInput.files[0];
+    if (file) void uploadWallpaper(file);
+  });
+  elements.clearButton.addEventListener("click", clearWallpaper);
   elements.resetButton.addEventListener("click", resetConfig);
-  // Kept for symmetry with the motion view: the readings do not depend on the
-  // OS motion preference, but a listener keeps the two panels consistent.
-  const onReducedChange = () => { /* no token depends on reduced motion */ };
+  // Kept for symmetry with the motion view: no token depends on the OS motion
+  // preference, but a listener keeps the two panels consistent.
+  const onReducedChange = () => { /* nothing to recompute */ };
   if (typeof reducedQuery.addEventListener === "function") reducedQuery.addEventListener("change", onReducedChange);
   else if (typeof reducedQuery.addListener === "function") reducedQuery.addListener(onReducedChange);
 }
@@ -265,12 +389,17 @@ async function initialize() {
     toggle: byId("glass-toggle"),
     intensity: byId("glass-intensity"),
     intensityValue: byId("glass-intensity-value"),
+    wallpaperName: byId("glass-wallpaper-name"),
+    pickButton: byId("glass-wallpaper-pick"),
+    clearButton: byId("glass-wallpaper-clear"),
+    fileInput: byId("glass-wallpaper-file"),
     tokenBlur: byId("glass-token-blur"),
     tokenStrong: byId("glass-token-strong"),
     tokenSidebar: byId("glass-token-sidebar"),
     tokenChrome: byId("glass-token-chrome"),
     tokenOverlay: byId("glass-token-overlay"),
     tokenGlow: byId("glass-token-glow"),
+    tokenCanvas: byId("glass-token-canvas"),
     resetButton: byId("glass-reset"),
     toast: byId("glass-toast"),
   });

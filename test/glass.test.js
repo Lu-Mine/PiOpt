@@ -12,6 +12,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const os = require("node:os");
 
 const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -55,7 +56,7 @@ function loadFeature() {
 
 test("glass is off by default, so nothing is injected until it is asked for", () => {
   const config = glass.normalizeGlassConfig(undefined);
-  assert.deepEqual(config, { enabled: false, preset: "standard", intensity: 1 });
+  assert.deepEqual(config, { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" });
   assert.equal(glass.buildGlassCss(config), "");
   assert.equal(glass.buildGlassCss(undefined), "");
 });
@@ -181,9 +182,9 @@ test("apply writes the setting and asks the theme to re-register", async () => {
     });
     assert.equal(result.ok, true);
     assert.equal(result.applied, true);
-    assert.deepEqual(host.store[glass.SETTINGS_KEY], { enabled: true, preset: "deep", intensity: 1.4 });
+    assert.deepEqual(host.store[glass.SETTINGS_KEY], { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill" });
     assert.equal(refreshed, 1);
-    assert.deepEqual(result.config, { enabled: true, preset: "deep", intensity: 1.4 });
+    assert.deepEqual(result.config, { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill" });
   } finally {
     delete global.pi;
   }
@@ -208,7 +209,7 @@ test("reads the stored setting instead of trusting the panel", async () => {
   const feature = loadFeature();
   try {
     const state = await feature.onPanelInvoke("glass.getState", {});
-    assert.deepEqual(state.config, { enabled: true, preset: "light", intensity: 0.8 });
+    assert.deepEqual(state.config, { enabled: true, preset: "light", intensity: 0.8, wallpaper: "", fit: "fill" });
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
   } finally {
     delete global.pi;
@@ -221,7 +222,7 @@ test("reset returns to the shipped default, which is off", async () => {
   const feature = loadFeature();
   try {
     const result = await feature.onPanelInvoke("glass.reset", {});
-    assert.deepEqual(result.config, { enabled: false, preset: "standard", intensity: 1 });
+    assert.deepEqual(result.config, { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" });
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, false);
   } finally {
     delete global.pi;
@@ -271,8 +272,8 @@ test("the panel mirrors the process model so preview mode is honest", () => {
     assert.ok(panel.includes(`${preset}: { blur:`), preset);
     assert.ok(feature.includes(`${preset}: Object.freeze({ blur:`), preset);
   }
-  assert.match(panel, /const DEFAULT_CONFIG = \{ enabled: false, preset: "standard", intensity: 1 \};/);
-  assert.match(feature, /enabled: false,\n  preset: "standard",\n  intensity: 1,/);
+  assert.match(panel, /const DEFAULT_CONFIG = \{ enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" \};/);
+  assert.match(feature, /enabled: false,\n  preset: "standard",\n  intensity: 1,\n  wallpaper: "",\n  fit: "fill",/);
 });
 
 test("the glass view stylesheet targets the classes its own markup uses", () => {
@@ -300,5 +301,227 @@ test("the glass view stylesheet targets the classes its own markup uses", () => 
       new RegExp(`\\.${name}\\s*(?:,[^{}]*)?\\{`),
       `renderer/glass.css must style .${name}`
     );
+  }
+});
+
+// ----------------------------------------------------------------- wallpaper
+
+/** A real file, because the feature stats it: a fake path would only test the
+ *  string parser twice. */
+function tempWallpaper(name = "wall.png") {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-glass-"));
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  process.on("exit", () => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* the temp folder is disposable either way */
+    }
+  });
+  return file;
+}
+
+test("a wallpaper must be an absolute path with an allowed extension", () => {
+  assert.equal(glass.isSupportedWallpaper("C:/x/y.png"), true);
+  assert.equal(glass.isSupportedWallpaper("/home/a/b.webp"), true);
+  assert.equal(glass.isSupportedWallpaper("/home/a/b.SVG"), true);
+  assert.equal(glass.isSupportedWallpaper("relative.png"), false);
+  assert.equal(glass.isSupportedWallpaper("C:/x/y.gif"), false);
+  assert.equal(glass.isSupportedWallpaper("C:/x/y"), false);
+  assert.equal(glass.isSupportedWallpaper("C:/x/../y.png"), false);
+  assert.equal(glass.isSupportedWallpaper(""), false);
+  assert.equal(glass.isSupportedWallpaper(null), false);
+});
+
+test("the css reference uses forward slashes, because a backslash escapes", () => {
+  const bs = String.fromCharCode(92);
+  assert.equal(glass.wallpaperCssUrl(`C:${bs}Pictures${bs}a b.png`), "C:/Pictures/a b.png");
+  assert.equal(glass.wallpaperCssUrl("C:/x/y.png"), "C:/x/y.png");
+  assert.equal(glass.wallpaperCssUrl("nope.png"), "");
+});
+
+test("a wallpaper replaces the light field and thins the content pane", () => {
+  const plain = glass.buildGlassCss({ enabled: true });
+  const photo = glass.buildGlassCss({ enabled: true, wallpaper: "/pictures/shot.png" });
+
+  assert.ok(plain.includes("radial-gradient("), "no wallpaper keeps the light field");
+  assert.equal(photo.includes("radial-gradient("), false, "a photo carries its own detail");
+  assert.ok(photo.includes('background-image:url("/pictures/shot.png")'));
+  assert.match(plain, /--pg-canvas-alpha:100%/);
+  assert.match(photo, /--pg-canvas-alpha:84%/);
+  assert.ok(plain.includes(".main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}"));
+});
+
+test("fill stretches the photo and scale-down keeps all of it", () => {
+  const fill = glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "fill" });
+  const contain = glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "scale-down" });
+  assert.ok(fill.includes("background-size:100% 100%"));
+  assert.equal(fill.includes("background-position:center"), false);
+  assert.ok(contain.includes("background-size:contain"));
+  assert.ok(contain.includes("background-position:center"));
+  assert.ok(contain.includes("background-repeat:no-repeat"));
+  const unknown = glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "cover" });
+  assert.ok(unknown.includes("background-size:100% 100%"));
+});
+
+test("picking a wallpaper stores it and turns glass on", async () => {
+  const file = tempWallpaper();
+  const host = makePi();
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const result = await feature.onPanelInvoke("glass.setWallpaper", { path: file });
+    assert.equal(result.ok, true);
+    assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, file);
+    // An image behind opaque surfaces shows nothing, so the pick enables glass.
+    assert.equal(host.store[glass.SETTINGS_KEY].enabled, true);
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("a missing or unsupported wallpaper is refused, not stored", async () => {
+  const host = makePi();
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const missing = await feature.onPanelInvoke("glass.setWallpaper", { path: "/nope/none.png" });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.reason, "missing");
+    assert.match(missing.message, /找不到/);
+
+    const wrong = await feature.onPanelInvoke("glass.setWallpaper", { path: "/nope/none.exe" });
+    assert.equal(wrong.ok, false);
+    assert.equal(wrong.reason, "unsupported");
+
+    assert.equal(host.store[glass.SETTINGS_KEY], undefined);
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("a whole-config write cannot drop the wallpaper", async () => {
+  const file = tempWallpaper("keep.png");
+  const host = makePi({
+    [glass.SETTINGS_KEY]: { enabled: true, wallpaper: file, preset: "deep", intensity: 1.2, fit: "fill" },
+  });
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    await feature.onLoad();
+    // The panel sends the config it rendered, where the wallpaper is whatever it
+    // last saw; the process stays the authority on it.
+    await feature.onPanelInvoke("glass.apply", {
+      config: { preset: "light", intensity: 1, wallpaper: "", fit: "scale-down" },
+    });
+    const stored = host.store[glass.SETTINGS_KEY];
+    assert.equal(stored.wallpaper, file);
+    assert.equal(stored.preset, "light");
+    assert.equal(stored.fit, "scale-down");
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("clearing the wallpaper keeps every other setting", async () => {
+  const file = tempWallpaper("clear.png");
+  const host = makePi({
+    [glass.SETTINGS_KEY]: { enabled: true, wallpaper: file, preset: "deep", intensity: 1.3, fit: "scale-down" },
+  });
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    await feature.onLoad();
+    const result = await feature.onPanelInvoke("glass.clearWallpaper", {});
+    assert.equal(result.config.wallpaper, "");
+    assert.equal(result.config.enabled, true);
+    assert.equal(result.config.preset, "deep");
+    assert.equal(result.config.fit, "scale-down");
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("a wallpaper that vanished is dropped on load instead of breaking the theme", async () => {
+  const host = makePi({
+    [glass.SETTINGS_KEY]: { enabled: true, wallpaper: "/gone/missing.png", preset: "standard", intensity: 1, fit: "fill" },
+  });
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    await feature.onLoad();
+    // A stale reference makes `themes.upsert` fail outright, which would take
+    // the motion layer down with it.
+    assert.equal(feature.getConfig().wallpaper, "");
+    assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, "");
+    assert.equal(host.store[glass.SETTINGS_KEY].enabled, true);
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("the panel gets the values it renders the controls from", async () => {
+  const host = makePi();
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const state = await feature.onPanelInvoke("glass.getState", {});
+    assert.deepEqual(state.presets, ["light", "standard", "deep"]);
+    assert.deepEqual(state.fits, ["fill", "scale-down"]);
+    assert.deepEqual(state.limits.intensity, [0.6, 1.6]);
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("an uploaded image is written into the plugin data folder and adopted", async () => {
+  const host = makePi();
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-data-"));
+  host.pi.plugin.getDataPath = async () => dataDir;
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+    const result = await feature.onPanelInvoke("glass.saveWallpaper", {
+      name: "My Photo.PNG",
+      data: bytes.toString("base64"),
+    });
+    assert.equal(result.ok, true);
+    const stored = host.store[glass.SETTINGS_KEY];
+    assert.equal(path.basename(stored.wallpaper), "wallpaper.png");
+    assert.equal(stored.enabled, true);
+    assert.deepEqual(fs.readFileSync(stored.wallpaper), bytes);
+  } finally {
+    delete global.pi;
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("an upload of the wrong type or an oversized one is refused", async () => {
+  const host = makePi();
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-data-"));
+  host.pi.plugin.getDataPath = async () => dataDir;
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const wrong = await feature.onPanelInvoke("glass.saveWallpaper", {
+      name: "photo.bmp",
+      data: Buffer.from([1, 2, 3]).toString("base64"),
+    });
+    assert.equal(wrong.ok, false);
+    assert.equal(wrong.reason, "unsupported");
+
+    const empty = await feature.onPanelInvoke("glass.saveWallpaper", { name: "photo.png", data: "" });
+    assert.equal(empty.ok, false);
+    assert.equal(empty.reason, "unreadable");
+
+    assert.deepEqual(fs.readdirSync(dataDir), []);
+    assert.equal(host.store[glass.SETTINGS_KEY], undefined);
+  } finally {
+    delete global.pi;
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
