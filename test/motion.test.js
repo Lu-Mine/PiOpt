@@ -83,6 +83,27 @@ test("generated CSS stays within host safety and performance boundaries", () => 
   assert.doesNotMatch(css, /will-change/i);
 });
 
+test("entrances hand the element back instead of pinning a transform", () => {
+  const css = buildThemeCss(DEFAULT_CONFIG, "dark");
+  // `both` keeps the final keyframe, and its transform then stays on the element
+  // forever. That turns the element into the containing block for the host's
+  // position:fixed popups, so its context menu and sidebar submenu land in the
+  // wrong place. In a Chromium check the submenu moved from (300,100) to (400,200).
+  const entrances = css
+    .split("\n")
+    .filter((line) => /animation:pm-/.test(line) && !/infinite/.test(line));
+  assert.ok(entrances.length > 0, "expected entrance rules");
+  for (const line of entrances) assert.match(line, / backwards\b/, line);
+
+  // The shell and every floating layer fade only: a transform on their ancestor
+  // re-anchors fixed children even while the animation plays.
+  assert.match(css, /\.app-shell\{animation:pm-fade-in /);
+  assert.match(css, /:is\(\[role=menu\][^{]*\)\{animation:pm-fade-in /);
+  assert.doesNotMatch(css, /\[role=menu\][^}]*transform/);
+  // A menu item must not shift under the pointer of the submenu it opens.
+  assert.match(css, /:not\(\[role=menuitem\]\)\{transform:translateY\(1px\)\}/);
+});
+
 test("preview CSS scopes tokens to the preview stage", () => {
   const css = buildPreviewCss(DEFAULT_CONFIG);
   assert.match(css, /^#motion-preview\{/);

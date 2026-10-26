@@ -122,32 +122,41 @@ function buildThemeCss(input = {}, base = "dark") {
    dirties the whole document. This keeps the cross-fade on a handful of solid
    surfaces, which is what the eye actually reads as the theme changing. */
 :is(.app-shell,.main-pane,.chat-surface,.sidebar-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard)}
-:is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) both;transform-origin:center}
-:is(.message-row,.message-item,.assistant-message,.user-message):last-child{animation:pm-message-in var(--pm-base) var(--pm-ease-out) both}
-.app-shell{animation:pm-surface-in var(--pm-base) var(--pm-ease-out) both}
-:is(.main-pane,.chat-surface,.settings-content,[role=tabpanel]){animation:pm-content-in var(--pm-base) var(--pm-ease-out) both}
+/* Every entrance uses backwards, never both. Both keeps the final keyframe, and
+   our final keyframe carries transform: translateY(0) scale(1); that leaves a
+   transform on the element forever, which makes the host's position: fixed
+   popups (its context menu, its sidebar submenu) resolve against us instead of
+   the viewport and land in the wrong place. A vanishing submenu was exactly
+   this. Backwards applies the first frame before the animation starts and then
+   hands the element back untouched.
+
+   For the same reason the shell and every floating layer animate opacity only:
+   a transform on their ancestor, even while it plays, re-anchors fixed children. */
+:is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) backwards;transform-origin:center}
+:is(.message-row,.message-item,.assistant-message,.user-message):last-child{animation:pm-message-in var(--pm-base) var(--pm-ease-out) backwards}
+.app-shell{animation:pm-fade-in var(--pm-base) var(--pm-ease-out) backwards}
+:is(.main-pane,.chat-surface,.settings-content){animation:pm-content-in var(--pm-base) var(--pm-ease-out) backwards}
 :is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab]){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
-:is(.tool-result,.thinking-content,[data-state=open]>.collapsible-content){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) both}
+:is(.tool-result,.thinking-content,[data-state=open]>.collapsible-content){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) backwards}
 :is(button,[role=button],input,textarea,select){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard),transform var(--pm-instant) var(--pm-ease-out)}
-:is(button,[role=button]):active:not(:disabled){transform:translateY(1px)}
+/* Menu items are excluded: nudging one by a pixel while a submenu is open from
+   it moves the trigger out from under the pointer. */
+:is(button,[role=button]):active:not(:disabled):not([role=menuitem]){transform:translateY(1px)}
 :is(input,textarea,select):focus-visible{transition-duration:var(--pm-fast)}
-:is([role=tooltip],.tooltip-content){animation:pm-tooltip-in var(--pm-fast) var(--pm-ease-out) both}
-:is([role=menu],.popover-content,.dropdown-content,[data-radix-popper-content-wrapper]>div){animation:pm-popover-in var(--pm-base) var(--pm-ease-out) both;transform-origin:var(--radix-popover-content-transform-origin,top center)}
-:is([role=dialog],.dialog-content,.modal-content){animation:pm-dialog-in var(--pm-slow) var(--pm-ease-out) both}
-:is(.dialog-overlay,.modal-overlay,[data-overlay]){animation:pm-fade-in var(--pm-base) var(--pm-ease-standard) both}
-:is(.work-panel,.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) both}
-:is([data-side=left],.drawer-left){animation:pm-panel-left-in var(--pm-slow) var(--pm-ease-out) both}
-:is(.error-message,[role=alert][data-severity=error]){animation:pm-error-nudge var(--pm-fast) var(--pm-ease-out) both}
+:is([role=tooltip],.tooltip-content){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) backwards}
+:is([role=menu],.popover-content,.dropdown-content,[data-radix-popper-content-wrapper]>div){animation:pm-fade-in var(--pm-base) var(--pm-ease-out) backwards}
+:is([role=dialog],.dialog-content,.modal-content){animation:pm-dialog-in var(--pm-slow) var(--pm-ease-out) backwards}
+:is(.dialog-overlay,.modal-overlay,[data-overlay]){animation:pm-fade-in var(--pm-base) var(--pm-ease-standard) backwards}
+:is(.work-panel,.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) backwards}
+:is([data-side=left],.drawer-left){animation:pm-panel-left-in var(--pm-slow) var(--pm-ease-out) backwards}
+:is(.error-message,[role=alert][data-severity=error]){animation:pm-error-nudge var(--pm-fast) var(--pm-ease-out) backwards}
 ${spinRule}
 ${pulseRule}
 .skeleton::after{animation:${tokens.continuous ? "pm-shimmer 1600ms ease-in-out infinite" : "none"}}
-@keyframes pm-surface-in{from{opacity:0;transform:translateY(var(--pm-distance-sm))}to{opacity:1;transform:translateY(0)}}
 @keyframes pm-content-in{from{opacity:0;transform:translateX(var(--pm-distance-md))}to{opacity:1;transform:translateX(0)}}
 @keyframes pm-message-in{from{opacity:0;transform:translateY(var(--pm-distance-md))}to{opacity:1;transform:translateY(0)}}
 @keyframes pm-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes pm-indicator-in{from{opacity:0;transform:scaleY(.45)}to{opacity:1;transform:scaleY(1)}}
-@keyframes pm-tooltip-in{from{opacity:0;transform:translateY(calc(var(--pm-distance-sm) * .66))}to{opacity:1;transform:translateY(0)}}
-@keyframes pm-popover-in{from{opacity:0;transform:translateY(var(--pm-distance-sm)) scale(var(--pm-scale-from))}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes pm-dialog-in{from{opacity:0;transform:translateY(var(--pm-distance-md)) scale(var(--pm-scale-from))}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes pm-panel-right-in{from{opacity:0;transform:translateX(var(--pm-distance-panel))}to{opacity:1;transform:translateX(0)}}
 @keyframes pm-panel-left-in{from{opacity:0;transform:translateX(calc(var(--pm-distance-panel) * -1))}to{opacity:1;transform:translateX(0)}}

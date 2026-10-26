@@ -38,6 +38,8 @@ data/local.piopt/downloads/<id>-<version>.piplug
 | 位移 | 3 / 7 px | 小内容 / 消息与弹层 |
 | 弹层缩放 | 0.985 → 1 | 建立层级，不弹跳 |
 
+入场动画统一用 `animation-fill-mode: backwards`，**不用 `both`**：`both` 会保留最终帧，而最终帧里的 `transform` 会永久留在元素上，让宿主的 `position: fixed` 浮层（右键菜单、侧栏二级菜单）改以它为参照，位置就错了。因此根容器 `.app-shell` 与所有浮层（`[role="menu"]`、tooltip、popover）只做透明度淡入，不做位移；菜单项（`[role="menuitem"]`）也不参与“按下去 1px”。
+
 四套预设：
 
 - **敏捷**：时长约为基准的 0.78 倍，位移 0.8 倍。
