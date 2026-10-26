@@ -121,16 +121,28 @@ PiOpt/
 
 两个功能互不调用：面板通道按 `market.` / `motion.` 前缀分发，各自的设置、状态与失败处理相互独立。
 
-## 开发
+## 开发（免打包热重载）
 
-在 PI-Desktop 的 Plugins 页选择 **Load development plugin**，指向本目录。首次增加 `ui.theme` 权限后需要显式重新加载，普通代码修改会热重载。
+改代码不需要 `.piplug`。PI-Desktop 的 **Plugins → Load development plugin** 会直接从目录加载并监听改动：
+
+1. 在 Plugins 页点 **Load development plugin**，选择本目录 `E:\AgentProjects\PiOpt`。
+2. 之后保存任何文件，宿主自动重载插件，不需要重新打包、也不需要重新安装。
+3. 只有 `manifest.json` 的 `permissions`（或 `manifest.fs` 范围）变化时才需要显式重新加载一次——这是宿主的授权设计，不是缓存问题。
+
+注意：
+
+- 开发期间请**禁用**已安装的 `local.pimarket` 与 `local.pi-modify`。PiOpt 复用了 `pimarket.open`、`pi-modify.open` 等命令 id，同时启用会出现重复命令，插件列表里也会多出一套旧的 Motion Lab 主题。
+- 面板是独立窗口，保存文件触发的重载会关闭当前面板，重新打开即可。
+- 纯界面迭代可以先用浏览器打开 `renderer/index.html` 看布局：没有宿主 bridge 时会自动进入独立预览模式。
+
+校验与测试：
 
 ```bash
-node --test test/            # 结构与动效模型测试
+node --test test/*.test.js
 node --check main.js
 ```
 
-打包必须由 PI-Desktop 的 `PluginPack` 生成；`.piplug` 是 store-only zip，不应使用普通 zip/tar 代替。
+只有要发布或交给别人安装时才打包，且必须由 PI-Desktop 的 `PluginPack` 生成（`.piplug` 是 store-only zip，不能用普通 zip/tar 代替）。
 
 ## 迁移说明
 
