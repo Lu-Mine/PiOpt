@@ -6,7 +6,6 @@ const {
   CSS_LIMIT_BYTES,
   DEFAULT_CONFIG,
   PRESETS,
-  buildPreviewCss,
   buildThemeCss,
   motionTokens,
   normalizeConfig,
@@ -104,11 +103,6 @@ test("entrances hand the element back instead of pinning a transform", () => {
   assert.match(css, /:not\(\[role=menuitem\]\)\{transform:translateY\(1px\)\}/);
 });
 
-test("preview CSS scopes tokens to the preview stage", () => {
-  const css = buildPreviewCss(DEFAULT_CONFIG);
-  assert.match(css, /^#motion-preview\{/);
-  assert.match(css, /--pm-base:190ms/);
-});
 
 test("resolves automatic base from host appearance", () => {
   assert.equal(resolveBase("light", { base: "dark" }), "light");

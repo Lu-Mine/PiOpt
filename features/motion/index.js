@@ -225,9 +225,9 @@ async function onPanelInvoke(channel, payload = {}) {
     case "motion.getState":
       currentConfig = await readConfig();
       return statePayload(payload.hints ?? {});
-    case "motion.previewCss": {
+    case "motion.tokens": {
       const config = motion.normalizeConfig(payload.config);
-      return { config, css: motion.buildPreviewCss(config), tokens: motion.motionTokens(config) };
+      return { config, tokens: motion.motionTokens(config) };
     }
     case "motion.save":
       return { ok: true, config: await applyConfig(payload.config, payload.hints ?? {}) };

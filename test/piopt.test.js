@@ -42,7 +42,7 @@ test("host routes panel channels to the owning feature", () => {
   const entry = require("../main.js");
   assert.equal(entry._featureFor("market.snapshot"), entry._features.market);
   assert.equal(entry._featureFor("motion.apply"), entry._features.motion);
-  assert.equal(entry._featureFor("motion.previewCss"), entry._features.motion);
+  assert.equal(entry._featureFor("motion.tokens"), entry._features.motion);
   assert.equal(entry._featureFor("unknown.channel"), null);
   assert.equal(entry._featureFor(undefined), null);
 });

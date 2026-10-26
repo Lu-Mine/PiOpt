@@ -177,11 +177,6 @@ ${pulseRule}
   return css;
 }
 
-function buildPreviewCss(input = {}) {
-  const tokens = motionTokens(input);
-  return `#motion-preview{${tokenDeclarations(tokens)}}`;
-}
-
 // `theme` is the user's own choice in the host: "system", "light", "dark", or one
 // of our own theme ids. Once a plugin theme is selected the host reports that
 // theme's base as `appearance.base`, so "auto" cannot read the user's intent
@@ -214,7 +209,6 @@ module.exports = {
   THEME_ID,
   LEGACY_THEME_IDS,
   preferenceFrom,
-  buildPreviewCss,
   buildThemeCss,
   motionTokens,
   normalizeConfig,
