@@ -55,17 +55,28 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+/* Mirrors features/motion/motion.js. Kept at module scope because the ruler in
+   renderTokens needs the same durationScale to size its span. */
+const PRESETS = {
+  agile: { durationScale: 0.78, motionScale: 0.8 },
+  balanced: { durationScale: 1, motionScale: 1 },
+  gentle: { durationScale: 1.18, motionScale: 1 },
+  reduced: { durationScale: 0.48, motionScale: 0 },
+};
+// The slowest and fastest the speed slider reaches; keep in step with the
+// min/max on #speed in index.html.
+const SPEED_MIN = 0.6;
+const SPEED_MAX = 1.6;
+const INTENSITY_MIN = 0.5;
+const INTENSITY_MAX = 1.5;
+// Full width of the duration ruler: the slowest token reachable (gentle at 0.60x).
+const RULER_MAX_MS = (260 * 1.18) / SPEED_MIN;
+
 function localTokens(config) {
-  const presets = {
-    agile: { durationScale: 0.78, motionScale: 0.8 },
-    balanced: { durationScale: 1, motionScale: 1 },
-    gentle: { durationScale: 1.18, motionScale: 1 },
-    reduced: { durationScale: 0.48, motionScale: 0 },
-  };
-  const preset = presets[config.preset] || presets.balanced;
+  const preset = PRESETS[config.preset] || PRESETS.balanced;
   const reduced = config.preset === "reduced" || (config.followReducedMotion && reducedQuery.matches);
-  const durationFactor = (reduced ? 0.48 : preset.durationScale) / clamp(config.speed, 0.65, 1.4);
-  const distanceFactor = reduced ? 0 : preset.motionScale * clamp(config.intensity, 0.5, 1.25);
+  const durationFactor = (reduced ? 0.48 : preset.durationScale) / clamp(config.speed, SPEED_MIN, SPEED_MAX);
+  const distanceFactor = reduced ? 0 : preset.motionScale * clamp(config.intensity, INTENSITY_MIN, INTENSITY_MAX);
   return {
     instant: Math.round((reduced ? 70 : 80) * durationFactor),
     fast: Math.round((reduced ? 80 : 130) * durationFactor),
@@ -231,7 +242,10 @@ function renderTokens(tokens) {
   elements.tokenSlow.textContent = `${tokens.slow} ms`;
   elements.tokenDistance.textContent = `${tokens.distanceMd} px`;
   elements.tokenScale.textContent = String(tokens.scaleFrom);
-  const indicator = clamp(tokens.slow / 360, 0, 1) * 100;
+  // The ruler's full width is the slowest slow-token anything can reach
+  // (gentle, 0.60x: 260 * 1.18 / 0.6 = 511ms), so the marker stays comparable
+  // across presets and keeps its whole travel now that the slider opens to 0.60x.
+  const indicator = clamp(tokens.slow / RULER_MAX_MS, 0, 1) * 100;
   elements.rulerIndicator.style.left = `${indicator}%`;
 }
 

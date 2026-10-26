@@ -43,8 +43,8 @@ function normalizeConfig(input = {}) {
 
   return {
     preset,
-    intensity: Math.round(clamp(finiteNumber(input.intensity, 1), 0.5, 1.25) * 100) / 100,
-    speed: Math.round(clamp(finiteNumber(input.speed, 1), 0.65, 1.4) * 100) / 100,
+    intensity: Math.round(clamp(finiteNumber(input.intensity, 1), 0.5, 1.5) * 100) / 100,
+    speed: Math.round(clamp(finiteNumber(input.speed, 1), 0.6, 1.6) * 100) / 100,
     followReducedMotion: input.followReducedMotion !== false,
     mode,
   };

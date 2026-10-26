@@ -20,8 +20,8 @@ test("exposes the four approved presets", () => {
 test("normalizes invalid values and clamps numeric ranges", () => {
   assert.deepEqual(normalizeConfig({ preset: "unknown", mode: "neon", intensity: 9, speed: 0 }), {
     ...DEFAULT_CONFIG,
-    intensity: 1.25,
-    speed: 0.65,
+    intensity: 1.5,
+    speed: 0.6,
   });
   assert.equal(normalizeConfig({ intensity: "0.51", speed: "1.39", followReducedMotion: false }).intensity, 0.51);
   assert.equal(normalizeConfig({ followReducedMotion: false }).followReducedMotion, false);
