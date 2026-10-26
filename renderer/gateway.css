@@ -621,3 +621,12 @@
   border-top: 1px dashed var(--ds-border-subtle);
   margin-top: 2px;
 }
+
+/* 出海通道状态行 */
+.gw-egress-ok {
+  color: var(--ds-success);
+}
+
+.gw-egress-off {
+  color: var(--ds-warning);
+}

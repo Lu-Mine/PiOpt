@@ -21,6 +21,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const egress = require("./egress.js");
 
 const GATEWAY_DIR = "C:/Users/Avencess/ai-gateway";
 const BIN = path.join(GATEWAY_DIR, "bin", "ai-gateway-mcp.exe");
@@ -113,7 +114,9 @@ function statusPayload() {
     components: {
       workbuddy: { port: 8788, ready: Boolean(ports.workbuddy) },
       gateway: { port: 8317, ready: Boolean(ports.gateway) },
+      egress: { port: egress.EGRESS_PORT, ready: Boolean(ports.mihomo) },
     },
+    egress: egress.readStatus(),
     lastError: lastError || null,
     logTail: tail.split("\n").slice(-12),
   };
@@ -166,6 +169,15 @@ const tools = {
 };
 
 async function onLoad() {
+  // 出海通道：先定好出口再拉网关，gateway 起来时就带着 proxy-url
+  try {
+    // 启动阶段不做连通性探测：探测要十几秒，会超出插件加载时限导致重载循环。
+    // 能否真穿出去交给面板「重新检测」核实；节点失效只影响 Antigravity，
+    // 规则里的 MATCH,DIRECT 保证国内链路照常直连。
+    await egress.prepare({ skipProbe: true });
+  } catch (error) {
+    lastError = `出海通道: ${error && error.message ? error.message : error}`;
+  }
   startSupervisor();
   for (const name of TOOL_NAMES) {
     try {
@@ -590,6 +602,13 @@ function onPanelInvoke(channel, payload = {}) {
       return parseCredits();
     case "gateway.quota":
       return readQuota();
+    case "gateway.egress":
+      return egress.readStatus();
+    // 完整复检：真起一次内核确认能穿出去，代价是十几秒
+    case "gateway.egressProbe":
+      return egress.prepare({ skipProbe: false }).then(status => ({ status, restartNeeded: true }));
+    case "gateway.egressOff":
+      return { status: egress.disable(), restartNeeded: true };
     case "gateway.runCredits":
       return triggerCredits();
     case "gateway.restart": {

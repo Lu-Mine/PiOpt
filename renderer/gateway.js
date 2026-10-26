@@ -17,6 +17,7 @@
     runningCredits: false,
     error: "",
     flash: "",
+    egressBusy: false,
   };
 
   const T = {
@@ -219,7 +220,22 @@
     const d = state.data || {};
     const ag = d.antigravity || {};
     const list = ag.accounts || [];
-    const box = card("Antigravity 配额", { wide: true, badge: list.length });
+    const eg = (state.status && state.status.egress) || {};
+
+    const btn = el("button", "gw-btn", state.egressBusy ? "检测中…" : "重新检测");
+    btn.type = "button";
+    btn.disabled = Boolean(state.egressBusy);
+    btn.addEventListener("click", rerunEgress);
+
+    const box = card("Antigravity 配额", { wide: true, badge: list.length, action: btn });
+
+    // 出海通道：告诉用户 Google 流量是怎么出去的
+    const line = el("p", "gw-hint" + (eg.ok ? " gw-egress-ok" : " gw-egress-off"));
+    line.textContent = eg.ok
+      ? `出海通道已就绪：经本机内核「${eg.dialer || "自动选择"}」出 Google 域，其余流量直连（本地 ${eg.port}）。`
+      : `出海通道未启用：${eg.reason || "尚未检测"}。Antigravity 需要外部网络可达。`;
+    box.append(line);
+
     if (!list.length) {
       box.append(el("p", "gw-hint", "没有 Antigravity 账号"));
       return box;
@@ -523,6 +539,27 @@
       state.runningCredits = false;
       render();
     }, 22000);
+  }
+  // 完整复检出海通道：真起一次内核确认能穿出去
+  async function rerunEgress() {
+    if (state.egressBusy) return;
+    state.egressBusy = true;
+    state.flash = "";
+    state.error = "";
+    render();
+    try {
+      const res = await invoke("gateway.egressProbe");
+      const st = (res && res.status) || {};
+      state.flash = st.ok
+        ? `出海通道已就绪：出口「${st.dialer || "自动选择"}」。`
+        : `出海通道未启用：${st.reason || "未知原因"}`;
+    } catch (error) {
+      state.error = `检测失败：${(error && error.message) || error}`;
+    } finally {
+      state.egressBusy = false;
+      await load(false);
+      render();
+    }
   }
 
   function boot() {
