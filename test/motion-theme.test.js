@@ -30,6 +30,8 @@ function installHost({
   const upserted = [];
   const removed = [];
   const settings = { ...initial };
+  // The registration cache is module state, so every case starts from zero.
+  feature.resetThemeCache();
   global.pi = {
     plugin: {
       getId: () => PLUGIN_ID,
@@ -66,6 +68,21 @@ test("one theme is registered, whatever the setting", async () => {
     );
     assert.deepEqual(host.upserted.map((theme) => theme.base), ["dark", "light"]);
     assert.equal(host.upserted[0].label, "Motion Lab");
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("an unchanged config does not re-register the theme", async () => {
+  // Opening the panel applies the config that is already in effect. A second
+  // upsert would make the host rebuild the theme and repaint every window.
+  const host = installHost();
+  try {
+    await apply({ ...motion.DEFAULT_CONFIG, mode: "dark" });
+    await apply({ ...motion.DEFAULT_CONFIG, mode: "dark" });
+    assert.equal(host.upserted.length, 1, "the same CSS must not be registered twice");
+    await apply({ ...motion.DEFAULT_CONFIG, mode: "dark", speed: 0.6 });
+    assert.equal(host.upserted.length, 2, "a new token value is a real change");
   } finally {
     delete global.pi;
   }

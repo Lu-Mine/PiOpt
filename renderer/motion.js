@@ -144,10 +144,17 @@ function applyResult(result) {
 // The host pins `nativeTheme.themeSource` to our theme's base, so this page's
 // `prefers-color-scheme` reports our own base back at us — reading it while the
 // theme is applied can only confirm what we already applied, which is why "auto"
-// appeared to do nothing on a dark system. Handing the selection back to the host
-// for a moment is the only way to see the real system value; the answer is cached
-// until the user picks "auto" again.
+// appeared to do nothing on a dark system. Asking the plugin process is free: it
+// reads the OS preference (registry / plist / gsettings) without touching the
+// active theme. Handing the selection back to the host is only the fallback,
+// because that hand-back recolours the whole window for ~150ms.
 async function measureSystemBase() {
+  try {
+    const result = await invoke("motion.systemBase");
+    if (result && (result.base === "light" || result.base === "dark")) return result.base;
+  } catch {
+    /* the process could not read the OS; fall through */
+  }
   await invoke("motion.release");
   await new Promise((resolve) => setTimeout(resolve, 150));
   return lightQuery.matches ? "light" : "dark";

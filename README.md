@@ -56,7 +56,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 - **自动**：跟随系统外观（浅/深），面板打开或点它时读取系统真实值；
 - **浅色 / 深色**：固定使用该基底，不再看系统。
 
-“自动”要读系统的真实深浅。宿主会把 `nativeTheme.themeSource` 设成当前主题的基底，于是面板里的 `prefers-color-scheme` 只是在回显我们自己写进去的值。所以取系统值时，面板会先把主题短暂交还宿主（`system`）、读一次、再接管回来；这只会发生在面板打开或你点“自动”时，拖滑杆不会重复。
+“自动”要读系统的真实深浅。宿主会把 `nativeTheme.themeSource` 设成当前主题的基底，于是面板里的 `prefers-color-scheme` 只是在回显我们自己写进去的值。所以系统值改由插件进程直接读：Windows 查注册表 `AppsUseLightTheme`，macOS 读 `AppleInterfaceStyle`，Linux 读 `gsettings` 的 `color-scheme`。这只是一次几毫秒的读取，不动当前主题，因此打开面板不会再整窗换色闪一下。只有三种方式都读不到时（无 shell、未知桌面），才退回旧做法：把主题短暂交还宿主（`system`）、读一次、再接管回来——那一步会闪，所以只是兜底。拖滑杆不会重复测量。
 
 同一时刻宿主里只会出现这一个 Motion Lab 主题，旧版本注册的 `Motion Lab · Light` / `Motion Lab · Dark` 会被自动移除。它只含动效规则，不覆盖任何 `--ds-*` 颜色 token。
 
