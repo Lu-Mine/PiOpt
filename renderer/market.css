@@ -29,9 +29,7 @@ button:focus-visible, [tabindex]:focus-visible {
   padding: 0 10px;
   border-bottom: 1px solid var(--ds-border-subtle);
   background: var(--ds-bg-primary);
-  -webkit-app-region: drag;
 }
-.topbar button, .topbar .chip { -webkit-app-region: no-drag; }
 
 .brand {
   display: flex;

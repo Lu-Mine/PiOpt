@@ -11,13 +11,23 @@
     <link rel="stylesheet" href="./motion.css" />
   </head>
   <body>
-    <header class="opt-topbar">
-      <div class="opt-brand"><span class="opt-mark" aria-hidden="true"><i></i><i></i><i></i></span>PiOpt</div>
-      <div class="opt-switch" role="tablist" aria-label="PiOpt 功能">
-        <button type="button" role="tab" id="tab-market" data-feature="market" aria-selected="true" aria-controls="view-market">插件市场</button>
-        <button type="button" role="tab" id="tab-motion" data-feature="motion" aria-selected="false" aria-controls="view-motion">动效实验室</button>
-      </div>
+    <header class="opt-dragbar">
+      <span class="opt-brand"><span class="opt-mark" aria-hidden="true"><i></i><i></i><i></i></span>PiOpt</span>
     </header>
+
+    <nav class="opt-rail" role="tablist" aria-label="PiOpt 功能">
+      <button type="button" role="tab" id="tab-market" data-feature="market" aria-selected="true" aria-controls="view-market" title="插件市场" aria-label="插件市场">
+        <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2.6 5.6h10.8l-.75 7.6a1 1 0 0 1-1 .9H4.35a1 1 0 0 1-1-.9z" />
+          <path d="M5.9 5.6V4.1a2.1 2.1 0 0 1 4.2 0v1.5" />
+        </svg>
+      </button>
+      <button type="button" role="tab" id="tab-motion" data-feature="motion" aria-selected="false" aria-controls="view-motion" title="动效实验室" aria-label="动效实验室">
+        <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M1.6 9.2h2.1l1.2-3.6 1.9 7 1.6-10 1.5 6.6h4.5" />
+        </svg>
+      </button>
+    </nav>
 
     <section id="view-market" class="opt-view" role="tabpanel" aria-labelledby="tab-market">
     <header class="topbar">
