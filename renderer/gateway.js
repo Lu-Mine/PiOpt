@@ -229,11 +229,39 @@
       ["可用", ag.active || 0],
       ["冷却中模型", ag.cooling || 0],
       ["每账号模型", ag.modelCount || 0],
-      ["统计窗口", ag.windowMinutes ? `${(ag.windowMinutes / 60).toFixed(1)} 时` : "—"],
     ]));
 
+    // 1. 各 Group 全局综合限额（所有账号总和与平均）
+    const aggGroups = ag.aggregateGroups || [];
+    if (aggGroups.length) {
+      const aggBox = el("div", "gw-ag-agg");
+      aggBox.append(el("div", "gw-ag-section-title", "各分组总体限额（所有账号综合）"));
+      const aggList = el("div", "gw-quota-list");
+      for (const g of aggGroups) {
+        const row = el("div", "gw-quota-row");
+        row.append(el("span", "gw-quota-name", g.name));
+        const track = el("div", "gw-qbar");
+        const fill = el("div", "gw-qbar-fill");
+        // 以 5 小时限额为主要显示，若无 5 小时则以周限额
+        const pct = g.fiveHourAvg !== null ? g.fiveHourAvg : (g.weeklyAvg || 0);
+        fill.style.width = pct + "%";
+        fill.dataset.level = pct <= 5 ? "empty" : pct <= 25 ? "low" : "ok";
+        track.append(fill);
+        row.append(track);
+        const metaTxt = [];
+        if (g.fiveHourAvg !== null) metaTxt.push(`5h: ${g.fiveHourAvg}%`);
+        if (g.weeklyAvg !== null) metaTxt.push(`周: ${g.weeklyAvg}%`);
+        row.append(el("span", "gw-quota-num", metaTxt.join(" · ")));
+        aggList.append(row);
+      }
+      aggBox.append(aggList);
+      box.append(aggBox);
+    }
+
+    // 2. 账号明细列表（包含各账号独立 Group 配额与冷却状态）
     const table = el("div", "gw-ag-list");
     for (const a of list) {
+      const cardItem = el("div", "gw-ag-item");
       const row = el("div", "gw-ag-row");
       const head = el("div", "gw-ag-head");
       const dot = el("i", "gw-ag-dot");
@@ -256,12 +284,33 @@
         }
       }
       row.append(cd);
-      table.append(row);
+      cardItem.append(row);
+
+      // 单账号各 Group 进度条
+      if (Array.isArray(a.groups) && a.groups.length) {
+        const acctQuotaList = el("div", "gw-quota-list gw-ag-quota-sub");
+        for (const g of a.groups) {
+          const qrow = el("div", "gw-quota-row");
+          qrow.append(el("span", "gw-quota-name", g.name));
+          const track = el("div", "gw-qbar");
+          const fill = el("div", "gw-qbar-fill");
+          const pct = g.fiveHour ? g.fiveHour.percent : (g.weekly ? g.weekly.percent : 0);
+          fill.style.width = pct + "%";
+          fill.dataset.level = pct <= 5 ? "empty" : pct <= 25 ? "low" : "ok";
+          track.append(fill);
+          qrow.append(track);
+          const mParts = [];
+          if (g.fiveHour) mParts.push(`5h: ${g.fiveHour.percent}%`);
+          if (g.weekly) mParts.push(`周: ${g.weekly.percent}%`);
+          qrow.append(el("span", "gw-quota-num", mParts.join(" · ")));
+          acctQuotaList.append(qrow);
+        }
+        cardItem.append(acctQuotaList);
+      }
+
+      table.append(cardItem);
     }
     box.append(table);
-    box.append(el("p", "gw-hint",
-      "上游不返回剩余额度百分比：CLIProxyAPI 的 quota 观察仅覆盖 claude/codex/devin，"
-      + "Antigravity 的 retrieveUserQuota 对个人账号返回 403。上面是真实可得的请求计数与冷却恢复时间。"));
     return box;
   }
 

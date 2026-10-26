@@ -216,6 +216,7 @@ function readAuthFiles() {
         projectId: doc.project_id || "",
         disabled: Boolean(doc.disabled),
         expired: doc.expired || "",
+        accessToken: doc.access_token || "",
         modelCount: Array.isArray(hints.model_ids) ? hints.model_ids.length : 0,
       });
     } catch (error) {
@@ -223,6 +224,29 @@ function readAuthFiles() {
     }
   }
   return out;
+}
+
+const AG_QUOTA_CACHE = new Map(); // email -> { fetchedAt, data }
+
+async function fetchAntigravityQuotaLive(accessToken) {
+  if (!accessToken) return null;
+  const url = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary";
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": "antigravity/hub/2.23.0 darwin/arm64",
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
 }
 
 // 插件每 5 分钟把真实余额写成快照，这里只读结构化结论
@@ -321,11 +345,8 @@ function parseCredits() {
   };
 }
 
-// Antigravity 账号：宿主给的是请求计数与模型级冷却，没有剩余额度百分比
-// （ProviderSupportsQuotaObservation 白名单只有 claude/codex/devin）。
-// Antigravity 账号：以 auth 目录为准（账号增删自动反映），
-// 再用管理 API 补上运行态（请求计数、冷却）。上游不返回剩余额度百分比。
-function buildAntigravity(files) {
+// Antigravity 账号：以 auth 目录为准，再直接调用 retrieveUserQuotaSummary 拿到各 group 真实限额百分比
+async function buildAntigravity(files) {
   const live = new Map();
   for (const f of files || []) {
     if (String(f.provider || "").toLowerCase() !== "antigravity") continue;
@@ -334,7 +355,6 @@ function buildAntigravity(files) {
   }
 
   const authFiles = readAuthFiles();
-  // auth 目录里没有但管理 API 有的（例如运行时注入的凭证）也要算进来
   const emails = new Set(authFiles.map(a => a.email.toLowerCase()));
   const extra = [];
   for (const [key, f] of live) {
@@ -343,8 +363,27 @@ function buildAntigravity(files) {
     }
   }
 
+  // 并行获取各账号的配额摘要（缓存 30 秒防频繁轮询）
+  const now = Date.now();
+  const quotaResults = await Promise.all(
+    authFiles.map(async a => {
+      const email = a.email.toLowerCase();
+      const cached = AG_QUOTA_CACHE.get(email);
+      if (cached && now - cached.fetchedAt < 30000) {
+        return { email, summary: cached.data };
+      }
+      const data = await fetchAntigravityQuotaLive(a.accessToken);
+      if (data) {
+        AG_QUOTA_CACHE.set(email, { fetchedAt: now, data });
+      }
+      return { email, summary: data || (cached ? cached.data : null) };
+    })
+  );
+  const summaryByEmail = new Map(quotaResults.map(r => [r.email, r.summary]));
+
   const accounts = [...authFiles, ...extra].map(a => {
-    const rt = live.get(a.email.toLowerCase()) || {};
+    const emailKey = a.email.toLowerCase();
+    const rt = live.get(emailKey) || {};
     const buckets = Array.isArray(rt.recent_requests) ? rt.recent_requests : [];
     let ok = 0;
     let bad = 0;
@@ -360,6 +399,30 @@ function buildAntigravity(files) {
     }));
     const disabled = Boolean(a.disabled) || Boolean(rt.disabled);
     const unavailable = Boolean(rt.unavailable) || disabled;
+
+    // 解析各 group 5 小时与每周百分比
+    const summary = summaryByEmail.get(emailKey);
+    const groups = [];
+    if (summary && Array.isArray(summary.groups)) {
+      for (const g of summary.groups) {
+        const bkts = Array.isArray(g.buckets) ? g.buckets : [];
+        const h5 = bkts.find(b => b.window === "5h");
+        const weekly = bkts.find(b => b.window === "weekly");
+        groups.push({
+          name: g.displayName || "分组",
+          modelsDesc: g.description || "",
+          fiveHour: h5 ? {
+            percent: Math.round((h5.remainingFraction || 0) * 100),
+            resetTime: h5.resetTime || "",
+          } : null,
+          weekly: weekly ? {
+            percent: Math.round((weekly.remainingFraction || 0) * 100),
+            resetTime: weekly.resetTime || "",
+          } : null,
+        });
+      }
+    }
+
     return {
       email: a.email,
       modelCount: a.modelCount || 0,
@@ -371,8 +434,43 @@ function buildAntigravity(files) {
       windowFailed: bad,
       buckets: buckets.length,
       cooldowns,
+      groups,
     };
   });
+
+  // 全局总和 / 各 group 综合限额（所有账号平均或并集展示）
+  // 全局总和 / 各 group 综合限额（所有账号平均或并集展示）
+  const groupAggMap = new Map();
+  for (const acct of accounts) {
+    for (const g of acct.groups || []) {
+      if (!groupAggMap.has(g.name)) {
+        groupAggMap.set(g.name, {
+          name: g.name,
+          fiveHourSum: 0,
+          fiveHourCount: 0,
+          weeklySum: 0,
+          weeklyCount: 0,
+          modelsDesc: g.modelsDesc
+        });
+      }
+      const agg = groupAggMap.get(g.name);
+      if (g.fiveHour) {
+        agg.fiveHourSum += g.fiveHour.percent;
+        agg.fiveHourCount += 1;
+      }
+      if (g.weekly) {
+        agg.weeklySum += g.weekly.percent;
+        agg.weeklyCount += 1;
+      }
+    }
+  }
+
+  const aggregateGroups = Array.from(groupAggMap.values()).map(agg => ({
+    name: agg.name,
+    modelsDesc: agg.modelsDesc,
+    fiveHourAvg: agg.fiveHourCount ? Math.round(agg.fiveHourSum / agg.fiveHourCount) : null,
+    weeklyAvg: agg.weeklyCount ? Math.round(agg.weeklySum / agg.weeklyCount) : null,
+  }));
 
   const modelCount = accounts.reduce((n, a) => Math.max(n, a.modelCount), 0);
   const windowMinutes = accounts.reduce((n, a) => Math.max(n, a.buckets), 0) * 10;
@@ -383,6 +481,7 @@ function buildAntigravity(files) {
     cooling: accounts.reduce((n, a) => n + a.cooldowns.length, 0),
     modelCount,
     windowMinutes,
+    aggregateGroups,
   };
 }
 
@@ -453,7 +552,7 @@ async function fetchOverview() {
     });
   }
   out.upstreams = upstreams;
-  out.antigravity = buildAntigravity(files);
+  out.antigravity = await buildAntigravity(files);
   return out;
 }
 
