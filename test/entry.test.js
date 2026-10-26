@@ -262,3 +262,21 @@ test("the main process answers openConsole without forcing a view", async () => 
     else global.pi = previousPi;
   }
 });
+
+test("the entry mark is exactly as wide as its three bars", () => {
+  // 3 bars of 3px with 2px gaps need 13px. A narrower box overflows itself and
+  // the whole mark lands half the difference off centre in the host's button.
+  const source = read("renderer/entry.mjs");
+  const match = /\.piopt-mark\{width:(\d+)px;height:\d+px;display:grid;grid-template-columns:repeat\((\d+),(\d+)px\);align-items:end;gap:(\d+)px\}/.exec(
+    source
+  );
+  assert.ok(match, "the mark rule must stay a single declaration");
+  const width = Number(match[1]);
+  const columns = Number(match[2]);
+  const bar = Number(match[3]);
+  const gap = Number(match[4]);
+  assert.equal(width, columns * bar + (columns - 1) * gap, "box must fit its own grid");
+
+  const base = read("renderer/base.css");
+  assert.match(base, /\.opt-mark \{[^}]*width: 13px;/, "the panel mark keeps the same geometry");
+});

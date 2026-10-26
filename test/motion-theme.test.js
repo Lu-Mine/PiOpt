@@ -5,7 +5,8 @@
  * plugin theme as `plugin:<plugin id>:<theme id>`. That prefix was hard-coded to
  * the pre-merge `local.pi-modify`, so after the two plugins became `local.piopt`
  * the host answered `unknown theme id` and moving a slider failed. These tests
- * pin the id the feature actually asks for.
+ * pin the id the feature asks for, and what "auto" resolves to once a Motion Lab
+ * theme owns the host's selection.
  */
 
 const assert = require("node:assert/strict");
@@ -16,17 +17,24 @@ const feature = require("../features/motion/index.js");
 
 const PLUGIN_ID = "local.piopt";
 
-function installHost({ registered, pluginTheme = null, base = "dark" } = {}) {
+function installHost({
+  registered,
+  pluginTheme = null,
+  base = "dark",
+  theme = base,
+  settings: initial = {},
+} = {}) {
   const applied = [];
   const upserted = [];
+  const settings = { ...initial };
   global.pi = {
     plugin: {
       getId: () => PLUGIN_ID,
-      getSettings: async () => ({}),
-      setSettings: async () => {},
+      getSettings: async () => settings,
+      setSettings: async (partial) => Object.assign(settings, partial),
     },
     app: {
-      getAppearance: async () => ({ base, theme: base, pluginTheme }),
+      getAppearance: async () => ({ base, theme, pluginTheme }),
       setTheme: async (id) => applied.push(id),
     },
     themes: {
@@ -38,7 +46,11 @@ function installHost({ registered, pluginTheme = null, base = "dark" } = {}) {
         ],
     },
   };
-  return { applied, upserted };
+  return { applied, upserted, settings };
+}
+
+function themeId(base) {
+  return `plugin:${PLUGIN_ID}:${motion.THEME_IDS[base]}`;
 }
 
 test("motion.apply names the theme the host registered for this plugin", async () => {
@@ -48,9 +60,8 @@ test("motion.apply names the theme the host registered for this plugin", async (
       config: { ...motion.DEFAULT_CONFIG, mode: "dark" },
     });
     assert.deepEqual(host.upserted.sort(), ["motion-dark", "motion-light"]);
-    const expected = `plugin:${PLUGIN_ID}:${motion.THEME_IDS.dark}`;
-    assert.deepEqual(host.applied, [expected]);
-    assert.equal(answer.appliedTheme, expected);
+    assert.deepEqual(host.applied, [themeId("dark")]);
+    assert.equal(answer.appliedTheme, themeId("dark"));
     assert.equal(
       host.applied.some((id) => id.includes("pi-modify")),
       false,
@@ -78,8 +89,7 @@ test("motion.apply follows the host's id when it names the theme differently", a
 });
 
 test("motion.apply leaves an already selected theme alone", async () => {
-  const current = `plugin:${PLUGIN_ID}:${motion.THEME_IDS.dark}`;
-  const host = installHost({ pluginTheme: { id: current } });
+  const host = installHost({ pluginTheme: { id: themeId("dark") } });
   try {
     await feature.onPanelInvoke("motion.apply", {
       config: { ...motion.DEFAULT_CONFIG, mode: "dark" },
@@ -88,4 +98,69 @@ test("motion.apply leaves an already selected theme alone", async () => {
   } finally {
     delete global.pi;
   }
+});
+
+// Once our own theme is selected the host reports that theme's base as
+// appearance.base, so "auto" has to resolve from the preference recorded before
+// the theme took over, plus the system, not from the theme currently applied.
+test("auto follows the system preference while a Motion Lab theme is applied", async () => {
+  const host = installHost({ base: "dark", theme: themeId("dark") });
+  try {
+    const answer = await feature.onPanelInvoke("motion.apply", {
+      config: { ...motion.DEFAULT_CONFIG, mode: "auto" },
+      hints: { prefersLight: true },
+    });
+    assert.equal(answer.appliedTheme, themeId("light"));
+    assert.equal(answer.resolvedBase, "light");
+    assert.deepEqual(host.applied, [themeId("light")]);
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("auto keeps a recorded light preference even when the system is dark", async () => {
+  const host = installHost({
+    base: "dark",
+    theme: themeId("dark"),
+    settings: { "motion.hostPreference": "light" },
+  });
+  try {
+    const answer = await feature.onPanelInvoke("motion.apply", {
+      config: { ...motion.DEFAULT_CONFIG, mode: "auto" },
+      hints: { prefersLight: false },
+    });
+    assert.equal(answer.resolvedBase, "light");
+    assert.deepEqual(host.applied, [themeId("light")]);
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("an explicit light or dark choice outranks the system", async () => {
+  const host = installHost({ base: "light", theme: themeId("light") });
+  try {
+    const answer = await feature.onPanelInvoke("motion.apply", {
+      config: { ...motion.DEFAULT_CONFIG, mode: "dark" },
+      hints: { prefersLight: true },
+    });
+    assert.equal(answer.resolvedBase, "dark");
+    assert.deepEqual(host.applied, [themeId("dark")]);
+  } finally {
+    delete global.pi;
+  }
+});
+
+test("the palette cross-fade follows the speed and preset settings", () => {
+  const base = motion.motionTokens({ preset: "balanced", speed: 1 }).themeSwitch;
+  const faster = motion.motionTokens({ preset: "balanced", speed: 1.4 }).themeSwitch;
+  const slower = motion.motionTokens({ preset: "balanced", speed: 0.65 }).themeSwitch;
+  const reduced = motion.motionTokens({ preset: "reduced", speed: 1 }).themeSwitch;
+  assert.equal(base, 300);
+  assert.ok(faster < base && slower > base, `${faster} < ${base} < ${slower}`);
+  assert.ok(reduced < base);
+  assert.match(motion.buildThemeCss({}, "dark"), /--pm-switch:300ms/);
+  assert.match(
+    motion.buildThemeCss({}, "dark"),
+    /:is\(html,body,\.app-shell[^)]*\)\{transition:background-color var\(--pm-switch\)/
+  );
 });

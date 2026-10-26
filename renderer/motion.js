@@ -20,17 +20,31 @@ const PRESET_COPY = {
 const state = {
   config: { ...DEFAULT_CONFIG },
   appearance: { base: "dark", theme: "dark", pluginTheme: null },
+  // The user's own choice in PI-Desktop ("system" / "light" / "dark"), reported
+  // by the plugin process: once a Motion Lab theme owns the selection the host
+  // reports that theme's base instead, so "auto" has to lean on this.
+  preference: "system",
+  // The base that is currently on screen, used to notice that "auto" has to
+  // follow a changed appearance.
+  appliedBase: "dark",
   tokens: null,
   dirty: false,
   busy: false,
   syncVersion: 0,
   syncTimer: null,
   syncPromise: null,
+  followTimer: null,
   messageCount: 0,
 };
 
 const elements = {};
 const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+const lightQuery = window.matchMedia("(prefers-color-scheme: light)");
+
+function hints() {
+  // Only what the page can tell the process: which way the system leans.
+  return { prefersLight: lightQuery.matches };
+}
 
 function byId(id) {
   return document.getElementById(id);
@@ -86,20 +100,50 @@ async function invoke(channel, payload = {}) {
   }
   throw new Error(`Unknown preview channel: ${channel}`);
 }
-
 function resolvedBase() {
   if (state.config.mode === "light" || state.config.mode === "dark") return state.config.mode;
-  return state.appearance.base === "light" || state.appearance.theme === "light" ? "light" : "dark";
+  if (state.preference === "light" || state.preference === "dark") return state.preference;
+  if (lightQuery.matches) return "light";
+  return "dark";
 }
 
 function applyAppearance(appearance) {
   if (appearance && typeof appearance === "object") state.appearance = appearance;
-  const base = state.appearance.base === "light" || state.appearance.theme === "light" ? "light" : "dark";
-  document.documentElement.dataset.base = base;
   if (typeof state.appearance.locale === "string" && state.appearance.locale) {
     document.documentElement.lang = state.appearance.locale;
   }
+  // Paint from the resolved base, not from the host's: with a Motion Lab theme
+  // selected the host reports that theme's base, while the user may have picked
+  // the other one here.
+  const base = resolvedBase();
+  document.documentElement.dataset.base = base;
   renderMode();
+  scheduleFollow(base);
+}
+
+// "auto" means "keep up with the appearance". A manual light/dark choice does
+// not follow anything, and anything already on screen is left alone.
+function scheduleFollow(base) {
+  if (state.config.mode !== "auto" || base === state.appliedBase) return;
+  window.clearTimeout(state.followTimer);
+  state.followTimer = window.setTimeout(() => { void followAppearance(); }, 120);
+}
+
+async function followAppearance() {
+  if (state.config.mode !== "auto") return;
+  const base = resolvedBase();
+  if (base === state.appliedBase) return;
+  try {
+    const result = await invoke("motion.apply", { config: state.config, hints: hints() });
+    if (result && result.config) state.config = { ...DEFAULT_CONFIG, ...result.config };
+    if (result && typeof result.preference === "string") state.preference = result.preference;
+    if (result && result.appearance) state.appearance = result.appearance;
+    state.appliedBase = (result && result.resolvedBase) || base;
+    document.documentElement.dataset.base = state.appliedBase;
+    renderConfig();
+  } catch {
+    /* keep what is applied; the next appearance change tries again */
+  }
 }
 
 function setBusy(busy) {
@@ -338,14 +382,19 @@ async function initialize() {
   renderConfig();
   setBusy(true);
   try {
-    const result = await invoke("motion.getState");
+    const result = await invoke("motion.getState", { hints: hints() });
     state.config = { ...DEFAULT_CONFIG, ...(result.config || {}) };
+    if (typeof result.preference === "string") state.preference = result.preference;
     applyAppearance(result.appearance || state.appearance);
+    state.appliedBase = result.resolvedBase || state.appliedBase;
+    document.documentElement.dataset.base = state.appliedBase;
     renderConfig();
     await updatePreview();
     markDirty(false);
   } catch (error) {
     applyAppearance(state.appearance);
+    state.appliedBase = resolvedBase();
+    document.documentElement.dataset.base = state.appliedBase;
     await updatePreview();
     markDirty(false);
     elements.titleStatus.textContent = "独立预览模式";

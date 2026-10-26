@@ -3,6 +3,7 @@
 const motion = require("./motion.js");
 
 const COMMAND_ID = "pi-modify.open";
+const PREFERENCE_KEY = "motion.hostPreference";
 let currentConfig = { ...motion.DEFAULT_CONFIG };
 
 async function getAppearance() {
@@ -16,6 +17,26 @@ async function getAppearance() {
 async function readConfig() {
   const settings = await pi.plugin.getSettings();
   return motion.normalizeConfig(settings && settings[motion.SETTINGS_KEY]);
+}
+
+// What the user had picked in PI-Desktop before a Motion Lab theme took the
+// selection: "system", "light" or "dark". Once our own theme is selected the host
+// reports that theme's base instead of this preference, so it has to be kept.
+async function readPreference() {
+  try {
+    const settings = await pi.plugin.getSettings();
+    return motion.preferenceFrom(settings && settings[PREFERENCE_KEY]) ?? "system";
+  } catch {
+    return "system";
+  }
+}
+
+async function savePreference(preference) {
+  try {
+    await pi.plugin.setSettings({ [PREFERENCE_KEY]: preference });
+  } catch {
+    /* the next apply records it again */
+  }
 }
 
 async function registerThemes(config) {
@@ -46,17 +67,21 @@ async function saveConfig(input) {
   currentConfig = config;
   return config;
 }
-
-async function statePayload() {
+async function statePayload(hints = {}) {
   const appearance = await getAppearance();
   const themes = pi.themes && typeof pi.themes.list === "function"
     ? await pi.themes.list()
     : [];
+  const preference = motion.preferenceFrom(appearance.theme) ?? await readPreference();
   return {
     config: currentConfig,
     appearance,
     themes,
-    resolvedBase: motion.resolveBase(currentConfig.mode, appearance),
+    preference,
+    resolvedBase: motion.resolveBase(currentConfig.mode, appearance, {
+      preference,
+      prefersLight: hints.prefersLight,
+    }),
   };
 }
 
@@ -82,10 +107,21 @@ async function themeIdForBase(base, pluginId) {
   return fullId;
 }
 
-async function applyConfig(input) {
+// `hints` carries what only the renderer can know: whether the system currently
+// prefers light. "auto" needs it because, once a Motion Lab theme owns the
+// selection, appearance.base is that theme's base rather than the user's choice.
+async function applyConfig(input, hints = {}) {
   const config = await saveConfig(input);
   const appearance = await getAppearance();
-  const base = motion.resolveBase(config.mode, appearance);
+  const hostPreference = motion.preferenceFrom(appearance.theme);
+  const recorded = await readPreference();
+  const preference = hostPreference ?? recorded;
+  if (hostPreference && hostPreference !== recorded) await savePreference(hostPreference);
+
+  const base = motion.resolveBase(config.mode, appearance, {
+    preference,
+    prefersLight: hints.prefersLight,
+  });
   const themeId = await themeIdForBase(base, pi.plugin.getId());
   const activeTheme = typeof appearance.pluginTheme === "string"
     ? appearance.pluginTheme
@@ -93,7 +129,12 @@ async function applyConfig(input) {
       ? appearance.pluginTheme.id
       : "";
   if (activeTheme !== themeId) await pi.app.setTheme(themeId);
-  return { ...(await statePayload()), appliedTheme: themeId };
+  return {
+    ...(await statePayload({ preference, prefersLight: hints.prefersLight })),
+    appliedTheme: themeId,
+    resolvedBase: base,
+    preference,
+  };
 }
 
 async function onLoad() {
@@ -118,7 +159,7 @@ async function onPanelInvoke(channel, payload = {}) {
   switch (channel) {
     case "motion.getState":
       currentConfig = await readConfig();
-      return statePayload();
+      return statePayload(payload.hints ?? {});
     case "motion.previewCss": {
       const config = motion.normalizeConfig(payload.config);
       return { config, css: motion.buildPreviewCss(config), tokens: motion.motionTokens(config) };
@@ -126,7 +167,7 @@ async function onPanelInvoke(channel, payload = {}) {
     case "motion.save":
       return { ok: true, config: await saveConfig(payload.config) };
     case "motion.apply":
-      return { ok: true, ...(await applyConfig(payload.config)) };
+      return { ok: true, ...(await applyConfig(payload.config, payload.hints ?? {})) };
     case "motion.reset":
       return { ok: true, config: await saveConfig(motion.DEFAULT_CONFIG) };
     default:

@@ -49,7 +49,9 @@ body {
   letter-spacing: -0.01em;
 }
 .opt-mark {
-  width: 11px;
+  /* 3 bars + 2 gaps = 13px. Anything narrower and the grid overflows its own box,
+     which shifts the whole mark by half of the difference once it is centred. */
+  width: 13px;
   height: 13px;
   display: grid;
   grid-template-columns: repeat(3, 3px);

@@ -61,6 +61,11 @@ function motionTokens(input = {}) {
     distanceMd: Math.round(7 * distanceFactor * 100) / 100,
     distancePanel: Math.round(8 * distanceFactor * 100) / 100,
     scaleFrom: reduced ? 1 : Math.round((1 - 0.015 * distanceFactor) * 10000) / 10000,
+    // Length of the cross-fade when the app swaps its light and dark palette.
+    // It is its own token because a whole-window recolour reads better slightly
+    // slower than a panel entrance, and because the user's speed setting has to
+    // reach this one too.
+    themeSwitch: Math.round((reduced ? 90 : 300) * durationFactor),
     exitRatio: 0.72,
     continuous: preset.continuous,
     easeOut: config.preset === "gentle"
@@ -81,6 +86,7 @@ function tokenDeclarations(tokens) {
     `--pm-distance-sm:${tokens.distanceSm}px`,
     `--pm-distance-md:${tokens.distanceMd}px`,
     `--pm-distance-panel:${tokens.distancePanel}px`,
+    `--pm-switch:${tokens.themeSwitch}ms`,
     `--pm-scale-from:${tokens.scaleFrom}`,
     `--pm-ease-out:${tokens.easeOut}`,
     `--pm-ease-standard:${tokens.easeStandard}`,
@@ -100,6 +106,10 @@ function buildThemeCss(input = {}, base = "dark") {
 
   const css = `/* Pi Modify Motion Lab: ${base} motion layer. No color tokens are changed. */
 :root{${tokenDeclarations(tokens)}}
+/* A palette swap is a colour change on surfaces that do not otherwise animate,
+   so it needs its own transition: without this the app cuts over in one frame
+   listed; never the all keyword. */
+:is(html,body,.app-shell,.sidebar-surface,.main-pane,.chat-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard),border-color var(--pm-switch) var(--pm-ease-standard),color var(--pm-switch) var(--pm-ease-standard)}
 .app-shell{animation:pm-surface-in var(--pm-base) var(--pm-ease-out) both}
 :is(.main-pane,.chat-surface,.settings-content,[role=tabpanel]){animation:pm-content-in var(--pm-base) var(--pm-ease-out) both}
 :is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab]){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
@@ -134,7 +144,7 @@ ${pulseRule}
 @keyframes pm-breathe{0%,100%{opacity:.48}50%{opacity:1}}
 @keyframes pm-shimmer{from{transform:translateX(-110%)}to{transform:translateX(110%)}}
 @media(prefers-reduced-motion:reduce){
-:root{--pm-instant:70ms;--pm-fast:80ms;--pm-base:90ms;--pm-slow:90ms;--pm-distance-sm:0px;--pm-distance-md:0px;--pm-distance-panel:0px;--pm-scale-from:1}
+:root{--pm-instant:70ms;--pm-fast:80ms;--pm-base:90ms;--pm-slow:90ms;--pm-switch:90ms;--pm-distance-sm:0px;--pm-distance-md:0px;--pm-distance-panel:0px;--pm-scale-from:1}
 :is(.app-shell,.main-pane,.chat-surface,.settings-content,[role=tabpanel],.message-row,.message-item,.assistant-message,.user-message,.tool-result,.thinking-content,[role=tooltip],.tooltip-content,[role=menu],.popover-content,.dropdown-content,[role=dialog],.dialog-content,.modal-content,.dialog-overlay,.modal-overlay,.work-panel,.drawer-content,.error-message){animation-name:pm-fade-in;animation-duration:80ms}
 :is(.spinner,[data-loading=true] .loading-spinner,.streaming-indicator,.generating-indicator){animation:none}
 .skeleton::after{animation:none}
@@ -151,8 +161,21 @@ function buildPreviewCss(input = {}) {
   return `#motion-preview{${tokenDeclarations(tokens)}}`;
 }
 
-function resolveBase(mode, appearance = {}) {
+// `theme` is the user's own choice in the host: "system", "light", "dark", or one
+// of our own theme ids. Once a plugin theme is selected the host reports that
+// theme's base as `appearance.base`, so "auto" cannot read the user's intent
+// from it any more — the caller passes what it knows instead: the preference it
+// recorded before taking over, and whether the system currently prefers light.
+function preferenceFrom(theme) {
+  if (theme === "system" || theme === "light" || theme === "dark") return theme;
+  return null;
+}
+
+function resolveBase(mode, appearance = {}, hints = {}) {
   if (mode === "light" || mode === "dark") return mode;
+  const preference = preferenceFrom(hints.preference);
+  if (preference === "light" || preference === "dark") return preference;
+  if (typeof hints.prefersLight === "boolean") return hints.prefersLight ? "light" : "dark";
   if (appearance.base === "light" || appearance.theme === "light") return "light";
   return "dark";
 }
@@ -163,6 +186,7 @@ module.exports = {
   PRESETS,
   SETTINGS_KEY,
   THEME_IDS,
+  preferenceFrom,
   buildPreviewCss,
   buildThemeCss,
   motionTokens,
