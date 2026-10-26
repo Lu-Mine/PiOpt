@@ -101,6 +101,10 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   assert.match(css, /body\[data-rail="expanded"\] \.rail-label \{ display: inline; \}/);
   assert.match(css, /\.rail-label \{\n  display: none;/);
   assert.match(css, /body\[data-rail="expanded"\] \.rail-glyph \{ transform: rotate\(180deg\); \}/);
+  // Opening the rail must not change row heights or the gap between rows.
+  assert.match(css, /\.opt-rail button \{[^}]*height: 36px/);
+  assert.doesNotMatch(css, /body\[data-rail="expanded"\] \.opt-rail button \{[^}]*height:/);
+  assert.doesNotMatch(css, /\.rail-toggle \{/);
 
   const shell = read("renderer/shell.js");
   assert.match(shell, /const RAIL_KEY = "piopt\.rail";/);
