@@ -62,6 +62,40 @@
     }
   }
 
+  // The rail opens and closes from the button at its top. The choice is stored
+  // the same way the active view is, so a reopened panel keeps its shape.
+  const RAIL_KEY = "piopt.rail";
+  const rail = document.getElementById("optRail");
+  const railToggle = document.getElementById("railToggle");
+
+  function setRail(expanded, remember) {
+    const open = Boolean(expanded);
+    document.body.dataset.rail = open ? "expanded" : "collapsed";
+    if (rail) rail.dataset.expanded = String(open);
+    if (railToggle) {
+      const label = open ? "收起菜单" : "展开菜单";
+      railToggle.setAttribute("aria-expanded", String(open));
+      railToggle.setAttribute("aria-label", label);
+      railToggle.title = label;
+      const text = railToggle.querySelector(".rail-label");
+      if (text) text.textContent = label;
+    }
+    if (remember) {
+      try { window.localStorage.setItem(RAIL_KEY, open ? "expanded" : "collapsed"); } catch { /* private mode */ }
+    }
+  }
+
+  if (railToggle) {
+    railToggle.addEventListener("click", () => {
+      const open = rail ? rail.dataset.expanded === "true" : document.body.dataset.rail === "expanded";
+      setRail(!open, true);
+    });
+  }
+
+  let storedRail = null;
+  try { storedRail = window.localStorage.getItem(RAIL_KEY); } catch { storedRail = null; }
+  setRail(storedRail === "expanded", false);
+
   for (const tab of tabs) {
     tab.addEventListener("click", () => show(tab.dataset.feature, true));
   }

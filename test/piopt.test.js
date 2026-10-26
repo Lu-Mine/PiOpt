@@ -82,3 +82,27 @@ test("renderer scripts expose an explicit boot hook and do not self-start", () =
   const motion = read("renderer/motion.js");
   assert.equal(motion.trimEnd().endsWith("})();"), true);
 });
+
+test("the rail opens and closes from a toggle above the tabs", () => {
+  const html = read("renderer/index.html");
+  assert.match(html, /<nav class="opt-rail" id="optRail"[^>]*data-expanded="false"/);
+  assert.match(html, /id="railToggle"[^>]*aria-controls="optRail"/);
+  // The toggle sits outside the tablist so the tab semantics stay intact.
+  const navStart = html.indexOf('id="optRail"');
+  const tabsStart = html.indexOf('class="rail-tabs" role="tablist"');
+  const toggleStart = html.indexOf('id="railToggle"');
+  assert.ok(toggleStart > navStart && tabsStart > toggleStart);
+  for (const name of ["插件市场", "动效实验室"]) {
+    assert.ok(html.includes(`<span class="rail-label">${name}</span>`), name);
+  }
+
+  const css = read("renderer/base.css");
+  assert.match(css, /body\[data-rail="expanded"\] \.opt-rail \{ width: 176px/);
+  assert.match(css, /body\[data-rail="expanded"\] \.rail-label \{ display: inline; \}/);
+  assert.match(css, /\.rail-label \{\n  display: none;/);
+  assert.match(css, /body\[data-rail="expanded"\] \.rail-glyph \{ transform: rotate\(180deg\); \}/);
+
+  const shell = read("renderer/shell.js");
+  assert.match(shell, /const RAIL_KEY = "piopt\.rail";/);
+  assert.match(shell, /railToggle\.addEventListener\("click"/);
+});
