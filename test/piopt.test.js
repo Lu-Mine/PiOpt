@@ -106,10 +106,13 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   assert.doesNotMatch(css, /body\[data-rail="expanded"\] \.opt-rail button \{[^}]*height:/);
   assert.doesNotMatch(css, /\.rail-toggle \{/);
 
-  // The reveal itself must stay smooth: the button eases to its stretched width
-  // and the names fade in only once the rail is nearly open, so no frame shows
-  // text squeezed into a sliver.
-  assert.match(css, /\.opt-rail button \{[^}]*transition: width 180ms/);
+  // The reveal must stay smooth: rows are full width in both states, so the icon
+  // only travels with the rail's side padding instead of jumping from a centred
+  // box to a stretched one, and the names fade in once the rail is nearly open.
+  assert.match(css, /\.opt-rail button \{[^}]*width: 100%/);
+  assert.doesNotMatch(css, /justify-content: center/);
+  assert.match(css, /\.opt-rail button \{[^}]*transition: padding 180ms/);
+  assert.match(css, /body\[data-rail="expanded"\] \.opt-rail button \{ padding: 0 9px; \}/);
   assert.match(css, /@keyframes rail-label-in \{\n  from \{ opacity: 0; \}/);
   assert.match(css, /body\[data-rail="expanded"\] \.rail-label \{ animation: none; \}/);
   const shell = read("renderer/shell.js");

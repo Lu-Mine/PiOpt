@@ -68,9 +68,11 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
-  padding: 8px 0;
+  /* 3px of side padding keeps the hover row from touching the rail edges; the
+     icon lands on the rail's centre line either way. */
+  padding: 8px 3px;
   overflow: hidden;
   border-right: 1px solid var(--ds-border-default);
   background: var(--ds-bg-secondary);
@@ -82,7 +84,7 @@ body {
 .rail-tabs {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
   width: 100%;
   min-height: 0;
@@ -91,13 +93,16 @@ body {
 .opt-rail button {
   position: relative;
   flex: none;
-  width: 36px;
+  /* Full width in both states, so the row's left edge is fixed by the rail's
+     padding alone: the icon only has to travel the 3px -> 8px padding change
+     instead of jumping from a centred box to a stretched one. */
+  width: 100%;
   height: 36px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 9px;
-  padding: 0;
+  padding: 0 12px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -105,9 +110,8 @@ body {
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
-  /* Same easing as the rail, so the icon travels with the edge instead of
-     jumping to the stretched width on the first frame. */
-  transition: width 180ms cubic-bezier(0.22, 1, 0.36, 1), padding 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Same easing as the rail, so the icon glides with the padding change. */
+  transition: padding 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .opt-rail button:hover { background: var(--ds-bg-hover); color: var(--ds-text-primary); }
 .opt-rail button[aria-selected="true"] {
@@ -117,7 +121,8 @@ body {
 .opt-rail button[aria-selected="true"]::before {
   content: "";
   position: absolute;
-  left: -6px;
+  /* Pinned to the rail's edge in both states: 3px padding closed, 8px open. */
+  left: -2px;
   top: 8px;
   bottom: 8px;
   width: 2px;
@@ -142,13 +147,8 @@ body {
 /* One row height in both states, and one gap everywhere: opening the rail must
    not resize the rows it reveals. */
 
-body[data-rail="expanded"] .opt-rail { width: 176px; align-items: stretch; padding: 8px; }
-body[data-rail="expanded"] .rail-tabs { align-items: stretch; }
-body[data-rail="expanded"] .opt-rail button {
-  width: 100%;
-  justify-content: flex-start;
-  padding: 0 9px;
-}
+body[data-rail="expanded"] .opt-rail { width: 176px; padding: 8px; }
+body[data-rail="expanded"] .opt-rail button { padding: 0 9px; }
 body[data-rail="expanded"] .rail-label {
   display: inline;
   animation: rail-label-in 120ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both;
@@ -162,6 +162,8 @@ body[data-rail="expanded"] .rail-glyph { transform: rotate(180deg); }
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+body[data-rail="expanded"] .opt-rail button[aria-selected="true"]::before { left: -6px; }
 
 @media (prefers-reduced-motion: reduce) {
   .opt-rail,
