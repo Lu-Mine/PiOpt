@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "id": "local.piopt",
+  "name": "PiOpt",
+  "version": "1.0.0",
+  "description": "PiOpt 是 PI-Desktop 的控制台插件：插件市场与更新准备（读取官方目录，经镜像下载并按 sha256 校验），以及界面动效调校（克制预设、实时预览、减弱动态保护）。",
+  "author": "local",
+  "license": "MIT",
+  "categories": [
+    "productivity",
+    "appearance",
+    "developer-tools"
+  ],
+  "engines": {
+    "piDesktop": ">=0.14.8"
+  },
+  "main": "main.js",
+  "ui": {
+    "panel": "renderer/index.html",
+    "width": 1180,
+    "height": 800,
+    "title": {
+      "en": "PiOpt",
+      "zh-CN": "PiOpt 控制台"
+    }
+  },
+  "permissions": [
+    "ui.panel",
+    "ui.theme",
+    "clipboard.write",
+    "net.fetch",
+    "agent.tool.register",
+    "agent.prompt.inject"
+  ],
+  "net": {
+    "domains": [
+      "plugins.aiuo.net",
+      "cdn.jsdelivr.net",
+      "raw.githubusercontent.com",
+      "api.github.com"
+    ]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "piopt.open",
+        "title": "PiOpt: 打开控制台",
+        "keywords": [
+          "piopt",
+          "market",
+          "motion",
+          "控制台",
+          "市场",
+          "动效"
+        ],
+        "category": "PiOpt"
+      },
+      {
+        "id": "pimarket.open",
+        "title": "Pimarket: 打开市场与更新面板",
+        "keywords": [
+          "pimarket",
+          "market",
+          "plugin",
+          "update",
+          "市场",
+          "插件",
+          "更新"
+        ]
+      },
+      {
+        "id": "pimarket.prepare-updates",
+        "title": "Pimarket: 准备全部可用更新",
+        "keywords": [
+          "pimarket",
+          "update",
+          "全部",
+          "更新"
+        ]
+      },
+      {
+        "id": "pi-modify.open",
+        "title": "PiOpt: 打开动效实验室",
+        "keywords": [
+          "piopt",
+          "pi-modify",
+          "motion",
+          "animation",
+          "动画",
+          "动效",
+          "减弱动态"
+        ],
+        "category": "Appearance"
+      }
+    ],
+    "agentTools": [
+      {
+        "name": "list_plugin_updates",
+        "description": "List installed PI-Desktop plugins that have a newer non-yanked version in the official catalog, with version, size, sha256 and changelog. Reads only local registry/catalog files and returns, for each entry, whether a verified package is already downloaded.",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "includeInstalled": {
+              "type": "boolean",
+              "description": "Also list installed plugins that are already current or absent from the catalog."
+            }
+          }
+        }
+      },
+      {
+        "name": "prepare_plugin_update",
+        "description": "Download one plugin package into this plugin's data folder, verify sizeBytes and sha256 against the official catalog, and return the absolute .piplug path for the user to install from the Plugins page. Never installs, never edits registry.json, and never keeps a package that fails verification.",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Plugin id, e.g. pi.file-manager."
+            },
+            "version": {
+              "type": "string",
+              "description": "Exact version to fetch. Defaults to the newest non-yanked catalog version."
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "skills": [
+      "skills/piopt.md"
+    ],
+    "settings": [
+      {
+        "key": "mirrorRepo",
+        "title": "镜像仓库",
+        "description": "GitHub 上的插件包镜像仓库，格式 owner/repo。默认 AIUO-Net/pi-desktop-plugins，与官方 catalog 的内容一致。",
+        "type": "string",
+        "default": "AIUO-Net/pi-desktop-plugins",
+        "scope": "plugin"
+      },
+      {
+        "key": "mirrorRef",
+        "title": "镜像分支或标签",
+        "description": "镜像仓库的 ref，默认 main。",
+        "type": "string",
+        "default": "main",
+        "scope": "plugin"
+      },
+      {
+        "key": "dataDir",
+        "title": "数据目录（可选）",
+        "description": "留空使用 ~/.pi-desktop/plugins/data/local.pimarket。下载的包放在其下的 downloads/。",
+        "type": "string",
+        "default": "",
+        "scope": "plugin"
+      }
+    ]
+  },
+  "safetyNotes": "PiOpt bundles two features that each stay inside their own boundary. The market feature reads the plugin registry and market catalog with Node fs inside the plugin process, writes only its own data folder, and downloads .piplug files over https from four hard-coded hosts, verifying sizeBytes and sha256 before a package is kept; it never installs and never edits registry.json. The motion feature registers two runtime themes whose CSS contains motion rules only: no color tokens, no remote resources, no file or network access. Both features keep their state in the plugin own settings. ui.theme is used only for the two Motion Lab runtime themes. agent.prompt.inject only indexes skills/piopt.md for on-demand loading.",
+  "i18n": {
+    "en": {
+      "name": "PiOpt",
+      "description": "PiOpt is the PI-Desktop control console: a plugin market and update preparer (official catalog, mirrored downloads verified by sha256) plus an interface motion lab (restrained presets, live preview, reduced-motion protection).",
+      "safetyNotes": "The market feature reads the plugin registry and catalog with Node fs inside the plugin process, writes only its own data folder, and downloads packages over https from four hard-coded hosts, verifying sizeBytes and sha256; it never installs. The motion feature registers two runtime themes containing motion CSS only, with no color tokens, network or file access. ui.theme is used only for those two runtime themes, and agent.prompt.inject only indexes skills/piopt.md for on-demand loading."
+    },
+    "zh-CN": {
+      "name": "PiOpt 控制台",
+      "description": "PiOpt 是 PI-Desktop 的控制台插件：插件市场与更新准备（官方目录、镜像下载并按 sha256 校验），以及界面动效调校（克制预设、实时预览、减弱动态保护）。",
+      "safetyNotes": "市场功能在插件进程内用 Node fs 读取插件注册表与官方目录，只写自己的数据目录；.piplug 只从四个硬编码域名走 https 下载，且只有 sizeBytes 与 sha256 校验通过才会保留，从不安装、不改 registry.json。动效功能注册两套只含动效规则的运行时主题，不含颜色 token，不访问网络或文件。两个功能的状态都存放在插件自己的 settings 中。ui.theme 仅用于这两套动效主题，agent.prompt.inject 仅用于收录 skills/piopt.md。"
+    }
+  },
+  "activationEvents": [
+    "onStartup",
+    "onCommand:piopt.open",
+    "onCommand:pimarket.open",
+    "onCommand:pimarket.prepare-updates",
+    "onCommand:pi-modify.open"
+  ]
+}

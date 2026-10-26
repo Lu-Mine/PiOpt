@@ -1,0 +1,9 @@
+dist/
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# Source archives kept beside this repo, not part of the PiOpt project.
+/Pi-Market/
+/Pi-Modify/
