@@ -16,6 +16,19 @@
   const booted = { market: false, motion: false };
   let current = "market";
 
+  function reportFailure(feature, detail) {
+    const view = views[feature];
+    if (!view) return;
+    let box = view.querySelector(".opt-error");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "opt-error";
+      box.setAttribute("role", "alert");
+      view.prepend(box);
+    }
+    box.textContent = `该功能未能启动：${detail || "未知错误"}。可在插件页重新加载后再试。`;
+  }
+
   function start(feature) {
     if (booted[feature]) return;
     booted[feature] = true;
@@ -24,6 +37,7 @@
     if (!api || typeof api.boot !== "function") {
       if (tab) tab.title = "该功能未能加载";
       console.error(`[PiOpt] ${feature} view is not available`);
+      reportFailure(feature, "视图脚本未加载");
       return;
     }
     Promise.resolve()
@@ -31,6 +45,7 @@
       .catch((error) => {
         if (tab) tab.title = "该功能加载失败，详见控制台";
         console.error(`[PiOpt] ${feature} failed to start`, error);
+        reportFailure(feature, (error && error.message) || String(error));
       });
   }
 

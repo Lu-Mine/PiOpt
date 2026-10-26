@@ -30,9 +30,13 @@ body {
   border-bottom: 1px solid var(--ds-border-default);
   background: var(--ds-bg-secondary);
   user-select: none;
-  -webkit-app-region: drag;
 }
-.opt-topbar button { -webkit-app-region: no-drag; }
+/*
+ * Only the brand and the empty tail are draggable. Making the whole bar a drag
+ * region can swallow clicks on the view switch, so the controls stay outside it.
+ */
+.opt-brand, .opt-spacer { -webkit-app-region: drag; }
+.opt-switch, .opt-switch button { -webkit-app-region: no-drag; }
 
 .opt-brand {
   display: flex;
@@ -85,3 +89,15 @@ body {
 
 .opt-view { min-width: 0; min-height: 0; overflow: hidden; }
 #view-market { display: flex; flex-direction: column; }
+
+/* Only rendered when a feature view fails to boot. */
+.opt-error {
+  margin: 10px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-error);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ds-error) 10%, transparent);
+  color: var(--ds-error);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
