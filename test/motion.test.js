@@ -94,13 +94,33 @@ test("entrances hand the element back instead of pinning a transform", () => {
   assert.ok(entrances.length > 0, "expected entrance rules");
   for (const line of entrances) assert.match(line, / backwards\b/, line);
 
-  // The shell and every floating layer fade only: a transform on their ancestor
-  // re-anchors fixed children even while the animation plays.
-  assert.match(css, /\.app-shell\{animation:pm-fade-in /);
+  // Floating layers fade only: a transform on their ancestor re-anchors fixed
+  // children even while the animation plays.
   assert.match(css, /:is\(\[role=menu\][^{]*\)\{animation:pm-fade-in /);
   assert.doesNotMatch(css, /\[role=menu\][^}]*transform/);
   // A menu item must not shift under the pointer of the submenu it opens.
   assert.match(css, /:not\(\[role=menuitem\]\)\{transform:translateY\(1px\)\}/);
+});
+
+test("no ancestor of a frosted surface animates opacity", () => {
+  // An element with opacity < 1 is a Backdrop Root: every backdrop-filter inside
+  // it samples only that ancestor's own painting and loses the backdrop behind
+  // it until the animation finishes and opacity returns to 1.
+  const css = buildThemeCss(DEFAULT_CONFIG, "dark").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(css, /\.app-shell[^{}]*\{[^}]*animation\b/);
+  assert.doesNotMatch(css, /\.main-pane[^{}]*\{[^}]*animation\b/);
+  assert.match(css, /:is\(\.chat-surface,\.route-page,\.settings-content\)\{animation:pm-content-in /);
+
+  // The panels hold frosted headers / ::before layers themselves, so their
+  // keyframes slide and size without touching opacity — including the overrides
+  // for the host's own .sidebar.is-entering and .work-panel.is-exiting rules
+  // (kept under sidebar-in* / work-panel-out* so onAnimationEnd still fires).
+  for (const name of ["pm-panel-right-in", "pm-panel-left-in", "work-panel-out-pm", "sidebar-in-pm"]) {
+    const block = css.match(new RegExp(`@keyframes ${name}\\{(?:[^{}]*\\{[^{}]*\\})+\\}`));
+    assert.ok(block, `missing @keyframes ${name}`);
+    assert.doesNotMatch(block[0], /opacity/, `${name} must not animate opacity`);
+  }
+  assert.doesNotMatch(css, /\.work-panel[^{}]*\{[^}]*pm-fade-in/);
 });
 
 

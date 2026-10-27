@@ -116,6 +116,13 @@ about the calls, only about the prefix.
    and read as flat grey (rgb(27,30,34) against the window controls'
    rgb(22,36,56) over a solid backdrop). With the layer on a pseudo element the
    header, window controls and top bar all measure rgb(22,36,57).
+   For the same Backdrop Root reason, no ancestor of a frosted surface may
+   animate `opacity` (`opacity < 1` cuts off descendant `backdrop-filter` until
+   the animation finishes): `.app-shell` and `.main-pane` do not animate, their
+   inner `.chat-surface` / `.route-page` / `.settings-content` do, and the
+   sidebar and work panel keyframes (including the `sidebar-in-pm` /
+   `work-panel-out-pm` overrides for the host's own enter/exit rules) slide and
+   resize without touching `opacity`.
    Blur is safe on all of them because the host portals every popup (context
    Never put a blur filter on a menu. The host nests its context submenu inside
    the parent menu (`sidebar-submenu` lives inside `sidebar-floating-menu`) and

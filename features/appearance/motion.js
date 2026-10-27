@@ -134,8 +134,24 @@ function buildThemeCss(input = {}, base = "dark") {
    a transform on their ancestor, even while it plays, re-anchors fixed children. */
 :is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) backwards;transform-origin:center}
 :is(.message-row,.message-item,.assistant-message,.user-message):last-child{animation:pm-message-in var(--pm-base) var(--pm-ease-out) backwards}
-.app-shell{animation:pm-fade-in var(--pm-base) var(--pm-ease-out) backwards}
-:is(.main-pane,.chat-surface,.settings-content){animation:pm-content-in var(--pm-base) var(--pm-ease-out) backwards}
+/* An element with opacity < 1 is a Backdrop Root in CSS Filter Effects 2: any
+   backdrop-filter inside it samples only what is painted inside that ancestor,
+   never the backdrop behind it. So while an opacity keyframe is running, every
+   frosted surface under it loses its blur and snaps back only on the last frame
+   (measured over a 12px/12px black-white stripe: stripe contrast under the top
+   bar jumps from 0 to 26 during pm-content-in on .main-pane, and in the work
+   panel body from 0 to 72 during pm-panel-right-in).
+
+   Therefore nothing that holds a frosted surface may animate opacity:
+   - .app-shell stays out (it wraps the whole window);
+   - .main-pane stays out (it wraps .conversation-topbar and .main-titlebar),
+     and its content (.chat-surface, .route-page, .settings-content) animates
+     instead;
+   - .work-panel and .sidebar slide and size without fading, including the
+     host's own .sidebar.is-entering and .work-panel.is-exiting rules, whose
+     keyframes stay prefixed with sidebar-in* / work-panel-out* so the host's
+     onAnimationEnd handlers still match animationName.startsWith(...). */
+:is(.chat-surface,.route-page,.settings-content){animation:pm-content-in var(--pm-base) var(--pm-ease-out) backwards}
 :is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab]){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
 :is(.tool-result,.thinking-content,[data-state=open]>.collapsible-content){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) backwards}
 :is(button,[role=button],input,textarea,select){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard),transform var(--pm-instant) var(--pm-ease-out)}
@@ -148,6 +164,8 @@ function buildThemeCss(input = {}, base = "dark") {
 :is([role=dialog],.dialog-content,.modal-content){animation:pm-dialog-in var(--pm-slow) var(--pm-ease-out) backwards}
 :is(.dialog-overlay,.modal-overlay,[data-overlay]){animation:pm-fade-in var(--pm-base) var(--pm-ease-standard) backwards}
 :is(.work-panel,.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) backwards}
+.work-panel.is-exiting{animation:work-panel-out-pm calc(var(--pm-slow) * var(--pm-exit-ratio)) var(--pm-ease-in) both;overflow:hidden}
+.sidebar.is-entering{animation:sidebar-in-pm var(--pm-base) var(--pm-ease-out) backwards}
 :is([data-side=left],.drawer-left){animation:pm-panel-left-in var(--pm-slow) var(--pm-ease-out) backwards}
 :is(.error-message,[role=alert][data-severity=error]){animation:pm-error-nudge var(--pm-fast) var(--pm-ease-out) backwards}
 ${spinRule}
@@ -158,15 +176,18 @@ ${pulseRule}
 @keyframes pm-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes pm-indicator-in{from{opacity:0;transform:scaleY(.45)}to{opacity:1;transform:scaleY(1)}}
 @keyframes pm-dialog-in{from{opacity:0;transform:translateY(var(--pm-distance-md)) scale(var(--pm-scale-from))}to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes pm-panel-right-in{from{opacity:0;transform:translateX(var(--pm-distance-panel))}to{opacity:1;transform:translateX(0)}}
-@keyframes pm-panel-left-in{from{opacity:0;transform:translateX(calc(var(--pm-distance-panel) * -1))}to{opacity:1;transform:translateX(0)}}
+@keyframes pm-panel-right-in{from{transform:translateX(var(--pm-distance-panel))}to{transform:translateX(0)}}
+@keyframes work-panel-out-pm{from{flex-basis:var(--work-panel-width);width:var(--work-panel-width);transform:translateX(0)}to{flex-basis:0;width:0;transform:translateX(var(--pm-distance-panel))}}
+@keyframes sidebar-in-pm{from{flex-basis:0;width:0;transform:translateX(calc(var(--pm-distance-panel) * -1))}to{flex-basis:var(--ds-sidebar-width);width:var(--ds-sidebar-width);transform:translateX(0)}}
+@keyframes pm-panel-left-in{from{transform:translateX(calc(var(--pm-distance-panel) * -1))}to{transform:translateX(0)}}
 @keyframes pm-error-nudge{0%{transform:translateX(0)}45%{transform:translateX(2px)}100%{transform:translateX(0)}}
 @keyframes pm-spin{to{transform:rotate(1turn)}}
 @keyframes pm-breathe{0%,100%{opacity:.48}50%{opacity:1}}
 @keyframes pm-shimmer{from{transform:translateX(-110%)}to{transform:translateX(110%)}}
 @media(prefers-reduced-motion:reduce){
 :root{--pm-instant:70ms;--pm-fast:80ms;--pm-base:90ms;--pm-slow:90ms;--pm-switch:90ms;--pm-distance-sm:0px;--pm-distance-md:0px;--pm-distance-panel:0px;--pm-scale-from:1}
-:is(.app-shell,.main-pane,.chat-surface,.settings-content,[role=tabpanel],.message-row,.message-item,.assistant-message,.user-message,.tool-result,.thinking-content,[role=tooltip],.tooltip-content,[role=menu],.popover-content,.dropdown-content,[role=dialog],.dialog-content,.modal-content,.dialog-overlay,.modal-overlay,.work-panel,.drawer-content,.error-message){animation-name:pm-fade-in;animation-duration:80ms}
+:is(.chat-surface,.route-page,.settings-content,[role=tabpanel],.message-row,.message-item,.assistant-message,.user-message,.tool-result,.thinking-content,[role=tooltip],.tooltip-content,[role=menu],.popover-content,.dropdown-content,[role=dialog],.dialog-content,.modal-content,.dialog-overlay,.modal-overlay,.drawer-content,.error-message){animation-name:pm-fade-in;animation-duration:80ms}
+.work-panel,.work-panel.is-exiting,.sidebar.is-entering{animation-duration:80ms}
 :is(.spinner,[data-loading=true] .loading-spinner,.streaming-indicator,.generating-indicator){animation:none}
 .skeleton::after{animation:none}
 }`;

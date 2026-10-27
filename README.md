@@ -39,7 +39,9 @@ data/local.piopt/downloads/<id>-<version>.piplug
 | 位移 | 3 / 7 px | 小内容 / 消息与弹层 |
 | 弹层缩放 | 0.985 → 1 | 建立层级，不弹跳 |
 
-入场动画统一用 `animation-fill-mode: backwards`，**不用 `both`**：`both` 会保留最终帧，而最终帧里的 `transform` 会永久留在元素上，让宿主的 `position: fixed` 浮层（右键菜单、侧栏二级菜单）改以它为参照，位置就错了。因此根容器 `.app-shell` 与所有浮层（`[role="menu"]`、tooltip、popover）只做透明度淡入，不做位移；菜单项（`[role="menuitem"]`）也不参与“按下去 1px”。
+入场动画统一用 `animation-fill-mode: backwards`，**不用 `both`**：`both` 会保留最终帧，而最终帧里的 `transform` 会永久留在元素上，让宿主的 `position: fixed` 浮层（右键菜单、侧栏二级菜单）改以它为参照，位置就错了。因此所有浮层（`[role="menu"]`、tooltip、popover）只做透明度淡入，不做位移；菜单项（`[role="menuitem"]`）也不参与“按下去 1px”。
+
+同时，**任何包裹着磨砂表面的容器都不动画 `opacity`**：`opacity < 1` 的元素在 CSS Filter Effects 2 中同样是 Backdrop Root，动画播放期间它里面的 `backdrop-filter` 看不到后面的背景图，只会退化成未模糊的灰层，直到最后一帧 `opacity` 回到 `1` 才啪一下恢复。因此 `.app-shell` 与 `.main-pane`（里面包着 `.conversation-topbar` / `.main-titlebar`）都不挂入场动画，改成动画它们里面的内容层（`.chat-surface`、`.route-page`、`.settings-content`）；工作面板与侧栏的进出场（含宿主自带的 `.sidebar.is-entering` 与 `.work-panel.is-exiting`）只做位移和宽度伸缩、不改 `opacity`，且关键帧名保留 `sidebar-in*` / `work-panel-out*` 前缀以配合宿主的 `onAnimationEnd` 卸载判断。
 
 四套预设：
 
