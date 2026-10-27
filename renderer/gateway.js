@@ -19,6 +19,8 @@
     flash: "",
     egressBusy: false,
     egressPick: "",
+    flashTimer: null,
+    flashArmed: "",
   };
 
   const T = {
@@ -66,6 +68,69 @@
     if (cls) n.className = cls;
     if (text !== undefined && text !== null) n.textContent = text;
     return n;
+  }
+
+  // 提示统一走浮动层：一次性消息 3 秒自收，持续性消息随条件消失
+  function clearFlashTimer() {
+    if (state.flashTimer) {
+      clearTimeout(state.flashTimer);
+      state.flashTimer = null;
+    }
+  }
+
+  function armFlashTimer(delay = 3000) {
+    if (!state.flash) {
+      clearFlashTimer();
+      state.flashArmed = "";
+      return;
+    }
+    // 同一条消息不重复续命，避免每次刷新把 3 秒一直往后推
+    if (state.flashArmed === state.flash && state.flashTimer) return;
+    clearFlashTimer();
+    state.flashArmed = state.flash;
+    state.flashTimer = setTimeout(() => {
+      state.flashTimer = null;
+      state.flashArmed = "";
+      state.flash = "";
+      render();
+    }, delay);
+  }
+
+  // 组装当前该显示的浮动提示；没有内容就返回 null，不占位
+  function toastLayer() {
+    const items = [];
+    if (state.flash) items.push({ kind: "ok", text: state.flash, auto: true, from: "flash" });
+    if (state.error) items.push({ kind: "err", text: state.error, from: "error" });
+    for (const msg of (state.data && state.data.errors) || []) {
+      items.push({ kind: "warn", text: String(msg), from: "data" });
+    }
+    if (!items.length) return null;
+
+    const layer = el("div", "gw-toasts");
+    for (const it of items) {
+      const t = el("div", `gw-toast gw-toast-${it.kind}`);
+      t.append(el("span", "gw-toast-text", it.text));
+
+      if (it.from !== "data") {
+        const x = el("button", "gw-toast-x", "×");
+        x.type = "button";
+        x.setAttribute("aria-label", "关闭提示");
+        x.addEventListener("click", () => {
+          clearFlashTimer();
+          if (it.from === "flash") state.flash = "";
+          render();
+        });
+        t.append(x);
+      }
+
+      // 悬停时先别收，移开后再给一小段时间
+      if (it.auto) {
+        t.addEventListener("mouseenter", clearFlashTimer);
+        t.addEventListener("mouseleave", () => armFlashTimer(1600));
+      }
+      layer.append(t);
+    }
+    return layer;
   }
 
   function fmtUptime(s) {
@@ -488,19 +553,9 @@
     host.querySelectorAll(".gw-body").forEach(n => n.remove());
 
     const body = el("div", "gw-body");
-    if (state.flash) {
-      const ok = el("div", "gw-flash", state.flash);
-      body.append(ok);
-    }
-    if (state.error) {
-      const err = el("div", "opt-error");
-      err.textContent = state.error;
-      body.append(err);
-    }
-    for (const msg of (state.data && state.data.errors) || []) {
-      const w = el("div", "gw-warn", msg);
-      body.append(w);
-    }
+    const toasts = toastLayer();
+    if (toasts) body.append(toasts);
+    armFlashTimer();
 
     body.append(statusBar());
 
