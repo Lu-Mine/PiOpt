@@ -1,14 +1,14 @@
 # PiOpt
 
-PI-Desktop 的控制台插件：一个插件，两个功能。
+PI-Desktop 的控制台插件：一个插件，三个功能。
 
 | 功能 | 做什么 |
 |---|---|
 | **插件市场** | 读取已装插件与官方 catalog，经 jsDelivr / raw / GitHub Blobs API 下载更新包，按 `sizeBytes` 与 `sha256` 逐位校验后再交给你在 Plugins 页安装。 |
-| **动效实验室** | 用四套克制预设调校 PI-Desktop 界面动效，改完即时生效，并尊重系统减弱动态。 |
-| **窗口材质** | 用轻薄 / 标准 / 厚重三档质感给界面加磨砂玻璃分层（侧栏、标题栏与弹层），可选一张背景图做底并支持五种填充方式，磨砂与底图各自独立开关。 |
+| **外观** | 一处调窗口长什么样：界面动效（四套克制预设，改完即时生效，尊重系统减弱动态）与窗口材质（轻薄 / 标准 / 厚重三档磨砂玻璃分层，可选背景图做底并支持五种填充方式）。 |
+| **AI 网关** | 查看、重启本地 AI 网关，读它的日志。 |
 
-四者在同一个面板里，通过左侧菜单的「插件市场 / 动效实验室 / AI 网关 / 窗口材质」切换；也可以分别用命令直接打开对应视图。
+三者都在同一个面板里，通过左侧菜单的「插件市场 / 外观 / AI 网关」切换；命令也可以直接打开某个视图，或直接落在外观的某一节。
 
 ## 插件市场
 
@@ -28,7 +28,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 失败码：`SERVER_HTML`、`LINK_RESET`、`MIRROR_404`、`RATE_LIMIT`、`TIMEOUT`、`DNS`、`HTTP_ERROR`、`INTEGRITY`、`TOO_LARGE`、`CANCELLED`、`NO_SOURCE`、`WRITE_FAILED`。
 
-## 动效实验室
+## 界面动效（外观 · 第一节）
 
 | 场景 | 默认值 | 行为 |
 |---|---:|---|
@@ -54,16 +54,16 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 状态点与标题栏显示「正在同步 / 实时应用已就绪 / 实时同步失败」。失败时参数保留在本地，调整任一选项即可重试。
 
-插件只写**一个**运行时主题 `Motion Lab`，它的基底由上面那三档决定：
+插件只写**一个**运行时主题 `PiOpt Appearance`（动效与玻璃层都在里面），它的基底由上面那三档决定：
 
 - **自动**：跟随系统外观（浅/深），面板打开或点它时读取系统真实值；
 - **浅色 / 深色**：固定使用该基底，不再看系统。
 
 “自动”要读系统的真实深浅。宿主会把 `nativeTheme.themeSource` 设成当前主题的基底，于是面板里的 `prefers-color-scheme` 只是在回显我们自己写进去的值。所以系统值改由插件进程直接读：Windows 查注册表 `AppsUseLightTheme`，macOS 读 `AppleInterfaceStyle`，Linux 读 `gsettings` 的 `color-scheme`。这只是一次几毫秒的读取，不动当前主题，因此打开面板不会再整窗换色闪一下。只有三种方式都读不到时（无 shell、未知桌面），才退回旧做法：把主题短暂交还宿主（`system`）、读一次、再接管回来——那一步会闪，所以只是兜底。拖滑杆不会重复测量。
 
-同一时刻宿主里只会出现这一个 Motion Lab 主题，旧版本注册的 `Motion Lab · Light` / `Motion Lab · Dark` 会被自动移除。它只含动效规则，不覆盖任何 `--ds-*` 颜色 token。
+同一时刻宿主里只会出现这一个 `PiOpt Appearance` 主题，旧版本注册的 `Motion Lab · Light` / `Motion Lab · Dark` 会被自动移除。它只含动效规则与（可选的）玻璃层，不覆盖任何 `--ds-*` 颜色 token。动效和材质共用这一个主题，所以下面「窗口材质」一节说的玻璃层也写在它里面——改动其中任何一边都会重建整张样式表，不会只剩一半。
 
-## 窗口材质
+## 窗口材质（外观 · 第二节）
 
 给界面加一层磨砂玻璃：侧栏与标题栏改用半透明底色并模糊其后内容，菜单、对话框与弹出层用更强的模糊。开关和两档参数都在面板里，改完即时生效。开关只管"表面是否磨砂"，底图与内容区透视独立于它——关掉开关照片照样在，只是不再模糊。
 
@@ -139,15 +139,17 @@ PI-Desktop 在 Windows 11 上以**不透明窗口**运行，插件改不了这�
 
 所以这一节做的是**窗口内的磨砂分层**：玻璃背后是上面那层柔光场，不是桌面或其它窗口。要真正透出桌面只能改宿主、把窗口建成透明窗口，那已经超出插件边界，而且每次升级 PI-Desktop 都要重打。
 
-### 为什么玻璃跟着动效主题走
+### 为什么玻璃和动效在同一个功能里
 
-`pi.themes.upsert` 是插件往宿主窗口注入样式的唯一通道（`renderer.extension` 只能改自己挂的那几个节点，不能当样式表用）。所以玻璃规则和动效规则写在同一个 `Motion Lab` 主题里，由 `features/motion/index.js` 拼接、`features/glass/glass.js` 生成：
+`pi.themes.upsert` 是插件往宿主窗口注入样式的唯一通道（`renderer.extension` 只能改自己挂的那几个节点，不能当样式表用）。所以玻璃规则和动效规则本来就写在**同一张**样式表里，由 `features/appearance/index.js` 的 `applyTheme` 拼接 `features/appearance/motion.js` 与 `features/appearance/glass.js` 的输出：
 
 ```js
-const css = `${motion.buildThemeCss(config, base)}${await readGlassCss()}`;
+const css = `${motion.buildThemeCss(motionLayer, base)}${glassLayer}`;
 ```
 
-这意味着**玻璃需要 PI-Desktop 选中 `Motion Lab` 主题**才生效；切到别的主题时玻璃一并消失，但开关状态存在插件设置里，切回来就恢复。两个功能不互相 import：`main.js` 把 `motion.refreshTheme` 交给 `glass.bindTheme`，玻璃改动后由它重新注册一次主题（CSS 没变时宿主不会重绘）。
+这也是两者合成了一个功能、而不是两个功能互相调用的原因：任何一边改动都走同一个 `applyTheme`，样式表永远带着两半，不会出现「调了材质结果动效丢了」这种半张表的状态。旧版本用 `glass.bindTheme` 把 `motion.refreshTheme` 接进玻璃功能，那层回调在合并后已经去掉。
+
+这意味着**玻璃需要 PI-Desktop 选中 `PiOpt Appearance` 主题**才生效；切到别的主题时玻璃一并消失，但开关状态存在插件设置里，切回来就恢复。
 
 玻璃层只用 `--pg-*` 变量，不重定义任何 `--ds-*` 颜色 token，也不使用 `transform`——`transform` 与 `backdrop-filter` 都会让元素成为 `position: fixed` 后代的包含块。这条约束由 `test/glass.test.js` 守住，且只检查**属性声明**、不检查注释：注释里讨论 `transform` 是正常的事，不该让散文触发一条关于行为的规则（测试会先剥掉 `/* … */` 再匹配 `transform:`）。
 
@@ -179,10 +181,10 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 |---|---|
 | `PiOpt: 打开控制台` | 打开面板，进入插件市场 |
 | `PiMarke: 准备全部可用更新` → `Pimarket: 准备全部可用更新` | 打开面板并串行准备所有可用更新 |
-| `PiOpt: 打开动效实验室` | 打开面板，进入动效视图 |
-| `PiOpt: 打开窗口材质` | 打开面板，进入窗口材质视图 |
+| `PiOpt: 打开外观` | 打开面板，进入外观视图（界面动效一节） |
+| `PiOpt: 打开窗口材质` | 打开面板，进入外观视图并滚到窗口材质一节 |
 
-面板左侧菜单最上方有一个展开/收起按钮：收起时只显示图标，展开后菜单加宽并写出「插件市场」「动效实验室」「AI 网关」「窗口材质」四个名字，选择记在面板本地，下次打开保持。菜单里点一下或 `Alt+1` / `Alt+2` / `Alt+3` / `Alt+4` 都能切换视图。
+面板左侧菜单最上方有一个展开/收起按钮：收起时只显示图标，展开后菜单加宽并写出「插件市场」「外观」「AI 网关」三个名字，选择记在面板本地，下次打开保持。菜单里点一下或 `Alt+1` / `Alt+2` / `Alt+3` 都能切换视图。外观视图里「界面动效」与「窗口材质」是同一页的两节，命令打开时会自动滚到对应那一节。
 切换时选中指示条在两项之间滑过去（160ms），新视图淡入并从下方 4px 归位；系统开启「减少动态效果」时两者都关掉。
 
 ## 权限与边界
@@ -195,13 +197,13 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 - 市场功能不安装、不卸载、不启用/禁用、不改 `registry.json`、不启动任何进程。
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
-- 动效与窗口材质共用一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token、不访问网络与文件；`ui.theme` 只用于这一个 `Motion Lab` 主题（基底随设定切换）。
+- 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token，除自己数据目录里那张用户选的背景图外不访问文件与网络；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
 - `agent.prompt.inject` 只用于收录 `skills/piopt.md`（按需加载），不会自动往消息里注入内容。
 - `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；不读文件、不访问网络、不改动其他插件的界面，卸载时移除自己挂的东西。
 
 ### 主题互斥
 
-PI-Desktop 一次只能选择一个主题，动画层不能叠加在另一个第三方主题上。应用动效实验室会切换到匹配的宿主 Light/Dark 基底再附加动效规则，原先选中的第三方主题不会继续生效。
+PI-Desktop 一次只能选择一个主题，外观层不能叠加在另一个第三方主题上。调整外观（动效或材质）会切换到匹配的宿主 Light/Dark 基底再附加动效与玻璃规则，原先选中的第三方主题不会继续生效。
 
 工作面板、浏览器等原生 `WebContentsView` 有独立渲染进程，主题 CSS 无法跨文档控制其内部动画。
 
@@ -210,40 +212,37 @@ PI-Desktop 一次只能选择一个主题，动画层不能叠加在另一个第
 ```text
 PiOpt/
 ├─ manifest.json            统一清单：6 条命令、5 个 agent 工具、7 项权限
-├─ main.js                  组装四个功能，按通道前缀路由面板 RPC
+├─ main.js                  组装三个功能，按通道前缀路由面板 RPC
 ├─ features/
 │  ├─ market/               市场功能
 │  │  ├─ index.js           面板 RPC、命令、agent 工具、任务表
 │  │  ├─ core.js            路径、semver、registry/catalog 读取、失败分类
 │  │  ├─ downloader.js      四源候选、重试、流式 sha256、探测
 │  │  └─ permissions.js     权限中文名、说明与风险分级
-│  ├─ motion/               动效功能
-│  │  ├─ index.js           生命周期、运行时主题注册、面板 RPC
-│  │  └─ motion.js          预设、token、主题 CSS 生成器
-│  ├─ glass/                窗口材质
-│  │  ├─ index.js           生命周期、设置读写、面板 RPC
-│  │  └─ glass.js           玻璃预设、token 与玻璃 CSS 生成器
+│  ├─ appearance/           外观（动效 + 窗口材质）
+│  │  ├─ index.js           生命周期、两条命令、面板 RPC、唯一的主题注册
+│  │  ├─ motion.js          动效预设、token、主题 CSS 生成器
+│  │  ├─ glass.js           玻璃预设、token 与玻璃 CSS 生成器
+│  │  └─ image-size.js      读取背景图原始尺寸（scale-down 需要）
 │  └─ gateway/              AI 网关控制
 │     └─ index.js           进程探测、重启、日志、面板 RPC
 ├─ renderer/
-│  ├─ index.html            外壳 + 四个功能视图
+│  ├─ index.html            外壳 + 三个功能视图
 │  ├─ tokens.css            共享设计 token
 │  ├─ base.css              外壳布局与产品栏
 │  ├─ market.css            市场视图样式（@scope 隔离）
-│  ├─ motion.css            动效视图样式（@scope 隔离）
-│  ├─ glass.css             材质视图样式（@scope 隔离）
+│  ├─ appearance.css        外观视图样式（@scope 隔离，两节共用一套控件）
 │  ├─ gateway.css           网关视图样式（@scope 隔离）
 │  ├─ market.js             市场视图逻辑
-│  ├─ motion.js             动效视图逻辑
-│  ├─ glass.js              材质视图逻辑
+│  ├─ appearance.js         外观视图逻辑（动效 + 材质两节）
 │  ├─ gateway.js            网关视图逻辑
-│  ├─ shell.js              视图切换与按需启动（Alt+1…4）
+│  ├─ shell.js              视图切换与按需启动（Alt+1…3）
 │  └─ entry.mjs             宿主窗口侧边栏的入口按钮（renderer.extension）
 ├─ skills/piopt.md          Agent 使用规则
 └─ test/                    结构、动效模型与玻璃层测试
 ```
 
-四个功能互不调用：面板通道按 `market.` / `motion.` / `glass.` / `gateway.` 前缀分发，各自的设置、状态与失败处理相互独立。唯一的协作是玻璃层随动效主题下发，由 `main.js` 把两者接上。
+三个功能互不调用：面板通道按 `appearance.` / `market.` / `gateway.` 前缀分发，各自的设置、状态与失败处理相互独立。外观内部的两半共用一份样式表，所以它们被合成了一个功能而不是互相调用；面板里仍分 `appearance.motion.*` 与 `appearance.glass.*` 两组通道，旧的 `motion.*` / `glass.*` 名字也照样受理（重载前打开的面板窗口不会失效）。
 
 ## 开发（免打包热重载）
 
@@ -255,7 +254,7 @@ PiOpt/
 
 注意：
 
-- 开发期间请**禁用**已安装的 `local.pimarket` 与 `local.pi-modify`。PiOpt 复用了 `pimarket.open`、`pi-modify.open` 等命令 id，同时启用会出现重复命令，插件列表里也会多出一套旧的 Motion Lab 主题。
+- 开发期间请**禁用**已安装的 `local.pimarket` 与 `local.pi-modify`。PiOpt 复用了 `pimarket.open`、`pi-modify.open` 等命令 id，同时启用会出现重复命令，插件列表里也会多出一套旧的外观主题。
 - 面板是独立窗口，保存文件触发的重载会关闭当前面板，重新打开即可。
 - 入口按钮用的是 `renderer.extension`：它是权限项，宿主在授权变化后不会热更新，所以首次加载或改动权限后要重新加载一次插件（必要时重启）按钮才会出现。
 - 纯界面迭代可以先用浏览器打开 `renderer/index.html` 看布局：没有宿主 bridge 时会自动进入独立预览模式。

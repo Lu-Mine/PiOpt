@@ -5,13 +5,14 @@ description: The user asks to update, reinstall or download a PI-Desktop plugin,
 
 # PiOpt
 
-PiOpt bundles four features in one plugin:
+PiOpt bundles three features in one plugin:
 
 - **插件市场 (market)** — the download-and-verify half of a plugin update.
   Installing stays a user action in the Plugins page.
-- **动效实验室 (motion)** — restrained interface motion presets.
-- **窗口材质 (glass)** — an optional frosted-glass layer over the shell's own
-  surfaces, carried by the same runtime theme as motion.
+- **外观 (appearance)** — how the window looks, in one view with two sections:
+  **界面动效** (restrained motion presets) and **窗口材质** (an optional
+  frosted-glass layer). They are one feature because they write one runtime
+  theme; the view is one page, the sections are not separate panels.
 - **AI 网关 (gateway)** — status, restart and logs for the local AI gateway.
 
 ## Market: when to use
@@ -47,6 +48,14 @@ PiOpt bundles four features in one plugin:
 5. Never edit `registry.json`, and never copy a package into
    `plugins/installed/` to fake an install.
 
+## Appearance: where the two sections live
+
+The view is **PiOpt → 外观** (one rail row, `Alt+2`). Two commands open it on a
+section: `PiOpt: 打开外观` lands on 界面动效, `PiOpt: 打开窗口材质` scrolls to
+窗口材质. Panel channels are `appearance.motion.*` and `appearance.glass.*`; the
+older `motion.*` / `glass.*` names still answer, so an older guide is not wrong
+about the calls, only about the prefix.
+
 ## Motion: when to use
 
 - The user finds PI-Desktop animations too slow, too bouncy, too subtle, or
@@ -56,11 +65,13 @@ PiOpt bundles four features in one plugin:
 ### Motion rules
 
 1. There is no Agent tool for motion. Direct the user to the panel
-   (**PiOpt → 动效实验室**) or the command `PiOpt: 打开动效实验室`.
+   (**PiOpt → 外观 → 界面动效**) or the command `PiOpt: 打开外观`.
 2. Settings apply live: the panel writes on change, about one debounce frame
    after the last input. Do not tell the user to press an "apply" button.
-3. Applying Motion Lab replaces the currently selected theme. PI-Desktop themes
-   are mutually exclusive, so never promise that it stacks on another theme.
+3. Applying appearance settings replaces the currently selected theme.
+   PI-Desktop themes are mutually exclusive, so never promise that motion or the
+   material stacks on another theme — touching either section switches to the
+   `PiOpt Appearance` theme.
 4. The four presets are 敏捷 / 平衡 / 柔和 / 减弱. 减弱 removes spatial movement
    and stops continuous animation; do not describe it as "slower motion".
 5. Never claim motion is applied to plugin panels, the terminal or browser
@@ -76,7 +87,8 @@ PiOpt bundles four features in one plugin:
 ### Glass rules
 
 1. There is no Agent tool for glass. Direct the user to the panel
-   (**PiOpt → 窗口材质**), the command `PiOpt: 打开窗口材质`, or `Alt+4`.
+   (**PiOpt → 外观 → 窗口材质**) or the command `PiOpt: 打开窗口材质` (it
+   scrolls to that section), or `Alt+2` then scroll.
 2. Never promise that the window shows the desktop. PI-Desktop builds its main
    window opaque on Windows 11 — `transparent: false` is what buys it native
    rounded corners, and `transparent` is a BrowserWindow construction flag that
@@ -84,8 +96,9 @@ PiOpt bundles four features in one plugin:
    a soft light field; the Mica backdrop the window already carries stays
    covered by the compositor. Say that plainly instead of calling it Windows
    Mica.
-3. The layer rides the one `Motion Lab` runtime theme, so it only exists while
-   PI-Desktop has that theme selected. Switching to another theme removes the
+3. The layer rides the one `PiOpt Appearance` runtime theme — the same sheet
+   the motion rules live in — so it only exists while PI-Desktop has that theme
+   selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
    The surfaces it covers are the left sidebar, the right work panel body and
    the chrome bars. Four chrome surfaces share one recipe via the `chromeFill`
@@ -129,5 +142,7 @@ PiOpt bundles four features in one plugin:
    in the panel: 拉伸填满 (fill), 等比适应 (contain), 等比铺满 (cover),
    原始尺寸 (none), 等比不放大 (scale-down). The photo is independent of the
    switch: it stays visible with the glass off, only the frosting goes away. A
-   missing or moved file is dropped on load and on `glass.getState`, because a
-   dead reference makes `themes.upsert` fail and takes the motion layer with it.
+   missing or moved file is dropped on load and on
+   `appearance.glass.getState`, because a dead reference makes `themes.upsert`
+   fail and takes the motion layer with it. Resetting the material keeps the
+   photo: it is the user's own file, not part of the recipe.
