@@ -20,9 +20,9 @@
  */
 
 const PRESETS = {
-  light: { blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16, canvas: 62, scrim: 0.12 },
-  standard: { blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22, canvas: 74, scrim: 0.2 },
-  deep: { blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28, canvas: 86, scrim: 0.28 },
+  light: { blur: 16, saturate: 1.35, sidebar: 72, chrome: 58, overlay: 76, glow: 16, canvas: 62, scrim: 0.12 },
+  standard: { blur: 28, saturate: 1.65, sidebar: 82, chrome: 66, overlay: 82, glow: 22, canvas: 74, scrim: 0.2 },
+  deep: { blur: 44, saturate: 2, sidebar: 90, chrome: 74, overlay: 88, glow: 28, canvas: 86, scrim: 0.28 },
 };
 const DEFAULT_CONFIG = { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" };
 const LIMITS = { intensity: [0.6, 1.6] };

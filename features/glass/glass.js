@@ -42,15 +42,20 @@ const FITS = Object.freeze(["fill", "contain", "cover", "none", "scale-down"]);
 
 // One preset is one glass recipe. `sidebar`, `chrome`, `overlay` and `canvas`
 // are fill opacities in percent: the higher the number, the more the surface
-// hides what is behind it — and the deeper/darker it reads. All four climb with
-// the weight, so 轻薄 → 厚重 makes every surface (sidebar, title bar, main pane)
-// progressively more solid and darker. `canvas` still stays below 100 whenever a
-// wallpaper is set, and only jumps to 100 (untouched) when there is no image, so
-// a user who never picks a wallpaper sees no change.
+// hides what is behind it — and the deeper/darker it reads. All of them climb
+// with the weight, so 轻薄 → 厚重 makes every surface progressively more solid.
+//
+// `sidebar` sits ABOVE `canvas` on purpose. The sidebar's own token is the
+// darkest surface the host has (dark: --ds-bg-under = #000, against
+// --ds-bg-primary = #181818 for the pane), and it only stays darker than the
+// pane while it mostly hides the image behind it. A low alpha there let a light
+// photo wash the sidebar out to roughly twice the pane's luminance — measured
+// 63-65 against 34-35 — which read as "the sidebar is the light one".
+// `canvas` still only drops below 100 when a wallpaper is set.
 const PRESETS = Object.freeze({
-  light: Object.freeze({ blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16, canvas: 62, scrim: 0.12 }),
-  standard: Object.freeze({ blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22, canvas: 74, scrim: 0.2 }),
-  deep: Object.freeze({ blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28, canvas: 86, scrim: 0.28 }),
+  light: Object.freeze({ blur: 16, saturate: 1.35, sidebar: 72, chrome: 58, overlay: 76, glow: 16, canvas: 62, scrim: 0.12 }),
+  standard: Object.freeze({ blur: 28, saturate: 1.65, sidebar: 82, chrome: 66, overlay: 82, glow: 22, canvas: 74, scrim: 0.2 }),
+  deep: Object.freeze({ blur: 44, saturate: 2, sidebar: 90, chrome: 74, overlay: 88, glow: 28, canvas: 86, scrim: 0.28 }),
 });
 
 const DEFAULT_CONFIG = Object.freeze({
@@ -261,7 +266,7 @@ function buildGlassCss(input = {}, options = {}) {
   const css = `${CSS_MARKER}
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
-:is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
+:is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
 .main-titlebar,:is(.conversation-topbar,[data-slot=topbar]){background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}

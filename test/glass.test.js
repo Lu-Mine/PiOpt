@@ -113,7 +113,7 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.ok(css.startsWith(glass.CSS_MARKER));
   assert.match(css, /--pg-blur:28px/);
   assert.match(css, /--pg-saturate:1\.65/);
-  assert.match(css, /--pg-sidebar-alpha:44%/);
+  assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
   assert.match(css, /\.main-titlebar,:is\(\.conversation-topbar/);
@@ -374,6 +374,23 @@ test("every surface gets more solid as the weight climbs", () => {
   const increasing = (values) => values.every((value, i) => i === 0 || value > values[i - 1]);
   assert.ok(increasing(canvas), `canvas should rise with weight, got ${canvas.join(" < ")}`);
   assert.ok(increasing(sidebar), `sidebar should rise with weight, got ${sidebar.join(" < ")}`);
+});
+
+test("the sidebar stays denser than the pane so it reads darker", () => {
+  // The sidebar's own token is the darkest surface in the host (dark:
+  // --ds-bg-under #000 vs --ds-bg-primary #181818). It only stays darker than
+  // the pane while it mostly hides the photo behind it: at a low alpha a light
+  // image washed the sidebar out to twice the pane's luminance.
+  for (const preset of ["light", "standard", "deep"]) {
+    const tokens = glass.glassTokens({ enabled: true, preset, wallpaper: "/a.png" });
+    assert.ok(
+      tokens.sidebar > tokens.canvas,
+      `${preset}: sidebar ${tokens.sidebar}% must exceed canvas ${tokens.canvas}%`
+    );
+  }
+  const css = glass.buildGlassCss({ enabled: true, wallpaper: "/a.png" });
+  // The pane's own token would let a photo lift the rail above the pane.
+  assert.ok(css.includes("var(--ds-bg-under) var(--pg-sidebar-alpha)"));
 });
 
 test("every fill mode maps to its own sizing declaration", () => {
