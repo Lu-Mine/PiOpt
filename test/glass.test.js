@@ -116,7 +116,10 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:44%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  assert.match(css, /\.main-titlebar\{/);
+  assert.match(css, /\.main-titlebar,:is\(\.conversation-topbar/);
+  // The right work panel and the conversation top bar are surfaces too.
+  assert.match(css, /\.work-panel\{background-color:color-mix\(in oklab,var\(--ds-bg-dock\)/);
+  assert.match(css, /\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-dock-raised\)/);
   assert.match(css, /backdrop-filter:blur\(var\(--pg-blur\)\)/);
   assert.match(css, /@supports not \(\(backdrop-filter/);
 });
