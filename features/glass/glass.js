@@ -263,8 +263,8 @@ function buildGlassCss(input = {}, options = {}) {
   const scrim = "linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim)))";
   const backdrop = wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
 
-// The frosted window title bar, conversation top bar and window controls share
-// this exact string. The work panel header intentionally stays opaque below.
+  // The window title bar, conversation top bar and window controls share this
+  // fill. The work panel header stays transparent to avoid a second fill layer.
   const chromeFill =
     `background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;` +
     `box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}`;
@@ -294,8 +294,9 @@ function buildGlassCss(input = {}, options = {}) {
    whenever a work panel is open, which is why that corner looked like a
    different material from the bar next to it). */
 .main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{${chromeFill}}
-/* Keep the work panel header a solid, unfrosted surface. */
-.work-panel-header{background-color:var(--ds-bg-primary)!important;${surfaces ? "-webkit-backdrop-filter:none;backdrop-filter:none;" : ""}box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent)}
+/* Frost the work panel header with the same blur and hairline, but no fill of
+   its own: the panel beneath it already paints the translucent glass layer. */
+.work-panel-header{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}

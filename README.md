@@ -90,7 +90,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 1. `.app-shell::before` 铺背景层：有背景图时就是那张图，没有时是一层柔光场。宿主界面底色是一整块纯色，半透明表面盖上去只能看到同一个颜色，`backdrop-filter` 也没有东西可模糊。`z-index:-1` 让它落在 `.app-shell` 自己背景之上、内容之下，不改动任何层级。
 2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、右侧工作面板（`.work-panel`）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-under` / `--ds-bg-dock`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。
 
-   窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar` 与右上角窗口按钮区 `.window-controls` 共用 `chromeFill`。工作面板表头 `.work-panel-header` 保持**不透明的纯色填充**，明确禁用磨砂滤镜，仅沿用同样的底部分隔线。
+   窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar` 与右上角窗口按钮区 `.window-controls` 共用 `chromeFill`。工作面板表头 `.work-panel-header` 使用**透明底色**，并沿用同参数磨砂滤镜与底部分隔线；它不另叠填充，直接透出下层工作面板的玻璃材质。
 
 
    模糊只加在这几个"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。

@@ -90,14 +90,13 @@ PiOpt bundles four features in one plugin:
    The surfaces it covers are the left sidebar, the right work panel body and
    the chrome bars. Three chrome surfaces share one recipe via the `chromeFill`
    string, emitted into a single selector rule: `.main-titlebar`,
-   `.conversation-topbar` and `.window-controls`. The work panel header stays
-   opaque and unfrosted, sharing only their hairline.
+   `.conversation-topbar` and `.window-controls`. The work panel header shares
+   their blur and hairline, but keeps a transparent fill so the panel's glass
+   remains visible without a second opaque layer.
    `.window-controls` is the minimise / maximise / close strip: the host gives
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
    that corner used to read as a different material from the bar beside it.
-   `.work-panel-header` uses an opaque `--ds-bg-primary` fill and explicitly
-   disables backdrop filtering so it cannot inherit frosting from its parent.
    Blur is safe on all of them because the host portals every popup (context
    Never put a blur filter on a menu. The host nests its context submenu inside
    the parent menu (`sidebar-submenu` lives inside `sidebar-floating-menu`) and
