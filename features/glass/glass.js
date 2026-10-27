@@ -263,10 +263,8 @@ function buildGlassCss(input = {}, options = {}) {
   const scrim = "linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim)))";
   const backdrop = wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
 
-  // Every "chrome" surface — the window title bar, the conversation top bar, the
-  // work panel's tab header and the window controls — paints this exact string.
-  // One variable, not four copies: the point is that they are the same material,
-  // and a copy is how they drift apart.
+// The frosted window title bar, conversation top bar and window controls share
+// this exact string. The work panel header intentionally stays opaque below.
   const chromeFill =
     `background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;` +
     `box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}`;
@@ -277,7 +275,7 @@ function buildGlassCss(input = {}, options = {}) {
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
         ".work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
@@ -295,9 +293,9 @@ function buildGlassCss(input = {}, options = {}) {
    sitting on top of the glass (the host even swaps it to --ds-bg-dock-raised
    whenever a work panel is open, which is why that corner looked like a
    different material from the bar next to it). */
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{${chromeFill}}
-/* The work panel header shares the same chromeFill as the other chrome bars;
-   its tabs draw no fill of their own and inherit the same material. */
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{${chromeFill}}
+/* Keep the work panel header a solid, unfrosted surface. */
+.work-panel-header{background-color:var(--ds-bg-primary)!important;${surfaces ? "-webkit-backdrop-filter:none;backdrop-filter:none;" : ""}box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent)}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}

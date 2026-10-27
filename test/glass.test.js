@@ -116,13 +116,13 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The window title bar, conversation top bar, window controls and work panel
-  // header share one selector rule, so they cannot drift apart.
+  // The three frosted chrome bars share one rule; the work panel header stays
+  // an explicitly solid surface and cannot inherit frosting from its parent.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
-  assert.doesNotMatch(css, /\.work-panel-header\{background-color:transparent!important/);
+  assert.match(css, /\.work-panel-header\{background-color:var\(--ds-bg-primary\)!important;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:inset 0 -1px 0 color-mix\(in oklab,var\(--ds-text-primary\) 8%,transparent\)\}/);
   // The right work panel body is a surface too, on the sidebar's density.
   assert.match(css, /\.work-panel\{background-color:color-mix\(in oklab,var\(--ds-bg-dock\)/);
   assert.match(css, /backdrop-filter:blur\(var\(--pg-blur\)\)/);
