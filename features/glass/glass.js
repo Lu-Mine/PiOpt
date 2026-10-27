@@ -237,9 +237,6 @@ function buildGlassCss(input = {}, options = {}) {
   const blur = surfaces
     ? "-webkit-backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))"
     : "";
-  const blurStrong = surfaces
-    ? "-webkit-backdrop-filter:blur(var(--pg-blur-strong)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur-strong)) saturate(var(--pg-saturate))"
-    : "";
   const wallpaper = wallpaperCssUrl(config.wallpaper);
   // A photo already carries the detail the light field was standing in for, and
   // leaving it out keeps one fewer full-window gradient to recomposite.
@@ -293,7 +290,20 @@ function buildGlassCss(input = {}, options = {}) {
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
-:is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content,.sidebar-section-menu,.project-menu,.composer-model-menu,.agent-capability-menu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent);${blurStrong}}
+/* Popups get the stronger fill but NOT the stronger blur.
+
+   A backdrop blur makes an element the containing block for its
+   position:fixed descendants — the same trap as a transform. The host nests
+   its context submenu inside the parent menu (sidebar-submenu lives inside
+   sidebar-floating-menu) and positions BOTH from getBoundingClientRect,
+   innerWidth and innerHeight, i.e. in viewport coordinates. Blurring the parent
+   made the child resolve those numbers against the parent instead of the
+   viewport, so the submenu stayed pinned inside the menu that opened it and
+   could not float out. The translucent fill alone still reads as glass; the
+   blur was the part that broke it.
+
+   (No backticks in this block: it lives inside a template literal.) */
+:is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content,.sidebar-section-menu,.project-menu,.composer-model-menu,.agent-capability-menu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent)}
 ${noBlurFallback}`;
 
   if (Buffer.byteLength(css, "utf8") > CSS_LIMIT_BYTES) {

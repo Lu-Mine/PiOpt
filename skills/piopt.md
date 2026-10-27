@@ -104,8 +104,18 @@ PiOpt bundles four features in one plugin:
    spot to 68-74. Its tabs (浏览器 / 审阅 / 侧边聊天) paint no fill either, so they
    inherit exactly whatever the header shows.
    Blur is safe on all of them because the host portals every popup (context
-   menu, submenus, notifications, usage popovers) to `document.body`, so none
-   of them is a descendant whose `position: fixed` would re-anchor.
+   Never put a blur filter on a menu. The host nests its context submenu inside
+   the parent menu (`sidebar-submenu` lives inside `sidebar-floating-menu`) and
+   positions both from `getBoundingClientRect` / `innerWidth` / `innerHeight`,
+   i.e. viewport coordinates. A blur — like a transform — makes the parent the
+   containing block for that fixed child, so the submenu resolves those numbers
+   against the parent and appears trapped inside the menu that opened it.
+   Popups therefore get the translucent fill only, never the frosting.
+   The blur on the sidebar, the title bars and `work-panel` is safe: none of
+   them is the parent of a host popup.
+   The "no transform" rule in `test/glass.test.js` checks property declarations
+   only (comments are stripped first). Prose may say `transform` — the rule is
+   about behaviour, not vocabulary.
 4. Settings apply live, about one debounce frame after the last input. Do not
    tell the user to press an apply button.
 5. 轻薄 / 标准 / 厚重 are glass recipes, not motion presets. The switch only

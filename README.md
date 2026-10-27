@@ -149,7 +149,11 @@ const css = `${motion.buildThemeCss(config, base)}${await readGlassCss()}`;
 
 这意味着**玻璃需要 PI-Desktop 选中 `Motion Lab` 主题**才生效；切到别的主题时玻璃一并消失，但开关状态存在插件设置里，切回来就恢复。两个功能不互相 import：`main.js` 把 `motion.refreshTheme` 交给 `glass.bindTheme`，玻璃改动后由它重新注册一次主题（CSS 没变时宿主不会重绘）。
 
-玻璃层只用 `--pg-*` 变量，不重定义任何 `--ds-*` 颜色 token，也不使用 `transform`——`transform` 与 `backdrop-filter` 都会让元素成为 `position: fixed` 后代的包含块。宿主的右键菜单、二级菜单都 portal 到 `document.body`，所以给侧栏加模糊不会移动它们；这条约束由 `test/glass.test.js` 守住。
+玻璃层只用 `--pg-*` 变量，不重定义任何 `--ds-*` 颜色 token，也不使用 `transform`——`transform` 与 `backdrop-filter` 都会让元素成为 `position: fixed` 后代的包含块。这条约束由 `test/glass.test.js` 守住，且只检查**属性声明**、不检查注释：注释里讨论 `transform` 是正常的事，不该让散文触发一条关于行为的规则（测试会先剥掉 `/* … */` 再匹配 `transform:`）。
+
+这条规矩背后是实测踩过的坑。宿主**把二级菜单嵌在父菜单内部**（`.sidebar-submenu` 是 `.sidebar-floating-menu` 的子元素），两级的坐标都由 JS 从 `getBoundingClientRect` / `innerWidth` / `innerHeight` 算出来，是**视口坐标**。所以只要给父菜单加了 `backdrop-filter`，子菜单的 `top`/`left` 就不再相对视口，而是相对父菜单——表现为二级菜单“被关在上一级窗口里出不来”。弹层因此只上底色、不上模糊。
+
+侧栏、标题栏、`.work-panel` 上的模糊是安全的：它们的 `position: fixed` 后代不会是宿主浮层，浮层虽嵌在父菜单里，但父菜单本身不带模糊。
 
 ## 侧边栏入口
 

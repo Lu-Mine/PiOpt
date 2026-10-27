@@ -138,8 +138,13 @@ test("glass never uses a transform", () => {
   // A transform — even one that finishes — becomes the containing block for
   // `position: fixed` descendants, which is what moved the host's context menu
   // the last time a theme layer added one.
+  //
+  // Only property declarations are checked: the word is allowed in comments,
+  // which is where most of this file's warnings about it live. Strip the
+  // comments first so prose cannot fail a rule about behaviour.
   const css = glass.buildGlassCss({ enabled: true, preset: "deep", intensity: 1.6 });
-  assert.doesNotMatch(css, /transform/);
+  const declarations = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(declarations, /(^|[;{])\s*(?:-webkit-)?transform\s*:/);
 });
 
 test("no blur lands on a container that owns the host's popups", () => {
@@ -435,7 +440,7 @@ test("scale-down never enlarges, which needs the image's natural size", () => {
   assert.ok(small.includes("height:min(100%,300px)"));
   assert.ok(small.includes("margin:auto"));
   assert.ok(small.includes("background-size:contain"));
-  assert.equal(small.includes("transform"), false);
+  assert.equal(/(^|[;{])\s*(?:-webkit-)?transform\s*:/.test(small.replace(/\/\*[\s\S]*?\*\//g, "")), false);
 
   // Without one it degrades to contain: it may enlarge, but it never breaks.
   const unknown = sized(null);
@@ -667,7 +672,11 @@ test("the photo survives the glass switch being off", () => {
   // With the switch on, the same photo gains the frosting.
   const on = glass.buildGlassCss({ enabled: true, wallpaper: photo }, { size: { width: 400, height: 300 } });
   assert.ok(on.includes("backdrop-filter:blur(var(--pg-blur))"));
-  assert.ok(on.includes("backdrop-filter:blur(var(--pg-blur-strong))"));
+  assert.ok(on.includes("@supports not"));
+  // Popups carry the fill but never the frosting: blurring a menu makes it the
+  // containing block for the submenu it opens, which the host positions in
+  // viewport coordinates — the submenu then stays trapped inside its parent.
+  assert.equal(/\[role=menu\][^{]*\{[^}]*backdrop-filter/.test(on), false);
   assert.ok(on.includes("@supports not"));
 
   // No photo and no switch still means an empty sheet, byte for byte.
