@@ -294,7 +294,13 @@ function buildGlassCss(input = {}, options = {}) {
   const css = `${CSS_MARKER}
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-blur-leaf:${tokens.blurLeaf}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-leaf-alpha:${tokens.leaf}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
-:is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
+:is(.sidebar-surface,.sidebar-rail){background-color:transparent!important;background-image:linear-gradient(to bottom,transparent 0 var(--ds-toolbar-height),color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent) var(--ds-toolbar-height)),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
+/* The toolbar band belongs to the chrome surfaces alone. The sidebar used to
+   carry its own darker glass all the way to the top, so the title bar above it
+   composited over black while the bar beside it sat on the pane: same fill,
+   different result — at 58% that is lum 14 against 24. One band, one underlay,
+   so the sidebar's fill now starts below the toolbar. Its top sheen goes with
+   it: that gradient existed for a bar the chrome surface now owns. */
 /* Every chrome surface paints the identical chromeFill string. .window-controls
    is the 120px strip at the top right holding minimise / maximise / close — it
    is position: fixed and would otherwise stay a solid slap of --ds-bg-primary
@@ -341,6 +347,22 @@ function buildGlassCss(input = {}, options = {}) {
    z-index:-1 keeps it behind the menu text; the menu's fill still supplies
    the tint. */
 :is(.sidebar-floating-menu,.context-menu:not(.context-menu-submenu),[role=dialog],.popover-content,.dropdown-content)::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;${blurLeaf}}
+/* Keep the frosting on through the whole menu animation.
+
+   Two faults, one cause. The host hides its context menu with
+   visibility:hidden, and Chromium does not compose a hidden subtree, so the
+   blur behind it did not exist until the first visible frame. On top of that
+   the motion layer fades every [role=menu] in with an opacity animation over
+   --pm-base (374ms at the current speed). An element mid-opacity-animation is
+   composited on its own layer, and its backdrop-filter samples that layer
+   instead of the page behind — so for the whole fade the menu looked flat and
+   the frosting only appeared when the animation ended.
+
+   Both are fixed here: keep the menu visible-but-transparent so it is composed
+   all along, and give it no fade of its own. The closed state is already
+   pointer-events:none, so nothing is clickable early. */
+.context-menu:not(.is-open){visibility:visible!important;opacity:0!important}
+.context-menu[role=menu]{animation:none!important}
 ${noBlurFallback}`;
 
   if (Buffer.byteLength(css, "utf8") > CSS_LIMIT_BYTES) {
@@ -348,7 +370,6 @@ ${noBlurFallback}`;
   }
   return css;
 }
-
 module.exports = {
   CSS_LIMIT_BYTES,
   CSS_MARKER,

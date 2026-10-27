@@ -125,6 +125,13 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.ok(chromeRule, "the chrome bars share one selector rule");
   assert.match(chromeRule[1], /background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\),transparent\)!important/);
   assert.equal(chromeRule[1].includes("backdrop-filter"), false);
+  // The toolbar band must have exactly one underlay. The sidebar used to paint
+  // its darker glass to the very top, so the title bar above it composited over
+  // black while the bar beside it sat on the pane — same fill, different result.
+  const sidebarRule = /:is\(\.sidebar-surface,\.sidebar-rail\)\{([^}]*)\}/.exec(css);
+  assert.ok(sidebarRule, "the sidebar surface has a rule");
+  assert.match(sidebarRule[1], /background-color:transparent!important/);
+  assert.match(sidebarRule[1], /linear-gradient\(to bottom,transparent 0 var\(--ds-toolbar-height\)/);
   // The panel's darker canvas must not continue behind the header either.
   assert.match(css, /\.work-panel\{background:linear-gradient\(to bottom,transparent 0 var\(--ds-toolbar-height\),color-mix\(in oklab,var\(--ds-bg-dock\) var\(--pg-sidebar-alpha\),transparent\) var\(--ds-toolbar-height\)\)!important\}/);
   assert.match(css, /\.work-panel-main\{background:transparent!important\}/);

@@ -93,12 +93,10 @@ PiOpt bundles four features in one plugin:
    `.work-panel-header` — same translucent fill, same hairline, and no
    `backdrop-filter`. That last part is not an oversight: a blur samples what is
    behind each surface, and behind that one 46px band sit three different
-   things (the sidebar's glass, the main pane, the side panel), so frosting them
-   separately produced three tints. The panel's own darker canvas starts below
-   the header and carries no filter either, or it would colour the window
-   controls sitting on top of it.
-   it a `position: fixed` solid block and even swaps it to
-   `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
+   ones produced three tints. The band also has exactly one underlay: the
+   sidebar and the work panel no longer paint their own fill inside the top
+   `--ds-toolbar-height`, or the same chrome fill would composite over black on
+   one side (`lum 14`) and over the pane on the other (`lum 24`).
    that corner used to read as a different material from the bar beside it.
    Blur is safe on all of them because the host portals every popup (context
    Never put a blur filter on a menu. The host nests its context submenu inside
