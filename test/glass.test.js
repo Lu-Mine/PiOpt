@@ -116,16 +116,14 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The three main chrome bars share one fill rule. The work panel header
-  // uses their frosting and hairline without stacking a second fill layer.
+  // All chrome bars share one exact fill rule. The work panel's darker canvas
+  // must not continue behind its header and change the colour of that fill.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
-  assert.match(css, /\.work-panel-header\{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix\(in oklab,var\(--ds-text-primary\) 8%,transparent\);-webkit-backdrop-filter:blur\(var\(--pg-blur\)\) saturate\(var\(--pg-saturate\)\);backdrop-filter:blur\(var\(--pg-blur\)\) saturate\(var\(--pg-saturate\)\)\}/);
-  // The right work panel body is a surface too, on the sidebar's density.
-  assert.match(css, /\.work-panel\{background-color:color-mix\(in oklab,var\(--ds-bg-dock\)/);
-  assert.match(css, /backdrop-filter:blur\(var\(--pg-blur\)\)/);
+  assert.match(css, /\.work-panel\{background:linear-gradient\(to bottom,transparent 0 var\(--ds-toolbar-height\),color-mix\(in oklab,var\(--ds-bg-dock\) var\(--pg-sidebar-alpha\),transparent\) var\(--ds-toolbar-height\)\)!important/);
+  assert.match(css, /\.work-panel-main\{background:transparent!important\}/);
   assert.match(css, /@supports not \(\(backdrop-filter/);
 });
 
@@ -672,7 +670,7 @@ test("the photo survives the glass switch being off", () => {
   // submenu makes it the containing block for that fixed child, and the host
   // reads the parent's rect to place the child — the submenu then stays
   // trapped inside the menu that opened it.
-  assert.doesNotMatch(on, /\.sidebar-floating-menu[^{]*\{[^}]*backdrop-filter/);
+  assert.doesNotMatch(on, /\.sidebar-floating-menu[^{:]*\{[^}]*backdrop-filter/);
   assert.match(on, /:is\(\.sidebar-submenu,\.context-menu-submenu\)\{[^}]*backdrop-filter/);
   assert.ok(on.includes("@supports not"));
   // No photo and no switch still means an empty sheet, byte for byte.

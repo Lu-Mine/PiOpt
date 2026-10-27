@@ -263,8 +263,8 @@ function buildGlassCss(input = {}, options = {}) {
   const scrim = "linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim)))";
   const backdrop = wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
 
-  // The window title bar, conversation top bar and window controls share this
-  // fill. The work panel header stays transparent to avoid a second fill layer.
+  // All four chrome bars use the exact same fill. The work panel leaves its
+  // top toolbar band clear so the panel's darker canvas cannot show through it.
   const chromeFill =
     `background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;` +
     `box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}`;
@@ -275,8 +275,8 @@ function buildGlassCss(input = {}, options = {}) {
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
-        ".work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".work-panel{background:linear-gradient(to bottom,transparent 0 var(--ds-toolbar-height),color-mix(in oklab,var(--ds-bg-dock) 90%,transparent) var(--ds-toolbar-height))!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
       ].join("\n")
@@ -293,12 +293,12 @@ function buildGlassCss(input = {}, options = {}) {
    sitting on top of the glass (the host even swaps it to --ds-bg-dock-raised
    whenever a work panel is open, which is why that corner looked like a
    different material from the bar next to it). */
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{${chromeFill}}
-/* Frost the work panel header with the same blur and hairline, but no fill of
-   its own: the panel beneath it already paints the translucent glass layer. */
-.work-panel-header{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}}
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{${chromeFill}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
-.work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
+/* Keep the darker panel canvas below the header, so it cannot change the
+   shared chrome colour from underneath. */
+.work-panel{background:linear-gradient(to bottom,transparent 0 var(--ds-toolbar-height),color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent) var(--ds-toolbar-height))!important;${blur}}
+.work-panel-main{background:transparent!important}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
 /* Popups: fill for all of them, real frosting only for the leaf ones.
 
@@ -322,6 +322,16 @@ function buildGlassCss(input = {}, options = {}) {
    (No backticks in this block: it lives inside a template literal.) */
 :is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content,.sidebar-section-menu,.project-menu,.composer-model-menu,.agent-capability-menu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent)}
 :is(.sidebar-submenu,.context-menu-submenu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-leaf-alpha),transparent)!important;${blurLeaf}}
+
+/* The parent menu needs frosting too, but it cannot carry the filter itself:
+   a blur on the menu makes it the containing block for the fixed-position
+   submenu it opens, and the host places that submenu from viewport
+   coordinates, so it stays trapped inside. Paint the blur on a pseudo-element
+   instead. The pseudo gets its own backdrop root, the menu itself stays a
+   plain positioned box, and the submenu keeps resolving against the viewport.
+   z-index:-1 keeps it behind the menu text; the menu's fill still supplies
+   the tint. */
+:is(.sidebar-floating-menu,.context-menu:not(.context-menu-submenu),[role=dialog],.popover-content,.dropdown-content)::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;${blurLeaf}}
 ${noBlurFallback}`;
 
   if (Buffer.byteLength(css, "utf8") > CSS_LIMIT_BYTES) {

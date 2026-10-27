@@ -88,11 +88,10 @@ PiOpt bundles four features in one plugin:
    PI-Desktop has that theme selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
    The surfaces it covers are the left sidebar, the right work panel body and
-   the chrome bars. Three chrome surfaces share one recipe via the `chromeFill`
-   string, emitted into a single selector rule: `.main-titlebar`,
-   `.conversation-topbar` and `.window-controls`. The work panel header shares
-   their blur and hairline, but keeps a transparent fill so the panel's glass
-   remains visible without a second opaque layer.
+   the chrome bars. All four chrome surfaces share one exact `chromeFill` rule:
+   `.main-titlebar`, `.conversation-topbar`, `.window-controls` and
+   `.work-panel-header`. The panel's darker canvas starts below the header;
+   letting it continue underneath would show through and change the colour.
    `.window-controls` is the minimise / maximise / close strip: the host gives
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
