@@ -259,9 +259,8 @@ function buildGlassCss(input = {}, options = {}) {
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
-        ".work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
-        ".work-panel-header{background-color:transparent!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".work-panel::before{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
       ].join("\n")
@@ -272,23 +271,34 @@ function buildGlassCss(input = {}, options = {}) {
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
 :is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
-/* Every chrome surface paints the identical chromeFill string. .window-controls
-   is the 120px strip at the top right holding minimise / maximise / close — it
-   is position: fixed and would otherwise stay a solid slap of --ds-bg-primary
-   sitting on top of the glass (the host even swaps it to --ds-bg-dock-raised
-   whenever a work panel is open, which is why that corner looked like a
-   different material from the bar next to it). */
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{${chromeFill}}
-/* The work panel header is the exception: it already sits on .work-panel, which
-   paints the glass itself. Giving it chromeFill too stacked a second opaque
-   layer on top (host token 58% over the panel's own 82%) and no photo came
-   through — measured B-R 10-11 against 55-72 in the panel body right below it.
-   So it paints nothing and lets the panel's own glass show, keeping only the
-   hairline that separates the tab row from the content. The tabs inside it draw
-   no fill of their own, so they inherit exactly this. */
-.work-panel-header{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 10%,transparent)}
+/* Every chrome surface paints the identical chromeFill string: the window title
+   bar, the conversation top bar, the window controls (the 120px minimise /
+   maximise / close strip, position: fixed, which the host otherwise paints a
+   solid --ds-bg-primary or --ds-bg-dock-raised) and the work panel header.
+
+   The header only renders like the other three because .work-panel does not
+   carry the frosting itself — see the next rule. */
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{${chromeFill}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
-.work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
+/* The work panel's glass lives on its ::before, not on .work-panel.
+
+   An element with a backdrop filter is a Backdrop Root: a descendant's own
+   blur can only see what is painted inside that ancestor, never the
+   photo behind it. With the blur on .work-panel, the header's blur sampled the
+   panel's still-transparent box, so the header's fill landed on nothing and
+   read as a flat grey bar — measured on 0.21.0 over a solid #2060c0 backdrop:
+   header rgb(27,30,34), window controls rgb(22,36,56). The window controls are
+   a sibling of the panel, not a child, so they always saw the real backdrop.
+   Dropping the header's fill instead (the previous workaround) just showed the
+   panel glass at a different density from the bar beside it.
+
+   A pseudo element is a sibling of the header in paint order, so it is not a
+   Backdrop Root for it: the header and the window controls now sample the same
+   stack and come out identical — rgb(22,36,57) for both, same as the top bar.
+   .work-panel is already a stacking context (position: relative + z-index 20),
+   so z-index:-1 keeps the layer above the panel's box and below its content. */
+.work-panel{background-color:transparent!important}
+.work-panel::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent);${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
 /* Popups get the stronger fill but NOT the stronger blur.
 

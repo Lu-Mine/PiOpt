@@ -88,21 +88,21 @@ PiOpt bundles four features in one plugin:
    PI-Desktop has that theme selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
    The surfaces it covers are the left sidebar, the right work panel body and
-   the chrome bars. Three chrome surfaces share one recipe via the `chromeFill`
+   the chrome bars. Four chrome surfaces share one recipe via the `chromeFill`
    string, emitted into a single selector rule: `.main-titlebar`,
-   `.conversation-topbar` and `.window-controls`. Not three copies — a copy is
+   `.conversation-topbar`, `.window-controls` and `.work-panel-header`. Not copies — a copy is
    how they drift apart.
    `.window-controls` is the minimise / maximise / close strip: the host gives
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
    that corner used to read as a different material from the bar beside it.
-   `.work-panel-header` is the exception and paints **no fill at all** — only a
-   hairline. It already sits on `.work-panel`, which draws the glass itself; a
-   second chromeFill layer there stacked two opaques and killed the photo
-   (measured B-R 10-11, against 55-80 in the panel body right beneath it, which
-   is what "the tab row is dead grey" looked like). Clearing it lifted the same
-   spot to 68-74. Its tabs (浏览器 / 审阅 / 侧边聊天) paint no fill either, so they
-   inherit exactly whatever the header shows.
+   The header only matches the others because `.work-panel` itself carries no
+   `backdrop-filter`: its glass is drawn on `.work-panel::before`. An element
+   with a backdrop-filter is a Backdrop Root, so a descendant's blur only sees
+   what is painted inside it — the header used to sample the panel's empty box
+   and read as flat grey (rgb(27,30,34) against the window controls'
+   rgb(22,36,56) over a solid backdrop). With the layer on a pseudo element the
+   header, window controls and top bar all measure rgb(22,36,57).
    Blur is safe on all of them because the host portals every popup (context
    Never put a blur filter on a menu. The host nests its context submenu inside
    the parent menu (`sidebar-submenu` lives inside `sidebar-floating-menu`) and
@@ -111,7 +111,7 @@ PiOpt bundles four features in one plugin:
    containing block for that fixed child, so the submenu resolves those numbers
    against the parent and appears trapped inside the menu that opened it.
    Popups therefore get the translucent fill only, never the frosting.
-   The blur on the sidebar, the title bars and `work-panel` is safe: none of
+   The blur on the sidebar, the title bars and `work-panel::before` is safe: none of
    them is the parent of a host popup.
    The "no transform" rule in `test/glass.test.js` checks property declarations
    only (comments are stripped first). Prose may say `transform` — the rule is

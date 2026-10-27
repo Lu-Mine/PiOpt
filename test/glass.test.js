@@ -116,20 +116,19 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The window title bar, the conversation top bar and the window controls
-  // (minimise / maximise / close) share the one selector rule, so they cannot
-  // drift apart into merely-similar values.
+  // The window title bar, the conversation top bar, the window controls and the
+  // work panel header share the one selector rule, so they cannot drift apart
+  // into merely-similar values.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
-  // The work panel header must stay clear instead of stacking a second opaque
-  // layer over the panel's own glass — that is what stopped the tab row from
-  // showing the photo while the content right below it did.
-  assert.match(css, /\.work-panel-header\{background-color:transparent!important/);
-  assert.doesNotMatch(css, /\.work-panel-header[^{}]*\{[^}]*chrome-alpha/);
-  // The right work panel body is a surface too, on the sidebar's density.
-  assert.match(css, /\.work-panel\{background-color:color-mix\(in oklab,var\(--ds-bg-dock\)/);
+  // The work panel's glass rides on its ::before. A backdrop-filter on
+  // .work-panel itself would make it the Backdrop Root of the header, and the
+  // header's blur would sample the panel's empty box instead of the photo.
+  assert.match(css, /\.work-panel::before\{[^}]*background-color:color-mix\(in oklab,var\(--ds-bg-dock\)[^}]*backdrop-filter:blur/);
+  assert.doesNotMatch(css, /\.work-panel\{[^}]*backdrop-filter/);
+  assert.match(css, /\.work-panel\{background-color:transparent!important\}/);
   assert.match(css, /backdrop-filter:blur\(var\(--pg-blur\)\)/);
   assert.match(css, /@supports not \(\(backdrop-filter/);
 });

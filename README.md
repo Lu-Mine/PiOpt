@@ -88,11 +88,11 @@ data/local.piopt/downloads/<id>-<version>.piplug
 四条规则各自解决一个问题：
 
 1. `.app-shell::before` 铺背景层：有背景图时就是那张图，没有时是一层柔光场。宿主界面底色是一整块纯色，半透明表面盖上去只能看到同一个颜色，`backdrop-filter` 也没有东西可模糊。`z-index:-1` 让它落在 `.app-shell` 自己背景之上、内容之下，不改动任何层级。
-2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、右侧工作面板（`.work-panel`）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-under` / `--ds-bg-dock`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。
+2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、右侧工作面板（`.work-panel`，玻璃画在它的 `::before` 上，原因见下）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-under` / `--ds-bg-dock`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。
 
-   横幅材质由变量 `chromeFill` 统一下发，窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角装最小化 / 最大化 / 关闭的 `.window-controls` 拼进**同一个选择器**——不是三份拷贝，拷贝就是它们跑偏的方式。`.window-controls` 要归进来，是因为宿主给它的是 `position: fixed` 的实色块（`background: var(--ds-bg-primary)`），并且在**打开工作面板时会换成 `--ds-bg-dock-raised`**——于是那个角上永远是一块和旁边标题栏不同的材质。
+   横幅材质由变量 `chromeFill` 统一下发，窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角装最小化 / 最大化 / 关闭的 `.window-controls`、工作面板表头 `.work-panel-header` 拼进**同一个选择器**——不是四份拷贝，拷贝就是它们跑偏的方式。`.window-controls` 要归进来，是因为宿主给它的是 `position: fixed` 的实色块（`background: var(--ds-bg-primary)`），并且在**打开工作面板时会换成 `--ds-bg-dock-raised`**——于是那个角上永远是一块和旁边标题栏不同的材质。
 
-   工作面板表头 `.work-panel-header` 是唯一的例外：**它不画任何底色**（`background-color: transparent`），只留一道分隔线。因为它本来就坐在 `.work-panel` 上，而 `.work-panel` 自己已经在画玻璃；再给它叠一层 `chromeFill` 就是两层不透明叠在一起，背景图被挡死。实测那个位置蓝红差（B-R，越大越透出图）只有 10–11，而紧邻下面同样的面板内容区是 55–80——肉眼看到的就是"tab 那一条是死灰的"。改成透明之后同一位置升到 68–74，和下方内容区一致。它里面的 tab（浏览器 / 审阅 / 侧边聊天）自身也没有底色，所以跟着一起透。
+   工作面板表头能和另外三块渲染成一样，前提是 **`.work-panel` 本身不带 `backdrop-filter`**。带了 `backdrop-filter` 的元素是 Backdrop Root：它后代的 `backdrop-filter` 只能取样到这个祖先内部已经画出的内容，看不到更底下的背景图。以前模糊加在 `.work-panel` 上，表头的模糊取样到的是面板那层空的盒子，`chromeFill` 等于叠在"什么都没有"上——实测在纯色 `#2060c0` 背景下，表头是 `rgb(27,30,34)` 的死灰，而右边的 `.window-controls`（它是面板的兄弟而不是后代）是 `rgb(22,36,56)`。之前"表头不画底色"的绕法只是让面板自己的玻璃露出来，密度仍和旁边横幅不同。现在面板的底色和模糊都移到 `.work-panel::before`（`z-index:-1`，`.work-panel` 本身已是层叠上下文），伪元素在绘制顺序上是表头的兄弟，不再拦截表头的取样：表头、窗口按钮、会话顶部条实测都是 `rgb(22,36,57)`，换回真实壁纸也一致。
 
 
    模糊只加在这几个"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。
@@ -153,7 +153,7 @@ const css = `${motion.buildThemeCss(config, base)}${await readGlassCss()}`;
 
 这条规矩背后是实测踩过的坑。宿主**把二级菜单嵌在父菜单内部**（`.sidebar-submenu` 是 `.sidebar-floating-menu` 的子元素），两级的坐标都由 JS 从 `getBoundingClientRect` / `innerWidth` / `innerHeight` 算出来，是**视口坐标**。所以只要给父菜单加了 `backdrop-filter`，子菜单的 `top`/`left` 就不再相对视口，而是相对父菜单——表现为二级菜单“被关在上一级窗口里出不来”。弹层因此只上底色、不上模糊。
 
-侧栏、标题栏、`.work-panel` 上的模糊是安全的：它们的 `position: fixed` 后代不会是宿主浮层，浮层虽嵌在父菜单里，但父菜单本身不带模糊。
+侧栏、标题栏、`.work-panel::before` 上的模糊是安全的：它们的 `position: fixed` 后代不会是宿主浮层，浮层虽嵌在父菜单里，但父菜单本身不带模糊。
 
 ## 侧边栏入口
 
