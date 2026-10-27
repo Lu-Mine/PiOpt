@@ -116,14 +116,18 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The three chrome bars plus the window controls — window title bar,
-  // conversation top bar, work panel's tab header, and the minimise /
-  // maximise / close strip — must all share the one selector rule, so they
-  // cannot drift apart into merely-similar values.
+  // The window title bar, the conversation top bar and the window controls
+  // (minimise / maximise / close) share the one selector rule, so they cannot
+  // drift apart into merely-similar values.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\],\.work-panel-header\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
+  // The work panel header must stay clear instead of stacking a second opaque
+  // layer over the panel's own glass — that is what stopped the tab row from
+  // showing the photo while the content right below it did.
+  assert.match(css, /\.work-panel-header\{background-color:transparent!important/);
+  assert.doesNotMatch(css, /\.work-panel-header[^{}]*\{[^}]*chrome-alpha/);
   // The right work panel body is a surface too, on the sidebar's density.
   assert.match(css, /\.work-panel\{background-color:color-mix\(in oklab,var\(--ds-bg-dock\)/);
   assert.match(css, /backdrop-filter:blur\(var\(--pg-blur\)\)/);

@@ -87,18 +87,22 @@ PiOpt bundles four features in one plugin:
 3. The layer rides the one `Motion Lab` runtime theme, so it only exists while
    PI-Desktop has that theme selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
-   The surfaces it covers are the left sidebar, the right work panel body, and
-   Four chrome surfaces share one recipe: `.main-titlebar`,
-   `.conversation-topbar`, `.work-panel-header` and `.window-controls`. They
-   are emitted into a single selector rule from one `chromeFill` string, not
-   four copies — a copy is how they drift apart. `.work-panel-header` carries
-   the work panel's tab list (浏览器 / 审阅 / 侧边聊天): those tabs paint no fill
-   of their own, so the header's material *is* the tab row's material.
+   The surfaces it covers are the left sidebar, the right work panel body and
+   the chrome bars. Three chrome surfaces share one recipe via the `chromeFill`
+   string, emitted into a single selector rule: `.main-titlebar`,
+   `.conversation-topbar` and `.window-controls`. Not three copies — a copy is
+   how they drift apart.
    `.window-controls` is the minimise / maximise / close strip: the host gives
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
    that corner used to read as a different material from the bar beside it.
-   Never cover the whole set partially — that one omission is visible.
+   `.work-panel-header` is the exception and paints **no fill at all** — only a
+   hairline. It already sits on `.work-panel`, which draws the glass itself; a
+   second chromeFill layer there stacked two opaques and killed the photo
+   (measured B-R 10-11, against 55-80 in the panel body right beneath it, which
+   is what "the tab row is dead grey" looked like). Clearing it lifted the same
+   spot to 68-74. Its tabs (浏览器 / 审阅 / 侧边聊天) paint no fill either, so they
+   inherit exactly whatever the header shows.
    Blur is safe on all of them because the host portals every popup (context
    menu, submenus, notifications, usage popovers) to `document.body`, so none
    of them is a descendant whose `position: fixed` would re-anchor.

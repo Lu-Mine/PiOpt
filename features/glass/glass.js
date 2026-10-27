@@ -262,8 +262,9 @@ function buildGlassCss(input = {}, options = {}) {
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
         ".work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
+        ".work-panel-header{background-color:transparent!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
       ].join("\n")
@@ -274,15 +275,21 @@ function buildGlassCss(input = {}, options = {}) {
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
 :is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
-/* Every chrome surface paints the identical chromeFill string. The work panel's
-   tab list lives in .work-panel-header and the tabs themselves paint no fill,
-   so the header's material *is* the tab row's material. .window-controls is the
-   120px strip at the top right holding minimise / maximise / close — it is
-   position: fixed and would otherwise stay a solid lab of --ds-bg-primary sitting
-   on top of the glass (the host even swaps it to --ds-bg-dock-raised whenever a
-   work panel is open, which is why that corner looked like a different material
-   from the bar next to it). */
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header),.window-controls{${chromeFill}}
+/* Every chrome surface paints the identical chromeFill string. .window-controls
+   is the 120px strip at the top right holding minimise / maximise / close — it
+   is position: fixed and would otherwise stay a solid slap of --ds-bg-primary
+   sitting on top of the glass (the host even swaps it to --ds-bg-dock-raised
+   whenever a work panel is open, which is why that corner looked like a
+   different material from the bar next to it). */
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{${chromeFill}}
+/* The work panel header is the exception: it already sits on .work-panel, which
+   paints the glass itself. Giving it chromeFill too stacked a second opaque
+   layer on top (host token 58% over the panel's own 82%) and no photo came
+   through — measured B-R 10-11 against 55-72 in the panel body right below it.
+   So it paints nothing and lets the panel's own glass show, keeping only the
+   hairline that separates the tab row from the content. The tabs inside it draw
+   no fill of their own, so they inherit exactly this. */
+.work-panel-header{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 10%,transparent)}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
