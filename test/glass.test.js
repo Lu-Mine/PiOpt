@@ -354,8 +354,23 @@ test("a wallpaper replaces the light field and thins the content pane", () => {
   assert.match(photo, /--pg-scrim:0\.2\b/);
   assert.equal(plain.includes("background-image:url("), false, "the light field needs no scrim");
   assert.match(plain, /--pg-canvas-alpha:100%/);
-  assert.match(photo, /--pg-canvas-alpha:84%/);
+  assert.match(photo, /--pg-canvas-alpha:74%/);
   assert.ok(plain.includes(".main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}"));
+});
+
+test("every surface gets more solid as the weight climbs", () => {
+  // 轻薄 → 厚重 must read as "more solid and darker" on all four surfaces —
+  // the main pane included. It used to fall the other way, which made the
+  // content area look lighter as the sidebar got heavier.
+  const canvas = ["light", "standard", "deep"].map(
+    (preset) => glass.glassTokens({ enabled: true, preset, wallpaper: "/a.png" }).canvas
+  );
+  const sidebar = ["light", "standard", "deep"].map(
+    (preset) => glass.glassTokens({ enabled: true, preset, wallpaper: "/a.png" }).sidebar
+  );
+  const increasing = (values) => values.every((value, i) => i === 0 || value > values[i - 1]);
+  assert.ok(increasing(canvas), `canvas should rise with weight, got ${canvas.join(" < ")}`);
+  assert.ok(increasing(sidebar), `sidebar should rise with weight, got ${sidebar.join(" < ")}`);
 });
 
 test("every fill mode maps to its own sizing declaration", () => {
@@ -612,7 +627,7 @@ test("the photo survives the glass switch being off", () => {
   // the switch: without them the picture would vanish the moment glass is off.
   assert.ok(off.includes(`url("${photo}")`));
   assert.ok(off.includes(".app-shell::before{"));
-  assert.match(off, /--pg-canvas-alpha:84%/);
+  assert.match(off, /--pg-canvas-alpha:74%/);
   assert.ok(off.includes(".main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}"));
 
   // The switch is exactly the blur: no filter anywhere in this sheet.
