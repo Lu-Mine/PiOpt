@@ -630,3 +630,44 @@
 .gw-egress-off {
   color: var(--ds-warning);
 }
+
+/* Clash 出口选择 */
+.gw-eg-row {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 8px;
+}
+
+.gw-eg-label {
+  font-size: 12px;
+  color: var(--ds-text-secondary);
+}
+
+.gw-eg-select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ds-text-primary);
+  background: var(--ds-bg-inset);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-xs);
+  outline: none;
+}
+
+.gw-eg-select:focus-visible {
+  border-color: var(--ds-accent);
+}
+
+.gw-eg-select optgroup {
+  color: var(--ds-text-muted);
+  background: var(--ds-bg-secondary);
+}
+
+.gw-eg-select option {
+  color: var(--ds-text-primary);
+  background: var(--ds-bg-secondary);
+}

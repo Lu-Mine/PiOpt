@@ -565,6 +565,11 @@ async function fetchOverview() {
   }
   out.upstreams = upstreams;
   out.antigravity = await buildAntigravity(files);
+  try {
+    out.egress = egress.describe();
+  } catch (error) {
+    out.egress = { profile: "", groups: [], nodes: [], selected: "" };
+  }
   return out;
 }
 
@@ -608,7 +613,19 @@ function onPanelInvoke(channel, payload = {}) {
     case "gateway.egressProbe":
       return egress.prepare({ skipProbe: false }).then(status => ({ status, restartNeeded: true }));
     case "gateway.egressOff":
+    case "gateway.egressOff":
       return { status: egress.disable(), restartNeeded: true };
+    // 换出口：写偏好 → 重建配置并真起一次内核验证 → 重启网关生效
+    case "gateway.egressPick": {
+      const target = payload && payload.dialer;
+      return egress.setDialer(target, { skipProbe: false }).then(status => {
+        if (!status.ok) return { status, restartNeeded: false };
+        stopSupervisor();
+        return new Promise(resolve => {
+          setTimeout(() => resolve({ status, restartNeeded: true, ...startSupervisor() }), 1200);
+        });
+      });
+    }
     case "gateway.runCredits":
       return triggerCredits();
     case "gateway.restart": {

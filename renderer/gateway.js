@@ -18,6 +18,7 @@
     error: "",
     flash: "",
     egressBusy: false,
+    egressPick: "",
   };
 
   const T = {
@@ -220,21 +221,7 @@
     const d = state.data || {};
     const ag = d.antigravity || {};
     const list = ag.accounts || [];
-    const eg = (state.status && state.status.egress) || {};
-
-    const btn = el("button", "gw-btn", state.egressBusy ? "检测中…" : "重新检测");
-    btn.type = "button";
-    btn.disabled = Boolean(state.egressBusy);
-    btn.addEventListener("click", rerunEgress);
-
-    const box = card("Antigravity 配额", { wide: true, badge: list.length, action: btn });
-
-    // 出海通道：告诉用户 Google 流量是怎么出去的
-    const line = el("p", "gw-hint" + (eg.ok ? " gw-egress-ok" : " gw-egress-off"));
-    line.textContent = eg.ok
-      ? `出海通道已就绪：经本机内核「${eg.dialer || "自动选择"}」出 Google 域，其余流量直连（本地 ${eg.port}）。`
-      : `出海通道未启用：${eg.reason || "尚未检测"}。Antigravity 需要外部网络可达。`;
-    box.append(line);
+    const box = card("Antigravity 配额", { wide: true, badge: list.length });
 
     if (!list.length) {
       box.append(el("p", "gw-hint", "没有 Antigravity 账号"));
@@ -327,6 +314,60 @@
       table.append(cardItem);
     }
     box.append(table);
+    return box;
+  }
+
+  // Clash 出口：选哪个节点/组给 Google 域用
+  function egressCard() {
+    const d = state.data || {};
+    const e = d.egress || {};
+    const nodes = e.nodes || [];
+    const groups = e.groups || [];
+    const box = card("Clash 出口", { wide: true, badge: nodes.length });
+
+    if (!e.profile) {
+      box.append(el("p", "gw-hint", "没找到 Clash 订阅（已扫描常见安装位置）"));
+      return box;
+    }
+
+    const row = el("div", "gw-eg-row");
+    row.append(el("span", "gw-eg-label", "出口"));
+
+    const sel = el("select", "gw-eg-select");
+    const current = state.egressPick || e.selected || "";
+    const addGroup = (title, items) => {
+      if (!items.length) return;
+      const og = document.createElement("optgroup");
+      og.label = title;
+      for (const it of items) {
+        const o = document.createElement("option");
+        o.value = it;
+        o.textContent = it;
+        if (it === current) o.selected = true;
+        og.append(o);
+      }
+      sel.append(og);
+    };
+    addGroup("代理组", groups);
+    addGroup("单个节点", nodes);
+
+    const apply = el("button", "gw-btn gw-btn-primary", state.egressBusy ? "切换中…" : "应用");
+    apply.type = "button";
+    apply.disabled = Boolean(state.egressBusy);
+    apply.addEventListener("click", () => pickEgress(sel.value));
+
+    row.append(sel, apply);
+    box.append(row);
+
+    box.append(el("p", "gw-hint", `订阅 ${e.profile}`));
+    if (e.binPath) box.append(el("p", "gw-hint", `内核 ${e.binPath}`));
+
+    const st = e.status || {};
+    if (st.ok) {
+      box.append(el("p", "gw-hint", `运行中：出口「${st.dialer}」，本地端口 ${st.port}，仅 Google/AI 域名走它。`));
+    } else if (st.reason) {
+      box.append(el("p", "gw-hint", `未启用：${st.reason}`));
+    }
     return box;
   }
 
@@ -441,8 +482,6 @@
     return box;
   }
 
-  // -------------------------------------------------------------- 渲染
-
   function render() {
     const host = root();
     if (!host) return;
@@ -468,8 +507,9 @@
     const top = el("div", "gw-top");
     top.append(protocolCard(), quotaCard());
     body.append(top);
-
     body.append(upstreamCard());
+
+    body.append(egressCard());
     body.append(antigravityCard());
     body.append(apiKeyCard());
     body.append(creditsCard());
@@ -513,7 +553,7 @@
       state.error = `重启失败：${(error && error.message) || error}`;
     } finally {
       state.busy = false;
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         state.flash = "";
         load(true);
       }, 4500);
@@ -541,24 +581,30 @@
     }, 22000);
   }
   // 完整复检出海通道：真起一次内核确认能穿出去
-  async function rerunEgress() {
-    if (state.egressBusy) return;
+  // 切换出口：写偏好 → 重建配置 → 重启网关
+  async function pickEgress(name) {
+    if (!name || state.egressBusy) return;
     state.egressBusy = true;
+    state.egressPick = name;
     state.flash = "";
     state.error = "";
     render();
     try {
-      const res = await invoke("gateway.egressProbe");
+      const res = await invoke("gateway.egressPick", { dialer: name });
       const st = (res && res.status) || {};
-      state.flash = st.ok
-        ? `出海通道已就绪：出口「${st.dialer || "自动选择"}」。`
-        : `出海通道未启用：${st.reason || "未知原因"}`;
+      if (st.ok) {
+        state.flash = `已切到「${st.dialer}」，网关正在重启。`;
+      } else {
+        state.error = `切换失败：${st.reason || "未知原因"}`;
+      }
     } catch (error) {
-      state.error = `检测失败：${(error && error.message) || error}`;
+      state.error = `切换失败：${(error && error.message) || error}`;
     } finally {
       state.egressBusy = false;
-      await load(false);
-      render();
+      setTimeout(async () => {
+        await load(false);
+        render();
+      }, 3000);
     }
   }
 

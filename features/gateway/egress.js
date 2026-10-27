@@ -1,17 +1,15 @@
 /**
  * 出海通道（egress）
  *
- * 解决的问题：Antigravity 的模型与配额接口都在 Google 域上，国内直连不通。
- * 做法：从本机 Clash 的订阅文件里取节点，用 Clash 自带的 mihomo 内核静默起一个
- * 只监听本地端口的实例；规则里只有 Google/AI 域名走代理，其余一律直连。
+ * Antigravity 的模型与配额接口都在 Google 域上，国内直连不通。
+ * 这里从本机已有的 Clash 配置里取节点，用同一份安装里的 mihomo 内核静默起一个
+ * 只监听本地端口的实例，规则里只有 Google/AI 域名走代理，其余一律直连。
  *
- * 明确不做的事：
- *   - 不改系统代理、不开 TUN、不启动 Clash 客户端界面
- *   - 只监听 127.0.0.1，不对外暴露
- *   - 不接管任何非本网关进程的流量
+ * 明确不做的事：不改系统代理、不开 TUN、不启动 Clash 客户端界面、
+ * 只监听 127.0.0.1、不接管任何非本网关进程的流量。
  *
- * 生命周期：mihomo 由 supervisor 托管（bin/supervisor.json 的第一个 child），
- * 随 PI-Desktop 启停，父进程消失即被 killTree 清掉。
+ * 配置目录与内核都是扫描发现的，不写死某一个安装位置。
+ * mihomo 由 supervisor 托管，随 PI-Desktop 启停。
  */
 
 const fs = require("fs");
@@ -29,28 +27,11 @@ const PROBE_CFG = path.join(BIN_DIR, "mihomo-probe.yaml");
 const CLIPROXY_CFG = path.join(GATEWAY_DIR, "cliproxy", "config.yaml");
 const SUPERVISOR_JSON = path.join(BIN_DIR, "supervisor.json");
 const STATUS_FILE = path.join(DEV_DIR, "egress.json");
+const PREFS_FILE = path.join(DEV_DIR, "egress-prefs.json");
 const EGRESS_LOG = path.join(DEV_DIR, "egress.log");
 
 const EGRESS_PORT = 8319;
 const PROBE_PORT = 8318;
-
-// Clash Verge 把订阅与状态放在这里；两家历史目录名都试
-// 插件进程里 APPDATA 不一定存在，用 USERPROFILE 兜底
-const ROAMING =
-  process.env.APPDATA ||
-  path.join(process.env.USERPROFILE || os.homedir(), "AppData", "Roaming");
-
-const CLASH_DIRS = [
-  path.join(ROAMING, "io.github.clash-verge-rev.clash-verge-rev"),
-  path.join(ROAMING, "clash-verge"),
-];
-
-const MIHOMO_CANDIDATES = [
-  "D:/Clash Verge/verge-mihomo.exe",
-  "C:/Program Files/Clash Verge/verge-mihomo.exe",
-  "C:/Program Files (x86)/Clash Verge/verge-mihomo.exe",
-  path.join(process.env.LOCALAPPDATA || "", "Programs/Clash Verge/verge-mihomo.exe"),
-];
 
 // 只有这些域名走代理；其余（含 WorkBuddy 的腾讯域）走直连
 const PROXY_SUFFIXES = [
@@ -88,82 +69,260 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** 找到 Clash 的当前订阅：先读 profiles.yaml 的 current，再退化为最大的配置 */
-function findClashProfile() {
-  for (const dir of CLASH_DIRS) {
-    const profilesDir = path.join(dir, "profiles");
-    if (!fs.existsSync(profilesDir)) continue;
+function homeDir() {
+  return process.env.USERPROFILE || os.homedir();
+}
 
-    let uid = "";
-    try {
-      const index = fs.readFileSync(path.join(dir, "profiles.yaml"), "utf8");
-      const m = index.match(/^current:\s*(\S+)/m);
-      if (m) uid = m[1].trim();
-    } catch (error) {
-      // profiles.yaml 缺失就退化
-    }
-    if (uid) {
-      const candidate = path.join(profilesDir, `${uid}.yaml`);
-      if (fs.existsSync(candidate)) return candidate;
-    }
+function roamingDir() {
+  return process.env.APPDATA || path.join(homeDir(), "AppData", "Roaming");
+}
 
-    let best = "";
-    let bestSize = 0;
-    for (const name of fs.readdirSync(profilesDir)) {
-      if (!name.endsWith(".yaml")) continue;
-      const full = path.join(profilesDir, name);
+function localDir() {
+  return process.env.LOCALAPPDATA || path.join(homeDir(), "AppData", "Local");
+}
+
+/**
+ * 扫描所有可能放 Clash/mihomo 配置的位置，找出带订阅的目录。
+ * 返回按"看起来最像当前在用"排序的候选，不做写死假设。
+ */
+function discoverClashDirs() {
+  const bases = [roamingDir(), localDir(), path.join(homeDir(), ".config"), homeDir()];
+  const names = [
+    "io.github.clash-verge-rev.clash-verge-rev", // Clash Verge Rev
+    "clash-verge",
+    "clash-verge-rev",
+    "Clash for Windows",
+    "clash-meta",
+    "mihomo",
+    "clash",
+    ".clash",
+  ];
+
+  const found = [];
+  const seen = new Set();
+  for (const base of bases) {
+    for (const name of names) {
+      const dir = path.join(base, name);
+      if (seen.has(dir)) continue;
+      seen.add(dir);
       try {
-        const size = fs.statSync(full).size;
-        if (size > bestSize) {
-          bestSize = size;
-          best = full;
-        }
+        if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
       } catch (error) {
-        // 读不到就跳过
+        continue;
+      }
+      const profilesDir = path.join(dir, "profiles");
+      const hasProfiles = fs.existsSync(profilesDir);
+      const yamlHere = safeListYaml(dir);
+      if (hasProfiles || yamlHere.length) {
+        found.push({ dir, profilesDir: hasProfiles ? profilesDir : "", direct: yamlHere.length > 0 });
       }
     }
-    if (best && bestSize > 4096) return best;
+  }
+  return found;
+}
+
+function safeListYaml(dir) {
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((n) => n.endsWith(".yaml") || n.endsWith(".yml"))
+      .map((n) => path.join(dir, n));
+  } catch (error) {
+    return [];
+  }
+}
+
+/** 在候选目录里挑出真正的订阅文件：优先 profiles.yaml 的 current，其次最大的配置 */
+function findClashProfile() {
+  for (const cand of discoverClashDirs()) {
+    if (cand.profilesDir) {
+      let uid = "";
+      try {
+        const index = fs.readFileSync(path.join(cand.dir, "profiles.yaml"), "utf8");
+        const m = index.match(/^current:\s*(\S+)/m);
+        if (m) uid = m[1].trim();
+      } catch (error) {
+        // 没有索引就退化
+      }
+      if (uid) {
+        for (const ext of [".yaml", ".yml"]) {
+          const p = path.join(cand.profilesDir, `${uid}${ext}`);
+          if (fs.existsSync(p)) return p;
+        }
+      }
+      // 退化：profiles 目录里最大的 yaml
+      let best = "";
+      let bestSize = 0;
+      for (const p of safeListYaml(cand.profilesDir)) {
+        try {
+          const size = fs.statSync(p).size;
+          if (size > bestSize) {
+            bestSize = size;
+            best = p;
+          }
+        } catch (error) {
+          // 跳过
+        }
+      }
+      if (best && bestSize > 4096) return best;
+    }
+    // 目录本身就是配置（没有 profiles 子目录）
+    let best = "";
+    let bestSize = 0;
+    for (const p of safeListYaml(cand.dir)) {
+      try {
+        const size = fs.statSync(p).size;
+        if (size > bestSize && size > 4096) {
+          bestSize = size;
+          best = p;
+        }
+      } catch (error) {
+        // 跳过
+      }
+    }
+    if (best) return best;
   }
   return "";
 }
 
+/** 扫描 mihomo 内核：常见安装位置 + Clash 客户端同目录 */
 function findMihomo() {
-  for (const p of MIHOMO_CANDIDATES) {
-    try {
-      if (fs.existsSync(p) && fs.statSync(p).size > 1024 * 1024) return p;
-    } catch (error) {
-      // 忽略
+  const names = ["verge-mihomo.exe", "verge-mihomo-alpha.exe", "mihomo.exe", "clash-meta.exe", "clash.exe"];
+  const dirs = [
+    "D:/Clash Verge",
+    "C:/Program Files/Clash Verge",
+    "C:/Program Files (x86)/Clash Verge",
+    path.join(localDir(), "Programs", "Clash Verge"),
+    path.join(localDir(), "Programs", "clash-verge"),
+    path.join(homeDir(), "Clash Verge"),
+    path.join(localDir(), "Programs", "mihomo"),
+  ];
+
+  for (const dir of dirs) {
+    for (const name of names) {
+      const p = path.join(dir, name);
+      try {
+        if (fs.existsSync(p) && fs.statSync(p).size > 1024 * 1024) return p;
+      } catch (error) {
+        // 跳过
+      }
+    }
+  }
+
+  // 再扫一遍 Clash 配置目录的上级，内核常和配置放在一起
+  for (const cand of discoverClashDirs()) {
+    for (const name of names) {
+      const p = path.join(cand.dir, name);
+      try {
+        if (fs.existsSync(p) && fs.statSync(p).size > 1024 * 1024) return p;
+      } catch (error) {
+        // 跳过
+      }
     }
   }
   return "";
 }
 
-/** 从订阅里挑出口：优先「自动选择」组，取不到就用第一个节点 */
-function pickDialer(text) {
-  if (/^- name:\s*"?♻️ 自动选择"?/m.test(text)) return "♻️ 自动选择";
-  const group = text.match(/^- name:\s*"?([^\n"]+)"?\s*\n\s*type:\s*(?:url-test|fallback|select)/m);
-  if (group) return group[1].trim();
-  const node = text.match(/^- name:\s*"?(.+?)"?\s*\n\s*type:/m);
-  return node ? node[1].trim() : "";
+/** YAML 双引号里的 \U0001F1ED 这类转义要还原成真字符，否则面板显示乱码 */
+function decodeYamlName(raw) {
+  let v = String(raw || "").trim();
+  let quoted = false;
+  if (v.length > 1 && v.startsWith('"') && v.endsWith('"')) {
+    v = v.slice(1, -1);
+    quoted = true;
+  }
+  if (!quoted) return v;
+  return v
+    .replace(/\\U([0-9A-Fa-f]{8})/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/\\u([0-9A-Fa-f]{4})/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+/** 从订阅里列出可选的出口：代理组（含自动选择）与单个节点 */
+function listOutlets(profilePath) {
+  let raw = "";
+  try {
+    raw = fs.readFileSync(profilePath, "utf8").replace(/\r/g, "");
+  } catch (error) {
+    return { groups: [], nodes: [] };
+  }
+  const lines = raw.split("\n");
+  const groupsIdx = lines.findIndex((l) => /^proxy-groups:\s*$/.test(l));
+  const proxiesIdx = lines.findIndex((l) => /^proxies:\s*$/.test(l));
+  const rulesIdx = lines.findIndex((l) => /^rules:\s*$/.test(l));
+  const stop = rulesIdx > 0 ? rulesIdx : lines.length;
+
+  const groups = [];
+  const nodes = [];
+
+  const collect = (from, to, sink) => {
+    for (let i = from; i < to; i += 1) {
+      const m = lines[i].match(/^- name:\s*(.+?)\s*$/);
+      if (!m) continue;
+      const label = decodeYamlName(m[1]);
+      if (label) sink.push(label);
+    }
+  };
+
+  if (proxiesIdx >= 0) {
+    collect(proxiesIdx + 1, groupsIdx > proxiesIdx ? groupsIdx : stop, nodes);
+  }
+  if (groupsIdx >= 0) {
+    collect(groupsIdx + 1, stop, groups);
+  }
+
+  // 去重（同名节点不重复列）
+  return {
+    groups: [...new Set(groups)].sort(),
+    nodes: [...new Set(nodes)].sort(),
+  };
+}
+
+function readPrefs() {
+  return readJsonSafe(PREFS_FILE) || {};
+}
+
+function writePrefs(patch) {
+  const next = { ...readPrefs(), ...patch };
+  try {
+    fs.mkdirSync(DEV_DIR, { recursive: true });
+    fs.writeFileSync(PREFS_FILE, JSON.stringify(next, null, 2), "utf8");
+  } catch (error) {
+    // 偏好写不进去就退回默认
+  }
+  return next;
+}
+
+/** 默认出口：优先自动选择组，其次任意组，最后第一个节点 */
+function pickDialer(outlets, preferred) {
+  const all = [...outlets.groups, ...outlets.nodes];
+  if (preferred && all.includes(preferred)) return preferred;
+  const auto = outlets.groups.find((g) => /自动选择|自动|auto/i.test(g));
+  if (auto) return auto;
+  if (outlets.groups.length) return outlets.groups[0];
+  return outlets.nodes[0] || "";
 }
 
 /**
  * 用订阅原文拼运行时配置：
- * 保留 proxies / proxy-groups，丢掉端口、外部控制器、DNS、TUN 段，
- * 规则换成"只给 Google/AI 域名走代理，其余直连"。
+ * 保留 proxies / proxy-groups，丢掉端口、外部控制器、DNS 段，
+ * 规则换成"只给 Google/AI 域名走指定出口，其余 MATCH,DIRECT"。
  */
-function buildRuntimeConfig(profilePath) {
+function buildRuntimeConfig(profilePath, preferredDialer) {
   const raw = fs.readFileSync(profilePath, "utf8").replace(/\r/g, "");
   const lines = raw.split("\n");
 
   const rulesIdx = lines.findIndex((l) => /^rules:\s*$/.test(l));
   const body = rulesIdx > 0 ? lines.slice(0, rulesIdx) : lines;
 
-  const dialer = pickDialer(raw);
+  const outlets = listOutlets(profilePath);
+  const dialer = pickDialer(outlets, preferredDialer);
   if (!dialer) throw new Error("订阅里找不到可用的代理组或节点");
 
   // 这些键由下方 header 统一给出，原文里的必须丢掉，否则 YAML 重复顶层键会被内核拒绝
-  const DROP_TOP = /^(port|socks-port|redir-port|tproxy-port|mixed-port|allow-lan|mode|log-level|ipv6|unified-delay|tcp-concurrent|external-controller|external-ui|external-ui-name|external-ui-url|secret|tun|sniffer|experimental|profile):/;
+  const DROP_TOP =
+    /^(port|socks-port|redir-port|tproxy-port|mixed-port|allow-lan|mode|log-level|ipv6|unified-delay|tcp-concurrent|external-controller|external-ui|external-ui-name|external-ui-url|secret|tun|sniffer|experimental|profile):/;
   const DROP_BLOCK = /^(dns|tun|sniffer|experimental|profile):/;
 
   const keep = [];
@@ -183,6 +342,7 @@ function buildRuntimeConfig(profilePath) {
     if (skipping) continue;
     keep.push(line);
   }
+
   const header = [
     `mixed-port: ${EGRESS_PORT}`,
     "allow-lan: false",
@@ -192,11 +352,12 @@ function buildRuntimeConfig(profilePath) {
     "unified-delay: true",
   ];
 
+  // 出口名可能带 emoji 与空格，整条规则用双引号包起来最稳
   const rules = ["rules:"];
-  for (const s of PROXY_SUFFIXES) rules.push(`  - DOMAIN-SUFFIX,${s},${dialer}`);
+  for (const s of PROXY_SUFFIXES) rules.push(`  - "DOMAIN-SUFFIX,${s},${dialer}"`);
   rules.push("  - MATCH,DIRECT");
 
-  return { yaml: header.concat(keep, rules).join("\n") + "\n", dialer };
+  return { yaml: header.concat(keep, rules).join("\n") + "\n", dialer, outlets };
 }
 
 function portOpen(port) {
@@ -245,7 +406,7 @@ function killTree(pid) {
 }
 
 /** 起一个临时实例验证配置可用：能监听、且能穿到 Google */
-async function probe(binPath, yamlText) {
+async function probe(binPath, yamlText, targetHost = "daily-cloudcode-pa.googleapis.com") {
   fs.writeFileSync(PROBE_CFG, yamlText.replace(/^mixed-port:.*$/m, `mixed-port: ${PROBE_PORT}`), "utf8");
 
   let child;
@@ -266,14 +427,13 @@ async function probe(binPath, yamlText) {
       return { ok: false, reason: "内核没起来（端口未监听）" };
     }
 
-    // url-test 组首次要测速，给它几轮机会
     for (let i = 0; i < 6; i += 1) {
       await sleep(1500);
-      if (await tunnelToGoogle(PROBE_PORT, "daily-cloudcode-pa.googleapis.com")) {
+      if (await tunnelToGoogle(PROBE_PORT, targetHost)) {
         return { ok: true };
       }
     }
-    return { ok: false, reason: "代理端口通了，但穿不到 Google（节点可能全不可用）" };
+    return { ok: false, reason: "代理端口通了，但穿不到 Google（该节点可能不可用）" };
   } catch (error) {
     return { ok: false, reason: String(error && error.message ? error.message : error) };
   } finally {
@@ -363,6 +523,26 @@ function readStatus() {
   return readJsonSafe(STATUS_FILE) || { ok: false, reason: "尚未检测" };
 }
 
+/** 供面板展示：发现的路径、可选出口、当前选择 */
+function describe() {
+  const profile = findClashProfile();
+  const binPath = findMihomo();
+  const outlets = profile ? listOutlets(profile) : { groups: [], nodes: [] };
+  const prefs = readPrefs();
+  const status = readStatus();
+  return {
+    profile,
+    binPath,
+    clashDirs: discoverClashDirs().map((c) => c.dir),
+    groups: outlets.groups,
+    nodes: outlets.nodes,
+    selected: pickDialer(outlets, prefs.dialer),
+    prefsDialer: prefs.dialer || "",
+    status,
+    port: EGRESS_PORT,
+  };
+}
+
 /**
  * 主入口：准备出海通道。
  * 成功则 mihomo 交给 supervisor 托管、网关指向它；失败则清掉配置退回直连。
@@ -374,18 +554,19 @@ async function prepare(options = {}) {
   const fallback = (reason) => {
     applyProxyUrl(false);
     applySupervisorConfig(false, "");
-    const status = { ok: false, mode: "direct", reason };
+    const status = { ok: false, mode: "direct", reason, profile };
     writeStatus(status);
     log(`出海通道未启用：${reason}`);
     return status;
   };
 
   if (!profile) return fallback("没找到 Clash 订阅文件");
-  if (!binPath) return fallback("没找到 verge-mihomo.exe");
+  if (!binPath) return fallback("没找到 mihomo 内核");
 
+  const prefs = readPrefs();
   let built;
   try {
-    built = buildRuntimeConfig(profile);
+    built = buildRuntimeConfig(profile, prefs.dialer || options.dialer);
     fs.mkdirSync(BIN_DIR, { recursive: true });
     fs.writeFileSync(RUNTIME_CFG, built.yaml, "utf8");
   } catch (error) {
@@ -407,11 +588,25 @@ async function prepare(options = {}) {
     dialer: built.dialer,
     profile,
     binPath,
+    groups: built.outlets.groups.length,
+    nodes: built.outlets.nodes.length,
     suffixes: PROXY_SUFFIXES.length,
   };
   writeStatus(status);
-  log(`出海通道已启用：出口「${built.dialer}」，端口 ${EGRESS_PORT}`);
+  log(`出海通道已启用：出口「${built.dialer}」`);
   return status;
+}
+
+/** 切换出口：记住选择并立即重建配置（调用方决定何时重启网关） */
+async function setDialer(name, options = {}) {
+  const outlets = listOutlets(findClashProfile());
+  const all = [...outlets.groups, ...outlets.nodes];
+  if (name && !all.includes(name)) {
+    return { ok: false, reason: `订阅里没有名为「${name}」的出口` };
+  }
+  writePrefs({ dialer: name || "" });
+  log(`出口切换为「${name || "自动"}」`);
+  return prepare({ ...options, dialer: name || "" });
 }
 
 /** 关闭通道：恢复直连配置 */
@@ -427,11 +622,14 @@ function disable() {
 module.exports = {
   prepare,
   disable,
+  describe,
+  setDialer,
   readStatus,
   findClashProfile,
   findMihomo,
+  listOutlets,
   buildRuntimeConfig,
   EGRESS_PORT,
   PROXY_SUFFIXES,
-  _internals: { applyProxyUrl, applySupervisorConfig, probe, portOpen },
+  _internals: { applyProxyUrl, applySupervisorConfig, probe, portOpen, discoverClashDirs, readPrefs },
 };
