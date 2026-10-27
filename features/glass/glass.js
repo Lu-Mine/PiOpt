@@ -137,15 +137,13 @@ function glassTokens(input = {}) {
   const scale = config.intensity;
   const blur = Math.round(clamp(preset.blur * scale, 6, 80));
   const firmUp = (value) => Math.round(clamp(value * (0.86 + 0.14 * scale), 12, 92));
-
   return {
     blur,
     blurStrong: Math.round(clamp(blur * 1.35, 8, 96)),
-    // Leaf menus are the one place a heavy blur is safe (nothing reads their
-    // rect, they hold no deeper menu), so they get a much larger radius than
-    // the surfaces. Paired with a thinner fill below, that is what makes the
-    // blur actually visible instead of being hidden behind an opaque panel.
-    blurLeaf: Math.round(clamp(blur * 2.4, 14, 120)),
+    // Menus sit close to the surfaces now. A radius of 2.4x read as mush — the
+    // photo behind stopped being recognisable, which is the opposite of frosted
+    // glass. 1.2x separates the type from the photo without dissolving it.
+    blurLeaf: Math.round(clamp(blur * 1.2, 12, 72)),
     saturate: Math.round(preset.saturate * 100) / 100,
     sidebar: firmUp(preset.sidebar),
     chrome: firmUp(preset.chrome),
@@ -263,11 +261,21 @@ function buildGlassCss(input = {}, options = {}) {
   const scrim = "linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim)))";
   const backdrop = wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
 
-  // All four chrome bars use the exact same fill. The work panel leaves its
-  // top toolbar band clear so the panel's darker canvas cannot show through it.
+  // One fill for every chrome surface — title bar, conversation top bar, window
+  // controls and the work panel header — so they can never drift apart.
+  //
+  // The frosting is a separate, deliberate omission. A backdrop-filter samples
+  // whatever sits behind the element, and behind one 46px band the window holds
+  // three different things: the sidebar's frosted glass on the left, the main
+  // pane in the middle and the side panel on the right. Blurring each band
+  // separately turned those three sources into three different tints — measured
+  // on 0.21.0 / 2120px: window controls rgb(17,52,62) against the panel header
+  // rgb(20,43,52) beside it, and the title bar above the sidebar rgb(38,59,54).
+  // With the fill alone and no filter they all read the same colour, and the
+  // light field behind them is a soft gradient, so there is nothing to blur.
   const chromeFill =
     `background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;` +
-    `box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}`;
+    `box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent)`;
 
   // Only a frosted surface needs a no-blur fallback; with the switch off these
   // rules would just make the frame more opaque and hide the photo.
@@ -295,9 +303,10 @@ function buildGlassCss(input = {}, options = {}) {
    different material from the bar next to it). */
 .main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{${chromeFill}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
-/* Keep the darker panel canvas below the header, so it cannot change the
-   shared chrome colour from underneath. */
-.work-panel{background:linear-gradient(to bottom,transparent 0 var(--ds-toolbar-height),color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent) var(--ds-toolbar-height))!important;${blur}}
+/* The panel's own canvas starts below the shared toolbar band, and the panel
+   carries no filter of its own: a blur there would sit behind the window
+   controls and tint that corner differently from the bar beside it. */
+.work-panel{background:linear-gradient(to bottom,transparent 0 var(--ds-toolbar-height),color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent) var(--ds-toolbar-height))!important}
 .work-panel-main{background:transparent!important}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
 /* Popups: fill for all of them, real frosting only for the leaf ones.

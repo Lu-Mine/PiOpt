@@ -90,9 +90,13 @@ PiOpt bundles four features in one plugin:
    The surfaces it covers are the left sidebar, the right work panel body and
    the chrome bars. All four chrome surfaces share one exact `chromeFill` rule:
    `.main-titlebar`, `.conversation-topbar`, `.window-controls` and
-   `.work-panel-header`. The panel's darker canvas starts below the header;
-   letting it continue underneath would show through and change the colour.
-   `.window-controls` is the minimise / maximise / close strip: the host gives
+   `.work-panel-header` — same translucent fill, same hairline, and no
+   `backdrop-filter`. That last part is not an oversight: a blur samples what is
+   behind each surface, and behind that one 46px band sit three different
+   things (the sidebar's glass, the main pane, the side panel), so frosting them
+   separately produced three tints. The panel's own darker canvas starts below
+   the header and carries no filter either, or it would colour the window
+   controls sitting on top of it.
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
    that corner used to read as a different material from the bar beside it.

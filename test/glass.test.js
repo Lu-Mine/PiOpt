@@ -116,13 +116,17 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // All chrome bars share one exact fill rule. The work panel's darker canvas
-  // must not continue behind its header and change the colour of that fill.
-  assert.match(
-    css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
-  );
-  assert.match(css, /\.work-panel\{background:linear-gradient\(to bottom,transparent 0 var\(--ds-toolbar-height\),color-mix\(in oklab,var\(--ds-bg-dock\) var\(--pg-sidebar-alpha\),transparent\) var\(--ds-toolbar-height\)\)!important/);
+  // All chrome bars share one exact fill rule, and none of them is filtered:
+  // a backdrop blur samples whatever sits behind each band, and behind that one
+  // 46px strip the window holds the sidebar's glass, the main pane and the side
+  // panel — three sources, three tints. Measured on 0.21.0 / 2120px: the window
+  // controls read rgb(17,52,62) against the panel header's rgb(20,43,52).
+  const chromeRule = /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{([^}]*)\}/.exec(css);
+  assert.ok(chromeRule, "the chrome bars share one selector rule");
+  assert.match(chromeRule[1], /background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\),transparent\)!important/);
+  assert.equal(chromeRule[1].includes("backdrop-filter"), false);
+  // The panel's darker canvas must not continue behind the header either.
+  assert.match(css, /\.work-panel\{background:linear-gradient\(to bottom,transparent 0 var\(--ds-toolbar-height\),color-mix\(in oklab,var\(--ds-bg-dock\) var\(--pg-sidebar-alpha\),transparent\) var\(--ds-toolbar-height\)\)!important\}/);
   assert.match(css, /\.work-panel-main\{background:transparent!important\}/);
   assert.match(css, /@supports not \(\(backdrop-filter/);
 });

@@ -90,7 +90,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 1. `.app-shell::before` 铺背景层：有背景图时就是那张图，没有时是一层柔光场。宿主界面底色是一整块纯色，半透明表面盖上去只能看到同一个颜色，`backdrop-filter` 也没有东西可模糊。`z-index:-1` 让它落在 `.app-shell` 自己背景之上、内容之下，不改动任何层级。
 2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、右侧工作面板（`.work-panel`）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-under` / `--ds-bg-dock`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。
 
-   窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角窗口按钮区 `.window-controls` 与工作面板表头 `.work-panel-header` 共用同一条 `chromeFill` 规则。工作面板顶部的工具栏区域不再铺 `--ds-bg-dock` 深色底层，避免它透过表头产生色差；面板内容区从表头下方才开始铺设自己的半透明磨砂材质。
+   窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角窗口按钮区 `.window-controls` 与工作面板表头 `.work-panel-header` 共用同一条 `chromeFill` 规则：同一份半透明底色与底部分隔线，且**都不加 `backdrop-filter`**。原因是模糊取样的是各自背后的内容——同一条 46px 高度上，左边是侧栏玻璃、中间是主内容区、右边是侧工作面板，三者不同，分别磨砂就会得到三种颜色（实测 0.21.0 / 2120px：窗口按钮区 rgb(17,52,62)，旁边面板表头 rgb(20,43,52)）。去掉滤镜后四处实测同为 rgb(24,24,24)。工作面板顶部的工具栏区域不再铺 `--ds-bg-dock` 深色底层，面板自身也不再加模糊。
 
 
    模糊只加在这几个"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。
