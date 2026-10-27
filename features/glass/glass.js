@@ -141,10 +141,20 @@ function glassTokens(input = {}) {
   return {
     blur,
     blurStrong: Math.round(clamp(blur * 1.35, 8, 96)),
+    // Leaf menus are the one place a heavy blur is safe (nothing reads their
+    // rect, they hold no deeper menu), so they get a much larger radius than
+    // the surfaces. Paired with a thinner fill below, that is what makes the
+    // blur actually visible instead of being hidden behind an opaque panel.
+    blurLeaf: Math.round(clamp(blur * 2.4, 14, 120)),
     saturate: Math.round(preset.saturate * 100) / 100,
     sidebar: firmUp(preset.sidebar),
     chrome: firmUp(preset.chrome),
     overlay: firmUp(preset.overlay),
+    // Leaf menus need a thinner fill than the other popups: the heavier blur
+    // underneath only reads as blur while photo still shows through. Twelve
+    // points below `overlay` is enough to let it through and still keeps text
+    // on a solid base at menu size.
+    leaf: Math.max(40, firmUp(preset.overlay) - 12),
     glow: Math.round(clamp(preset.glow * scale, 8, 46)),
     // The dimming rides on the backdrop layer instead of the surface fills.
     // A surface's `background-color` and its `backdrop-filter` composite in an
@@ -237,6 +247,14 @@ function buildGlassCss(input = {}, options = {}) {
   const blur = surfaces
     ? "-webkit-backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))"
     : "";
+  // Leaf menus get the heavier frosting. Its own variable so the glass switch
+  // governs it too — with the switch off there is no blur anywhere, by design.
+  const blurStrong = surfaces
+    ? "-webkit-backdrop-filter:blur(var(--pg-blur-strong)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur-strong)) saturate(var(--pg-saturate))"
+    : "";
+  const blurLeaf = surfaces
+    ? "-webkit-backdrop-filter:blur(var(--pg-blur-leaf)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur-leaf)) saturate(var(--pg-saturate))"
+    : "";
   const wallpaper = wallpaperCssUrl(config.wallpaper);
   // A photo already carries the detail the light field was standing in for, and
   // leaving it out keeps one fewer full-window gradient to recomposite.
@@ -259,9 +277,8 @@ function buildGlassCss(input = {}, options = {}) {
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
         ".work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
-        ".work-panel-header{background-color:transparent!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
       ].join("\n")
@@ -269,7 +286,7 @@ function buildGlassCss(input = {}, options = {}) {
   const sizing = wallpaper ? fitDeclarations(config.fit, options.size) : "";
 
   const css = `${CSS_MARKER}
-:root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
+:root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-blur-leaf:${tokens.blurLeaf}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-leaf-alpha:${tokens.leaf}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
 :is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
 /* Every chrome surface paints the identical chromeFill string. .window-controls
@@ -278,32 +295,34 @@ function buildGlassCss(input = {}, options = {}) {
    sitting on top of the glass (the host even swaps it to --ds-bg-dock-raised
    whenever a work panel is open, which is why that corner looked like a
    different material from the bar next to it). */
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{${chromeFill}}
-/* The work panel header is the exception: it already sits on .work-panel, which
-   paints the glass itself. Giving it chromeFill too stacked a second opaque
-   layer on top (host token 58% over the panel's own 82%) and no photo came
-   through — measured B-R 10-11 against 55-72 in the panel body right below it.
-   So it paints nothing and lets the panel's own glass show, keeping only the
-   hairline that separates the tab row from the content. The tabs inside it draw
-   no fill of their own, so they inherit exactly this. */
-.work-panel-header{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 10%,transparent)}
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{${chromeFill}}
+/* The work panel header shares the same chromeFill as the other chrome bars;
+   its tabs draw no fill of their own and inherit the same material. */
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
-/* Popups get the stronger fill but NOT the stronger blur.
+/* Popups: fill for all of them, real frosting only for the leaf ones.
 
    A backdrop blur makes an element the containing block for its
-   position:fixed descendants — the same trap as a transform. The host nests
-   its context submenu inside the parent menu (sidebar-submenu lives inside
-   sidebar-floating-menu) and positions BOTH from getBoundingClientRect,
-   innerWidth and innerHeight, i.e. in viewport coordinates. Blurring the parent
-   made the child resolve those numbers against the parent instead of the
-   viewport, so the submenu stayed pinned inside the menu that opened it and
-   could not float out. The translucent fill alone still reads as glass; the
-   blur was the part that broke it.
+   position:fixed descendants, and the host's menus depend on that: the submenu
+   component reads the PARENT menu's rect to decide which side to open on
+   (menuRef.getBoundingClientRect()) and positions itself from
+   getBoundingClientRect / innerWidth / innerHeight, i.e. viewport coordinates.
+   Blurring a parent made the child resolve those numbers against the parent,
+   so the submenu stayed pinned inside the menu that opened it.
+
+   So the split is by role, not by taste: anything that can hold a submenu keeps
+   only the fill; the leaves get the frosting, because nothing reads their rect
+   and they contain no deeper menu.
+
+   The leaves also run a much larger radius than the surfaces (--pg-blur-leaf,
+   2.4x) and a THINNER fill than --pg-overlay-alpha. Blur only reads as blur
+   when there is photo showing through it: at the old 72% the menu was more
+   opaque than the sidebar, so the frosting was invisible behind its own fill.
 
    (No backticks in this block: it lives inside a template literal.) */
 :is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content,.sidebar-section-menu,.project-menu,.composer-model-menu,.agent-capability-menu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent)}
+:is(.sidebar-submenu,.context-menu-submenu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-leaf-alpha),transparent)!important;${blurLeaf}}
 ${noBlurFallback}`;
 
   if (Buffer.byteLength(css, "utf8") > CSS_LIMIT_BYTES) {

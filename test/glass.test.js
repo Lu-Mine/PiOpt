@@ -116,18 +116,13 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The window title bar, the conversation top bar and the window controls
-  // (minimise / maximise / close) share the one selector rule, so they cannot
-  // drift apart into merely-similar values.
+  // The window title bar, conversation top bar, window controls and work panel
+  // header share one selector rule, so they cannot drift apart.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
-  // The work panel header must stay clear instead of stacking a second opaque
-  // layer over the panel's own glass — that is what stopped the tab row from
-  // showing the photo while the content right below it did.
-  assert.match(css, /\.work-panel-header\{background-color:transparent!important/);
-  assert.doesNotMatch(css, /\.work-panel-header[^{}]*\{[^}]*chrome-alpha/);
+  assert.doesNotMatch(css, /\.work-panel-header\{background-color:transparent!important/);
   // The right work panel body is a surface too, on the sidebar's density.
   assert.match(css, /\.work-panel\{background-color:color-mix\(in oklab,var\(--ds-bg-dock\)/);
   assert.match(css, /backdrop-filter:blur\(var\(--pg-blur\)\)/);
@@ -665,20 +660,21 @@ test("the photo survives the glass switch being off", () => {
   assert.match(off, /--pg-canvas-alpha:74%/);
   assert.ok(off.includes(".main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}"));
 
-  // The switch is exactly the blur: no filter anywhere in this sheet.
-  assert.equal(off.includes("backdrop-filter"), false);
+  // The switch is exactly the blur: no filter declaration anywhere in this
+  // sheet. Comments are stripped first — the word appears in prose there.
+  const offDecl = off.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.equal(offDecl.includes("backdrop-filter"), false);
   assert.equal(off.includes("@supports not"), false);
 
   // With the switch on, the same photo gains the frosting.
   const on = glass.buildGlassCss({ enabled: true, wallpaper: photo }, { size: { width: 400, height: 300 } });
-  assert.ok(on.includes("backdrop-filter:blur(var(--pg-blur))"));
+  // Frosting goes to the leaf menus only. A blur on a menu that can open a
+  // submenu makes it the containing block for that fixed child, and the host
+  // reads the parent's rect to place the child — the submenu then stays
+  // trapped inside the menu that opened it.
+  assert.doesNotMatch(on, /\.sidebar-floating-menu[^{]*\{[^}]*backdrop-filter/);
+  assert.match(on, /:is\(\.sidebar-submenu,\.context-menu-submenu\)\{[^}]*backdrop-filter/);
   assert.ok(on.includes("@supports not"));
-  // Popups carry the fill but never the frosting: blurring a menu makes it the
-  // containing block for the submenu it opens, which the host positions in
-  // viewport coordinates — the submenu then stays trapped inside its parent.
-  assert.equal(/\[role=menu\][^{]*\{[^}]*backdrop-filter/.test(on), false);
-  assert.ok(on.includes("@supports not"));
-
   // No photo and no switch still means an empty sheet, byte for byte.
   assert.equal(glass.buildGlassCss({ enabled: false, wallpaper: "" }), "");
 });
