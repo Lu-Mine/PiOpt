@@ -8,9 +8,8 @@
     <link rel="stylesheet" href="./tokens.css" />
     <link rel="stylesheet" href="./base.css" />
     <link rel="stylesheet" href="./market.css" />
-    <link rel="stylesheet" href="./motion.css" />
+    <link rel="stylesheet" href="./appearance.css" />
     <link rel="stylesheet" href="./gateway.css" />
-    <link rel="stylesheet" href="./glass.css" />
   </head>
   <body>
     <header class="opt-dragbar">
@@ -32,11 +31,12 @@
           </svg>
           <span class="rail-label">插件市场</span>
         </button>
-        <button type="button" role="tab" id="tab-motion" data-feature="motion" aria-selected="false" aria-controls="view-motion" title="动效实验室" aria-label="动效实验室">
+        <button type="button" role="tab" id="tab-appearance" data-feature="appearance" aria-selected="false" aria-controls="view-appearance" title="外观" aria-label="外观">
           <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M1.6 9.2h2.1l1.2-3.6 1.9 7 1.6-10 1.5 6.6h4.5" />
+            <circle cx="8" cy="8" r="5.6" />
+            <path d="M8 2.4a5.6 5.6 0 0 1 0 11.2z" fill="currentColor" fill-opacity=".22" stroke="none" />
           </svg>
-          <span class="rail-label">动效实验室</span>
+          <span class="rail-label">外观</span>
         </button>
         <button type="button" role="tab" id="tab-gateway" data-feature="gateway" aria-selected="false" aria-controls="view-gateway" title="AI 网关" aria-label="AI 网关">
           <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -45,14 +45,6 @@
             <path d="M3.4 3.4l1.5 1.5M11.1 11.1l1.5 1.5M12.6 3.4l-1.5 1.5M4.9 11.1l-1.5 1.5" opacity=".55" />
           </svg>
           <span class="rail-label">AI 网关</span>
-        </button>
-        <button type="button" role="tab" id="tab-glass" data-feature="glass" aria-selected="false" aria-controls="view-glass" title="窗口材质" aria-label="窗口材质">
-          <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="2.2" y="3.4" width="11.6" height="9.2" rx="2.2" fill="currentColor" fill-opacity=".16" />
-            <path d="M4.6 10.8 8.2 6.2" opacity=".7" />
-            <path d="M7.2 11.4 10.6 7.2" opacity=".45" />
-          </svg>
-          <span class="rail-label">窗口材质</span>
         </button>
       </div>
     </nav>
@@ -88,105 +80,92 @@
     </div>
     </section>
 
-    <section id="view-motion" class="opt-view" role="tabpanel" aria-labelledby="tab-motion" hidden>
+    <section id="view-appearance" class="opt-view" role="tabpanel" aria-labelledby="tab-appearance" hidden>
     <div class="app-shell">
-      <header class="titlebar">
-        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <strong>Pi Modify</strong>
-        <span class="title-separator" aria-hidden="true"></span>
-        <span class="title-section">Motion Lab</span>
-        <div class="title-status" id="title-status">准备就绪</div>
-      </header>
-
       <main class="workspace">
-        <div class="panels">
-          <section class="panel">
-            <div class="section-heading">
-              <div>
-                <h1>动效调校</h1>
-                <p id="preset-summary">平衡的响应速度与空间感</p>
-              </div>
-              <span class="sync-dot" id="sync-dot" data-state="ready" title="设置已实时应用"></span>
-            </div>
-
-            <div class="segmented preset-options" role="group" aria-label="动画预设">
-              <button type="button" data-preset="agile">敏捷</button>
-              <button type="button" data-preset="balanced">平衡</button>
-              <button type="button" data-preset="gentle">柔和</button>
-              <button type="button" data-preset="reduced">减弱</button>
-            </div>
-
-            <div class="range-stack">
-              <label class="range-control" for="intensity">
-                <span><strong>运动强度</strong><output id="intensity-value">100%</output></span>
-                <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
-                <span class="range-ends" aria-hidden="true"><small>克制</small><small>清晰</small></span>
-              </label>
-
-              <label class="range-control" for="speed">
-                <span><strong>响应速度</strong><output id="speed-value">1.00×</output></span>
-                <input id="speed" type="range" min="60" max="160" step="5" value="100" />
-                <span class="range-ends" aria-hidden="true"><small>舒缓</small><small>迅速</small></span>
-              </label>
-            </div>
-          </section>
-
-          <section class="panel">
+        <section class="appearance-section" id="section-motion" aria-labelledby="appearance-motion-title">
+          <header class="appearance-heading">
             <div>
-              <div class="field-label">外观基底</div>
-              <div class="segmented mode-options" role="group" aria-label="外观基底">
-                <button type="button" data-mode="auto" title="跟随系统外观">自动</button>
-                <button type="button" data-mode="light" title="固定浅色基底">浅色</button>
-                <button type="button" data-mode="dark" title="固定深色基底">深色</button>
+              <h1 id="appearance-motion-title">界面动效</h1>
+              <p id="preset-summary">平衡的响应速度与空间感</p>
+            </div>
+            <span class="sync-dot" id="sync-dot" data-state="ready" title="设置已实时应用"></span>
+          </header>
+
+          <div class="panels">
+            <section class="panel">
+              <div class="segmented preset-options" role="group" aria-label="动画预设">
+                <button type="button" data-preset="agile">敏捷</button>
+                <button type="button" data-preset="balanced">平衡</button>
+                <button type="button" data-preset="gentle">柔和</button>
+                <button type="button" data-preset="reduced">减弱</button>
               </div>
-            </div>
 
-            <label class="switch-row">
-              <span>
-                <strong>跟随系统减弱动态</strong>
-                <small>系统请求减少运动时自动收敛</small>
-              </span>
-              <input id="follow-reduced" type="checkbox" checked />
-              <span class="switch" aria-hidden="true"><span></span></span>
-            </label>
+              <div class="range-stack">
+                <label class="range-control" for="intensity">
+                  <span><strong>运动强度</strong><output id="intensity-value">100%</output></span>
+                  <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
+                  <span class="range-ends" aria-hidden="true"><small>克制</small><small>清晰</small></span>
+                </label>
 
-            <div class="metrics" aria-label="当前动画参数">
-              <div class="field-label">Motion tokens</div>
-              <dl>
-                <div><dt>按压</dt><dd id="token-instant">80 ms</dd></div>
-                <div><dt>控件</dt><dd id="token-fast">130 ms</dd></div>
-                <div><dt>内容</dt><dd id="token-base">190 ms</dd></div>
-                <div><dt>弹层</dt><dd id="token-slow">260 ms</dd></div>
-                <div><dt>位移</dt><dd id="token-distance">7 px</dd></div>
-                <div><dt>缩放</dt><dd id="token-scale">0.985</dd></div>
-              </dl>
-            </div>
-          </section>
-        </div>
+                <label class="range-control" for="speed">
+                  <span><strong>响应速度</strong><output id="speed-value">1.00×</output></span>
+                  <input id="speed" type="range" min="60" max="160" step="5" value="100" />
+                  <span class="range-ends" aria-hidden="true"><small>舒缓</small><small>迅速</small></span>
+                </label>
+              </div>
+            </section>
 
-        <div class="control-actions">
-          <button type="button" class="button secondary" id="reset-button">恢复平衡</button>
-          <button type="button" class="button quiet" id="stop-button">停止全部动画</button>
-        </div>
-      </main>
-
-      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    </div>
-    </section>
-
-    <section id="view-glass" class="opt-view" role="tabpanel" aria-labelledby="tab-glass" hidden>
-      <div class="glass-shell">
-        <main class="glass-workspace">
-          <div class="glass-panels">
-            <section class="glass-panel">
-              <div class="glass-heading">
-                <div>
-                  <h1>窗口材质</h1>
-                  <p id="glass-summary">在窗口内绘制磨砂玻璃分层</p>
+            <section class="panel">
+              <div>
+                <div class="field-label">外观基底</div>
+                <div class="segmented mode-options" role="group" aria-label="外观基底">
+                  <button type="button" data-mode="auto" title="跟随系统外观">自动</button>
+                  <button type="button" data-mode="light" title="固定浅色基底">浅色</button>
+                  <button type="button" data-mode="dark" title="固定深色基底">深色</button>
                 </div>
-                <span class="glass-dot" id="glass-status" data-state="ready" title="设置已实时应用"></span>
               </div>
 
+              <label class="switch-row">
+                <span>
+                  <strong>跟随系统减弱动态</strong>
+                  <small>系统请求减少运动时自动收敛</small>
+                </span>
+                <input id="follow-reduced" type="checkbox" checked />
+                <span class="switch" aria-hidden="true"><span></span></span>
+              </label>
+
+              <div class="metrics" aria-label="当前动画参数">
+                <div class="field-label">Motion tokens</div>
+                <dl>
+                  <div><dt>按压</dt><dd id="token-instant">80 ms</dd></div>
+                  <div><dt>控件</dt><dd id="token-fast">130 ms</dd></div>
+                  <div><dt>内容</dt><dd id="token-base">190 ms</dd></div>
+                  <div><dt>弹层</dt><dd id="token-slow">260 ms</dd></div>
+                  <div><dt>位移</dt><dd id="token-distance">7 px</dd></div>
+                  <div><dt>缩放</dt><dd id="token-scale">0.985</dd></div>
+                </dl>
+              </div>
+            </section>
+          </div>
+
+          <div class="control-actions">
+            <button type="button" class="button secondary" id="reset-button">恢复平衡</button>
+            <button type="button" class="button quiet" id="stop-button">停止全部动画</button>
+          </div>
+        </section>
+
+        <section class="appearance-section" id="section-glass" aria-labelledby="appearance-glass-title">
+          <header class="appearance-heading">
+            <div>
+              <h1 id="appearance-glass-title">窗口材质</h1>
+              <p id="glass-summary">在窗口内绘制磨砂玻璃分层</p>
+            </div>
+            <span class="glass-dot" id="glass-status" data-state="ready" title="设置已实时应用"></span>
+          </header>
+
+          <div class="glass-panels" id="glass-view" data-enabled="false">
+            <section class="glass-panel">
               <label class="glass-switch">
                 <span>
                   <strong>启用玻璃</strong>
@@ -257,28 +236,29 @@
               </div>
 
               <p class="glass-note">
-                玻璃层随 <strong>Motion Lab</strong> 主题下发，这是插件改造宿主窗口的唯一通道，
-                因此需要 PI-Desktop 选中该主题。宿主在 Windows 11 上以不透明窗口运行，
-                插件无法让它透出桌面，所以这里做的是窗口内的磨砂分层。
+                磨砂层与动效规则写在同一个 <strong>PiOpt Appearance</strong> 主题里下发，这是插件改造
+                宿主窗口的唯一通道，因此需要 PI-Desktop 选中该主题。宿主在 Windows 11 上以不透明窗口
+                运行，插件无法让它透出桌面，所以这里做的是窗口内的磨砂分层。
               </p>
             </section>
           </div>
 
           <div class="glass-actions">
-            <button type="button" class="glass-button" id="glass-reset">恢复默认</button>
+            <button type="button" class="glass-button" id="glass-reset">恢复默认材质</button>
           </div>
-        </main>
-        <div class="glass-toast" id="glass-toast" role="status" aria-live="polite" hidden></div>
-      </div>
+        </section>
+      </main>
+
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    </div>
     </section>
 
     <section id="view-gateway" class="opt-view" role="tabpanel" aria-labelledby="tab-gateway" hidden>
     </section>
 
     <script src="./market.js"></script>
-    <script src="./motion.js"></script>
+    <script src="./appearance.js"></script>
     <script src="./gateway.js"></script>
-    <script src="./glass.js"></script>
     <script src="./shell.js"></script>
   </body>
 </html>

@@ -10,7 +10,7 @@ const {
   motionTokens,
   normalizeConfig,
   resolveBase,
-} = require("../features/motion/motion.js");
+} = require("../features/appearance/motion.js");
 
 test("exposes the four approved presets", () => {
   assert.deepEqual(Object.keys(PRESETS), ["agile", "balanced", "gentle", "reduced"]);

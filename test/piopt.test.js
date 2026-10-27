@@ -17,6 +17,8 @@ test("manifest declares the merged PiOpt identity and panel", () => {
 });
 
 test("manifest keeps every feature command set", () => {
+  // One command per feature entry point; motion and glass share the appearance
+  // view but keep their own command, so the command palette is unchanged.
   const ids = manifest.contributes.commands.map((item) => item.id);
   assert.deepEqual(ids, [
     "piopt.open",
@@ -56,24 +58,30 @@ test("agent tools and settings survive the merge", () => {
 test("host routes panel channels to the owning feature", () => {
   const entry = require("../main.js");
   assert.equal(entry._featureFor("market.snapshot"), entry._features.market);
-  assert.equal(entry._featureFor("motion.apply"), entry._features.motion);
-  assert.equal(entry._featureFor("motion.tokens"), entry._features.motion);
-  assert.equal(entry._featureFor("glass.apply"), entry._features.glass);
-  assert.equal(entry._featureFor("glass.getState"), entry._features.glass);
+  assert.equal(entry._featureFor("gateway.status"), entry._features.gateway);
+  // Motion and the material are one feature: one owner for both halves, under
+  // the merged prefix and under the names they had before the merge.
+  for (const channel of ["appearance.motion.apply", "appearance.glass.apply", "motion.apply", "glass.getState"]) {
+    assert.equal(entry._featureFor(channel), entry._features.appearance, channel);
+  }
   assert.equal(entry._featureFor("unknown.channel"), null);
   assert.equal(entry._featureFor(undefined), null);
 });
 
 test("every feature is composed by the host entry", () => {
   const entry = require("../main.js");
-  for (const name of ["market", "motion", "glass", "gateway"]) {
+  for (const name of ["market", "appearance", "gateway"]) {
     assert.ok(entry._features[name], name);
   }
-  // The glass layer rides the motion theme, so main.js owns the wiring: neither
-  // feature imports the other's lifecycle.
-  assert.match(read("main.js"), /glass\.bindTheme\(\(\) => motion\.refreshTheme\(\)\)/);
-  assert.match(read("features/motion/index.js"), /const glass = require\("\.\.\/glass\/glass\.js"\)/);
-  assert.doesNotMatch(read("features/glass/index.js"), /require\("\.\.\/motion/);
+  // Motion and the material are one feature, so there is nothing left to wire
+  // between them: the stylesheet is built in one place and neither half imports
+  // the other's lifecycle.
+  assert.equal(entry._features.motion, undefined);
+  assert.equal(entry._features.glass, undefined);
+  const appearance = read("features/appearance/index.js");
+  assert.match(appearance, /const motion = require\("\.\/motion\.js"\)/);
+  assert.match(appearance, /const glass = require\("\.\/glass\.js"\)/);
+  assert.doesNotMatch(read("main.js"), /bindTheme/);
 });
 
 test("panel loads shared tokens, scoped feature styles and every feature", () => {
@@ -82,19 +90,21 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
     "./tokens.css",
     "./base.css",
     "./market.css",
-    "./motion.css",
-    "./glass.css",
+    "./appearance.css",
     "./market.js",
-    "./motion.js",
-    "./glass.js",
+    "./appearance.js",
     "./shell.js",
   ]) {
     assert.ok(html.includes(asset), asset);
   }
   assert.equal(/<script>/.test(html), false, "inline scripts would share one global scope");
   assert.match(html, /id="view-market"/);
-  assert.match(html, /id="view-motion"/);
-  assert.match(html, /id="view-glass"/);
+  assert.match(html, /id="view-appearance"/);
+  // One view, two sections: motion and the material are not separate panels.
+  assert.match(html, /id="section-motion"/);
+  assert.match(html, /id="section-glass"/);
+  assert.doesNotMatch(html, /id="view-motion"/);
+  assert.doesNotMatch(html, /id="view-glass"/);
 });
 
 test("panel opts into the paint-through chrome that has no development hint", () => {
@@ -109,9 +119,8 @@ test("panel opts into the paint-through chrome that has no development hint", ()
 
 test("feature styles are scoped so the views cannot collide", () => {
   assert.match(read("renderer/market.css"), /@scope \(#view-market\)/);
-  assert.match(read("renderer/motion.css"), /@scope \(#view-motion\)/);
-  assert.match(read("renderer/glass.css"), /@scope \(#view-glass\)/);
-  for (const file of ["renderer/market.css", "renderer/motion.css", "renderer/glass.css"]) {
+  assert.match(read("renderer/appearance.css"), /@scope \(#view-appearance\)/);
+  for (const file of ["renderer/market.css", "renderer/appearance.css", "renderer/gateway.css"]) {
     const css = read(file);
     assert.equal(!/(^|\n)\s*:root\s*\{/.test(css), true, `${file} must not redefine host root tokens`);
   }
@@ -119,10 +128,12 @@ test("feature styles are scoped so the views cannot collide", () => {
 
 test("renderer scripts expose an explicit boot hook and do not self-start", () => {
   assert.match(read("renderer/market.js"), /window\.PiOptMarket = \{ boot \}/);
-  assert.match(read("renderer/motion.js"), /window\.PiOptMotion = \{ boot: initialize \}/);
-  assert.match(read("renderer/glass.js"), /window\.PiOptGlass = \{ boot: initialize \}/);
-  const motion = read("renderer/motion.js");
-  assert.equal(motion.trimEnd().endsWith("})();"), true);
+  assert.match(read("renderer/appearance.js"), /window\.PiOptAppearance = \{ boot: initialize \}/);
+  const appearance = read("renderer/appearance.js");
+  assert.equal(appearance.trimEnd().endsWith("})();"), true);
+  // Both halves answer to the one boot hook: the shell boots a view, not a tab.
+  assert.doesNotMatch(appearance, /window\.PiOptMotion/);
+  assert.doesNotMatch(appearance, /window\.PiOptGlass/);
 });
 
 test("the rail opens and closes from a toggle above the tabs", () => {
@@ -134,7 +145,7 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   const tabsStart = html.indexOf('class="rail-tabs" role="tablist"');
   const toggleStart = html.indexOf('id="railToggle"');
   assert.ok(toggleStart > navStart && tabsStart > toggleStart);
-  for (const name of ["插件市场", "动效实验室", "窗口材质"]) {
+  for (const name of ["插件市场", "外观", "AI 网关"]) {
     assert.ok(html.includes(`<span class="rail-label">${name}</span>`), name);
   }
 
@@ -164,12 +175,15 @@ test("the rail opens and closes from a toggle above the tabs", () => {
 
 test("every rail row has a keyboard shortcut and a shell view", () => {
   const shell = read("renderer/shell.js");
-  // Alt+1..4 must cover exactly the four views the shell knows about.
-  assert.match(shell, /if \(!\["1", "2", "3", "4"\]\.includes\(event\.key\)\) return;/);
-  for (const feature of ["market", "motion", "gateway", "glass"]) {
+  // Alt+1..3 must cover exactly the three views the shell knows about.
+  assert.match(shell, /if \(!\["1", "2", "3"\]\.includes\(event\.key\)\) return;/);
+  for (const feature of ["market", "appearance", "gateway"]) {
     assert.match(shell, new RegExp(`${feature}: document\\.getElementById\\("view-${feature}"\\)`));
   }
-  assert.match(shell, /const KNOWN = \["market", "motion", "gateway", "glass"\];/);
+  assert.match(shell, /const KNOWN = \["market", "appearance", "gateway"\];/);
+  // The merged appearance view is two sections, and a command can name one.
+  assert.match(shell, /const SECTIONS = \["motion", "glass"\];/);
+  assert.match(shell, /scrollToSection/);
 });
 
 test("the host's window controls follow the panel's own light/dark tokens", () => {

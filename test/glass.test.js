@@ -16,7 +16,7 @@ const os = require("node:os");
 
 const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
-const glass = require("../features/glass/glass.js");
+const glass = require("../features/appearance/glass.js");
 
 // ------------------------------------------------------------------ fake host
 
@@ -41,16 +41,35 @@ function makePi(settings = {}) {
         unregister: async (id) => calls.push({ api: "unregister", id }),
       },
       ui: { openPanel: async (options) => calls.push({ api: "openPanel", options }) },
-      themes: { upsert: async () => {}, remove: async () => {}, list: async () => [] },
-      app: { getAppearance: async () => ({ base: "dark", theme: "dark", pluginTheme: null }) },
+      themes: {
+        upsert: async (theme) => calls.push({ api: "upsert", theme }),
+        remove: async (id) => calls.push({ api: "removeTheme", id }),
+        list: async () => [],
+      },
+      app: {
+        getAppearance: async () => ({ base: "dark", theme: "dark", pluginTheme: null }),
+        setTheme: async (id) => calls.push({ api: "setTheme", id }),
+      },
     },
   };
 }
 
+// The material is one half of the appearance feature now: its panel calls live
+// there, namespaced under `appearance.glass.`, and the store is tapped through
+// the same fake host.
+const APPEARANCE = "../features/appearance/index.js";
+
 function loadFeature() {
-  delete require.cache[require.resolve("../features/glass/index.js")];
-  return require("../features/glass/index.js");
+  delete require.cache[require.resolve(APPEARANCE)];
+  return require(APPEARANCE);
 }
+
+// The panel still says `glass.apply`; the feature accepts the pre-merge names
+// and this helper keeps the older call sites readable.
+function glassChannel(name) {
+  return `appearance.glass.${name}`;
+}
+
 
 // -------------------------------------------------------------------- config
 
@@ -172,48 +191,60 @@ test("the stylesheet stays inside the host's 256 KB theme limit", () => {
 
 // -------------------------------------------------------------------- feature
 
-test("the feature registers one command and removes it on unload", async () => {
+test("the material keeps its own command, both halves are unregistered on unload", async () => {
   const host = makePi();
   global.pi = host.pi;
   const feature = loadFeature();
   try {
     await feature.onLoad();
-    assert.equal(host.calls.filter((call) => call.api === "register").length, 1);
-    assert.equal(host.calls.find((call) => call.api === "register").id, "piopt.glass");
+    const registered = host.calls.filter((call) => call.api === "register").map((call) => call.id);
+    // One command per half: both open the appearance view, on a different section.
+    assert.deepEqual(registered, ["pi-modify.open", "piopt.glass"]);
     await feature.onUnload();
-    assert.equal(host.calls.find((call) => call.api === "unregister").id, "piopt.glass");
+    const removed = host.calls.filter((call) => call.api === "unregister").map((call) => call.id);
+    assert.deepEqual(removed, ["pi-modify.open", "piopt.glass"]);
   } finally {
     delete global.pi;
   }
 });
 
-test("apply writes the setting and asks the theme to re-register", async () => {
+test("apply writes the setting and rebuilds the one theme", async () => {
   const host = makePi();
   global.pi = host.pi;
   const feature = loadFeature();
-  let refreshed = 0;
-  feature.bindTheme(async () => { refreshed += 1; });
   try {
-    const result = await feature.onPanelInvoke("glass.apply", {
+    const result = await feature.onPanelInvoke(glassChannel("apply"), {
       config: { enabled: true, preset: "deep", intensity: 1.4 },
     });
     assert.equal(result.ok, true);
     assert.equal(result.applied, true);
     assert.deepEqual(host.store[glass.SETTINGS_KEY], { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill" });
-    assert.equal(refreshed, 1);
+    // One theme, rebuilt once from both halves: the material never injects a
+    // stylesheet of its own, it changes the one the motion rules live in.
+    const upserts = host.calls.filter((call) => call.api === "upsert");
+    assert.equal(upserts.length, 1);
+    assert.equal(upserts[0].theme.id, "motion");
+    assert.equal(upserts[0].theme.label, "PiOpt Appearance");
+    assert.ok(upserts[0].theme.css.includes("--pg-blur"), "the material layer must be in the theme");
     assert.deepEqual(result.config, { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill" });
   } finally {
     delete global.pi;
   }
 });
 
-test("apply still persists when no theme is wired in yet", async () => {
+test("apply refuses when the host has no runtime theme API", async () => {
   const host = makePi();
+  delete host.pi.themes;
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const result = await feature.onPanelInvoke("glass.apply", { config: { enabled: true } });
-    assert.equal(result.applied, false);
+    // Both halves are one stylesheet in a runtime theme: with no theme API there
+    // is nowhere to put either layer, so the write fails instead of silently
+    // leaving the switch "on" while the shell stays solid.
+    await assert.rejects(
+      () => feature.onPanelInvoke(glassChannel("apply"), { config: { enabled: true } }),
+      /不支持运行时主题 API/
+    );
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, true);
   } finally {
     delete global.pi;
@@ -225,7 +256,7 @@ test("reads the stored setting instead of trusting the panel", async () => {
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const state = await feature.onPanelInvoke("glass.getState", {});
+    const state = await feature.onPanelInvoke(glassChannel("getState"), {});
     assert.deepEqual(state.config, { enabled: true, preset: "light", intensity: 0.8, wallpaper: "", fit: "fill" });
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
   } finally {
@@ -233,14 +264,19 @@ test("reads the stored setting instead of trusting the panel", async () => {
   }
 });
 
-test("reset returns to the shipped default, which is off", async () => {
-  const host = makePi({ [glass.SETTINGS_KEY]: { enabled: true, preset: "deep", intensity: 1.6 } });
+test("reset returns to the shipped default but keeps the user's photo", async () => {
+  const file = tempWallpaper("reset.png");
+  const host = makePi({ [glass.SETTINGS_KEY]: { enabled: true, preset: "deep", intensity: 1.6, wallpaper: file } });
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const result = await feature.onPanelInvoke("glass.reset", {});
-    assert.deepEqual(result.config, { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" });
+    // The stored config holds the photo before the reset is asked for.
+    await feature.onPanelInvoke(glassChannel("getState"), {});
+    const result = await feature.onPanelInvoke(glassChannel("reset"), {});
+    assert.deepEqual(result.config, { enabled: false, preset: "standard", intensity: 1, wallpaper: file, fit: "fill" });
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, false);
+    // The photo is the user's own file, not part of the recipe.
+    assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, file);
   } finally {
     delete global.pi;
   }
@@ -251,7 +287,7 @@ test("glass.tokens answers without writing anything", async () => {
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const result = await feature.onPanelInvoke("glass.tokens", { config: { preset: "deep" } });
+    const result = await feature.onPanelInvoke(glassChannel("tokens"), { config: { preset: "deep" } });
     assert.equal(result.tokens.blur, 44);
     assert.equal(host.calls.length, 0);
   } finally {
@@ -264,7 +300,7 @@ test("an unknown channel is refused", async () => {
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    await assert.rejects(() => feature.onPanelInvoke("glass.nope", {}), /Unsupported panel action/);
+    await assert.rejects(() => feature.onPanelInvoke(glassChannel("nope"), {}), /Unsupported panel action/);
   } finally {
     delete global.pi;
   }
@@ -272,35 +308,41 @@ test("an unknown channel is refused", async () => {
 
 // ----------------------------------------------------------------- integration
 
-test("the motion theme is the only way the glass layer reaches the host", () => {
-  const motion = read("features/motion/index.js");
-  // Built from the motion stylesheet plus the glass layer, in that order.
-  assert.match(motion, /`\$\{motion\.buildThemeCss\(config, base\)\}\$\{await readGlassCss\(\)\}`/);
-  assert.match(motion, /glass\.buildGlassCss\(config, \{ size \}\)/);
-  assert.match(motion, /readImageSize\(config\.wallpaper\)/);
-  // and a failed settings read must not cost the motion layer
-  assert.match(motion, /An unreadable setting must not cost the motion layer/);
+test("the one appearance theme is the only way the glass layer reaches the host", () => {
+  const feature = read("features/appearance/index.js");
+  // Built from the motion stylesheet plus the glass layer, in that order, in the
+  // one place that registers a theme.
+  assert.match(feature, /`\$\{motion\.buildThemeCss\(motionLayer, base\)\}\$\{glassLayer\}`/);
+  assert.match(feature, /glass\.buildGlassCss\(config, \{ size \}\)/);
+  assert.match(feature, /readImageSize\(config\.wallpaper\)/);
+  // and a failed wallpaper read must not cost the motion layer
+  assert.match(feature, /An unreadable wallpaper must not cost the motion layer/);
+  // Every appearance write ends in the same function, so a change can never
+  // leave the stylesheet carrying only one of the two layers.
+  assert.match(feature, /async function applyTheme\(/);
+  const writes = feature.match(/await applyTheme\(/g) || [];
+  assert.ok(writes.length >= 2, "both halves must apply through applyTheme");
 });
 
 test("the panel mirrors the process model so preview mode is honest", () => {
-  const panel = read("renderer/glass.js");
-  const feature = read("features/glass/glass.js");
+  const panel = read("renderer/appearance.js");
+  const feature = read("features/appearance/glass.js");
   // Both sides must agree on the presets, or the readings would lie.
   for (const preset of ["light", "standard", "deep"]) {
     assert.ok(panel.includes(`${preset}: { blur:`), preset);
     assert.ok(feature.includes(`${preset}: Object.freeze({ blur:`), preset);
   }
-  assert.match(panel, /const DEFAULT_CONFIG = \{ enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" \};/);
+  assert.match(panel, /const DEFAULT_GLASS = \{ enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" \};/);
   assert.match(feature, /enabled: false,\n  preset: "standard",\n  intensity: 1,\n  wallpaper: "",\n  fit: "fill",/);
 });
 
-test("the glass view stylesheet targets the classes its own markup uses", () => {
+test("the material section's stylesheet targets the classes its own markup uses", () => {
   const html = read("renderer/index.html");
-  const start = html.indexOf('id="view-glass"');
+  const start = html.indexOf('id="section-glass"');
   const end = html.indexOf('id="view-gateway"');
-  assert.ok(start > 0 && end > start, "the glass view must sit between the market view and the gateway view");
+  assert.ok(start > 0 && end > start, "the material section must close before the gateway view");
   const markup = html.slice(start, end);
-  const css = read("renderer/glass.css");
+  const css = read("renderer/appearance.css");
 
   const classes = new Set(
     [...markup.matchAll(/class="([^"]+)"/g)]
@@ -317,7 +359,7 @@ test("the glass view stylesheet targets the classes its own markup uses", () => 
     assert.match(
       css,
       new RegExp(`\\.${name}\\s*(?:,[^{}]*)?\\{`),
-      `renderer/glass.css must style .${name}`
+      `renderer/appearance.css must style .${name}`
     );
   }
 });
@@ -450,7 +492,7 @@ test("scale-down never enlarges, which needs the image's natural size", () => {
 });
 
 test("the image header reader finds the natural size of the formats the host allows", () => {
-  const { readImageSize } = require("../features/glass/image-size.js");
+  const { readImageSize } = require("../features/appearance/image-size.js");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-size-"));
   try {
     // Minimal PNG header: signature + IHDR with a 3×2 image.
@@ -496,7 +538,7 @@ test("picking a wallpaper stores it without touching the glass switch", async ()
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const result = await feature.onPanelInvoke("glass.setWallpaper", { path: file });
+    const result = await feature.onPanelInvoke(glassChannel("setWallpaper"), { path: file });
     assert.equal(result.ok, true);
     assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, file);
     // The photo is its own layer: it has to stay visible with the glass off, so
@@ -512,12 +554,12 @@ test("a missing or unsupported wallpaper is refused, not stored", async () => {
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const missing = await feature.onPanelInvoke("glass.setWallpaper", { path: "/nope/none.png" });
+    const missing = await feature.onPanelInvoke(glassChannel("setWallpaper"), { path: "/nope/none.png" });
     assert.equal(missing.ok, false);
     assert.equal(missing.reason, "missing");
     assert.match(missing.message, /找不到/);
 
-    const wrong = await feature.onPanelInvoke("glass.setWallpaper", { path: "/nope/none.exe" });
+    const wrong = await feature.onPanelInvoke(glassChannel("setWallpaper"), { path: "/nope/none.exe" });
     assert.equal(wrong.ok, false);
     assert.equal(wrong.reason, "unsupported");
 
@@ -538,7 +580,7 @@ test("a whole-config write cannot drop the wallpaper", async () => {
     await feature.onLoad();
     // The panel sends the config it rendered, where the wallpaper is whatever it
     // last saw; the process stays the authority on it.
-    await feature.onPanelInvoke("glass.apply", {
+    await feature.onPanelInvoke(glassChannel("apply"), {
       config: { preset: "light", intensity: 1, wallpaper: "", fit: "scale-down" },
     });
     const stored = host.store[glass.SETTINGS_KEY];
@@ -559,7 +601,7 @@ test("clearing the wallpaper keeps every other setting", async () => {
   const feature = loadFeature();
   try {
     await feature.onLoad();
-    const result = await feature.onPanelInvoke("glass.clearWallpaper", {});
+    const result = await feature.onPanelInvoke(glassChannel("clearWallpaper"), {});
     assert.equal(result.config.wallpaper, "");
     assert.equal(result.config.enabled, true);
     assert.equal(result.config.preset, "deep");
@@ -579,7 +621,7 @@ test("a wallpaper that vanished is dropped on load instead of breaking the theme
     await feature.onLoad();
     // A stale reference makes `themes.upsert` fail outright, which would take
     // the motion layer down with it.
-    assert.equal(feature.getConfig().wallpaper, "");
+    assert.equal(feature._getGlassConfig().wallpaper, "");
     assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, "");
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, true);
   } finally {
@@ -592,7 +634,7 @@ test("the panel gets the values it renders the controls from", async () => {
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const state = await feature.onPanelInvoke("glass.getState", {});
+    const state = await feature.onPanelInvoke(glassChannel("getState"), {});
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
     assert.deepEqual(state.fits, ["fill", "contain", "cover", "none", "scale-down"]);
     assert.deepEqual(state.limits.intensity, [0.6, 1.6]);
@@ -610,7 +652,7 @@ test("an uploaded image is written into the plugin data folder and adopted", asy
   const feature = loadFeature();
   try {
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
-    const result = await feature.onPanelInvoke("glass.saveWallpaper", {
+    const result = await feature.onPanelInvoke(glassChannel("saveWallpaper"), {
       name: "My Photo.PNG",
       data: bytes.toString("base64"),
     });
@@ -634,14 +676,14 @@ test("an upload of the wrong type or an oversized one is refused", async () => {
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const wrong = await feature.onPanelInvoke("glass.saveWallpaper", {
+    const wrong = await feature.onPanelInvoke(glassChannel("saveWallpaper"), {
       name: "photo.bmp",
       data: Buffer.from([1, 2, 3]).toString("base64"),
     });
     assert.equal(wrong.ok, false);
     assert.equal(wrong.reason, "unsupported");
 
-    const empty = await feature.onPanelInvoke("glass.saveWallpaper", { name: "photo.png", data: "" });
+    const empty = await feature.onPanelInvoke(glassChannel("saveWallpaper"), { name: "photo.png", data: "" });
     assert.equal(empty.ok, false);
     assert.equal(empty.reason, "unreadable");
 

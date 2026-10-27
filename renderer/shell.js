@@ -1,6 +1,10 @@
 /*
  * PiOpt shell: switches between feature views and boots each feature once,
- * on first reveal, so the market does not poll while you are tuning motion.
+ * on first reveal, so the market does not poll while you are tuning appearance.
+ *
+ * Three views, one of them two sections: motion and the window material are one
+ * feature (`appearance`), so they share a tab and the commands name a section
+ * inside it instead of a view of their own.
  */
 (function () {
   "use strict";
@@ -11,12 +15,13 @@
   const tabs = Array.from(document.querySelectorAll("[data-feature]"));
   const views = {
     market: document.getElementById("view-market"),
-    motion: document.getElementById("view-motion"),
+    appearance: document.getElementById("view-appearance"),
     gateway: document.getElementById("view-gateway"),
-    glass: document.getElementById("view-glass"),
   };
-  const booted = { market: false, motion: false, gateway: false, glass: false };
-  const KNOWN = ["market", "motion", "gateway", "glass"];
+  const booted = { market: false, appearance: false, gateway: false };
+  const KNOWN = ["market", "appearance", "gateway"];
+  // Sections inside the appearance view, each with the id it scrolls to.
+  const SECTIONS = ["motion", "glass"];
   let current = "market";
 
   function reportFailure(feature, detail) {
@@ -35,7 +40,7 @@
   function start(feature) {
     if (booted[feature]) return;
     booted[feature] = true;
-    const api = { market: window.PiOptMarket, motion: window.PiOptMotion, gateway: window.PiOptGateway, glass: window.PiOptGlass }[feature];
+    const api = { market: window.PiOptMarket, appearance: window.PiOptAppearance, gateway: window.PiOptGateway }[feature];
     const tab = tabs.find((item) => item.dataset.feature === feature);
     if (!api || typeof api.boot !== "function") {
       if (tab) tab.title = "该功能未能加载";
@@ -52,7 +57,19 @@
       });
   }
 
-  function show(feature, remember) {
+  const reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  // A command can ask for one section of the appearance view; the page scrolls
+  // there once the view is on screen, so "open the window material" still lands
+  // on the material controls rather than on the top of a longer page.
+  function scrollToSection(section) {
+    if (!SECTIONS.includes(section)) return;
+    const target = document.getElementById(`section-${section}`);
+    if (!target || typeof target.scrollIntoView !== "function") return;
+    target.scrollIntoView({ block: "start", behavior: reduceQuery.matches ? "auto" : "smooth" });
+  }
+
+  function show(feature, remember, section) {
     if (!views[feature]) feature = "market";
     const changed = feature !== current;
     current = feature;
@@ -63,6 +80,7 @@
     placeMarker(feature);
     if (changed) replayEnter(views[feature]);
     start(feature);
+    if (section) scrollToSection(section);
     if (remember) {
       try { window.localStorage.setItem(STORAGE_KEY, feature); } catch { /* private mode */ }
     }
@@ -74,10 +92,9 @@
   const rail = document.getElementById("optRail");
   const railToggle = document.getElementById("railToggle");
 
-  // One marker slides between the two rows instead of each row drawing its own
+  // One marker slides between the rows instead of each row drawing its own
   // bar, so switching views reads as movement. It lives outside the tablist
   // (aria-hidden, absolutely placed) to keep the tab semantics untouched.
-  const reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   const marker = rail ? document.createElement("span") : null;
   if (rail && marker) {
     marker.className = "rail-marker";
@@ -156,9 +173,9 @@
 
   document.addEventListener("keydown", (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
-    if (!["1", "2", "3", "4"].includes(event.key)) return;
+    if (!["1", "2", "3"].includes(event.key)) return;
     event.preventDefault();
-    show({ 1: "market", 2: "motion", 3: "gateway", 4: "glass" }[event.key], true);
+    show({ 1: "market", 2: "appearance", 3: "gateway" }[event.key], true);
   });
 
   let stored = null;
@@ -169,7 +186,12 @@
     .then(() => (bridge && typeof bridge.invoke === "function" ? bridge.invoke("plugin.getSettings") : null))
     .then((settings) => {
       const target = settings && settings.panelFeature;
-      if (KNOWN.includes(target) && target !== current) show(target, false);
+      // `motion` and `glass` were view names before the merge; a settings record
+      // written by the older build still lands on the right section.
+      const feature = target === "motion" || target === "glass" ? "appearance" : target;
+      const section = settings && settings.panelSection;
+      if (KNOWN.includes(feature) && feature !== current) show(feature, false, section);
+      else if (section) scrollToSection(section);
     })
     .catch(() => { /* keep the remembered view */ });
 })();

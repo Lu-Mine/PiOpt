@@ -1,27 +1,28 @@
 "use strict";
 
 /**
- * PiOpt host entry: one plugin, two features.
+ * PiOpt host entry: one plugin, four views.
  *
  * Each feature under features/ keeps its own lifecycle, commands, agent tools
  * and panel channels; this file only composes them and routes panel traffic by
- * channel prefix, so the two features never call each other directly.
+ * channel prefix, so no feature calls another directly. Interface motion and the
+ * window material are one feature (`appearance`) because they are one theme.
  */
 
 const market = require("./features/market/index.js");
-const motion = require("./features/motion/index.js");
-const glass = require("./features/glass/index.js");
+const appearance = require("./features/appearance/index.js");
 const gateway = require("./features/gateway/index.js");
 
-const FEATURES = { market, motion, glass, gateway };
+const FEATURES = { market, appearance, gateway };
 const PANEL_COMMAND = "piopt.open";
 
 function featureFor(channel) {
   if (typeof channel !== "string") return null;
   if (channel.startsWith("market.")) return FEATURES.market;
-  if (channel.startsWith("motion.")) return FEATURES.motion;
   if (channel.startsWith("gateway.")) return FEATURES.gateway;
-  if (channel.startsWith("glass.")) return FEATURES.glass;
+  // `motion.*` and `glass.*` are the pre-merge names of the two halves; the
+  // feature answers them so a panel window that outlived the reload still works.
+  if (/^(appearance|motion|glass)\./.test(channel)) return FEATURES.appearance;
   return null;
 }
 
@@ -54,11 +55,7 @@ async function onRendererCall(method, args = {}) {
 
 async function onLoad() {
   await market.onLoad();
-  await motion.onLoad();
-  await glass.onLoad();
-  // The glass layer rides the Motion Lab theme, so the two features are wired
-  // here instead of importing each other.
-  glass.bindTheme(() => motion.refreshTheme());
+  await appearance.onLoad();
   await gateway.onLoad();
   await pi.commands.register({
     id: PANEL_COMMAND,
@@ -85,9 +82,8 @@ async function onUnload() {
   } catch {
     /* already gone */
   }
-  await glass.onUnload();
+  await appearance.onUnload();
   await gateway.onUnload();
-  await motion.onUnload();
   await market.onUnload();
 }
 

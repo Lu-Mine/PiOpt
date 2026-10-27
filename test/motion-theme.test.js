@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Motion Lab registers exactly one theme (`motion`), whose base follows the
+ * The appearance feature registers exactly one theme (`motion`), whose base follows the
  * setting: "auto" is the system, and the explicit choices override it. The host
  * namespaces the id as `plugin:<plugin id>:<theme id>`.
  *
@@ -13,8 +13,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const motion = require("../features/motion/motion.js");
-const feature = require("../features/motion/index.js");
+const motion = require("../features/appearance/motion.js");
+const feature = require("../features/appearance/index.js");
 
 const PLUGIN_ID = "local.piopt";
 const THEME = `plugin:${PLUGIN_ID}:${motion.THEME_ID}`;
@@ -64,10 +64,11 @@ test("one theme is registered, whatever the setting", async () => {
     assert.deepEqual(
       host.upserted.map((theme) => theme.id),
       [motion.THEME_ID, motion.THEME_ID],
-      "the host must only ever see one Motion Lab theme"
+      "the host must only ever see one appearance theme"
     );
     assert.deepEqual(host.upserted.map((theme) => theme.base), ["dark", "light"]);
-    assert.equal(host.upserted[0].label, "Motion Lab");
+    // One label for both halves: the theme carries motion and the material.
+    assert.equal(host.upserted[0].label, "PiOpt Appearance");
   } finally {
     delete global.pi;
   }
