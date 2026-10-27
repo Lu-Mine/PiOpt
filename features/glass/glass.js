@@ -248,13 +248,21 @@ function buildGlassCss(input = {}, options = {}) {
   const scrim = "linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim)))";
   const backdrop = wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
 
+  // Every "chrome" surface — the window title bar, the conversation top bar, the
+  // work panel's tab header and the window controls — paints this exact string.
+  // One variable, not four copies: the point is that they are the same material,
+  // and a copy is how they drift apart.
+  const chromeFill =
+    `background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;` +
+    `box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}`;
+
   // Only a frosted surface needs a no-blur fallback; with the switch off these
   // rules would just make the frame more opaque and hide the photo.
   const noBlurFallback = surfaces
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header){background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
         ".work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
@@ -266,12 +274,15 @@ function buildGlassCss(input = {}, options = {}) {
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
 :is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
-/* The three chrome bars share one recipe: the window title bar, the
-   conversation top bar and the right work panel's tab header. The work panel's
-   header carries its tab list, and that tab row has no fill of its own, so it
-   reads exactly as whatever this header paints. Keeping all three on the same
-   token and the same alpha is what makes them look like one family. */
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header){background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}}
+/* Every chrome surface paints the identical chromeFill string. The work panel's
+   tab list lives in .work-panel-header and the tabs themselves paint no fill,
+   so the header's material *is* the tab row's material. .window-controls is the
+   120px strip at the top right holding minimise / maximise / close — it is
+   position: fixed and would otherwise stay a solid lab of --ds-bg-primary sitting
+   on top of the glass (the host even swaps it to --ds-bg-dock-raised whenever a
+   work panel is open, which is why that corner looked like a different material
+   from the bar next to it). */
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header),.window-controls{${chromeFill}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}

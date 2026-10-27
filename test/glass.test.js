@@ -116,11 +116,13 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The three chrome bars — window title bar, conversation top bar, and the
-  // work panel's tab header — must share one recipe so they read as a family.
+  // The three chrome bars plus the window controls — window title bar,
+  // conversation top bar, work panel's tab header, and the minimise /
+  // maximise / close strip — must all share the one selector rule, so they
+  // cannot drift apart into merely-similar values.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\],\.work-panel-header\)\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\],\.work-panel-header\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
   // The right work panel body is a surface too, on the sidebar's density.
   assert.match(css, /\.work-panel\{background-color:color-mix\(in oklab,var\(--ds-bg-dock\)/);

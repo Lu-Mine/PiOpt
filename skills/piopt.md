@@ -88,15 +88,20 @@ PiOpt bundles four features in one plugin:
    PI-Desktop has that theme selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
    The surfaces it covers are the left sidebar, the right work panel body, and
-   three chrome bars that share one recipe: `.main-titlebar`,
-   `.conversation-topbar` and `.work-panel-header`. That last one carries the
-   work panel's tab list (浏览器 / 审阅 / 侧边聊天) — those tabs paint no fill of
-   their own, so the header's material *is* the tab row's material. Keep all
-   three on the same token and alpha; giving them merely similar values is what
-   makes one of them look off. Blur is safe on all of them because the host
-   portals every popup (context menu, submenus, notifications, usage popovers)
-   to `document.body`, so none of them is a descendant whose `position: fixed`
-   would re-anchor against the blurred panel.
+   Four chrome surfaces share one recipe: `.main-titlebar`,
+   `.conversation-topbar`, `.work-panel-header` and `.window-controls`. They
+   are emitted into a single selector rule from one `chromeFill` string, not
+   four copies — a copy is how they drift apart. `.work-panel-header` carries
+   the work panel's tab list (浏览器 / 审阅 / 侧边聊天): those tabs paint no fill
+   of their own, so the header's material *is* the tab row's material.
+   `.window-controls` is the minimise / maximise / close strip: the host gives
+   it a `position: fixed` solid block and even swaps it to
+   `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
+   that corner used to read as a different material from the bar beside it.
+   Never cover the whole set partially — that one omission is visible.
+   Blur is safe on all of them because the host portals every popup (context
+   menu, submenus, notifications, usage popovers) to `document.body`, so none
+   of them is a descendant whose `position: fixed` would re-anchor.
 4. Settings apply live, about one debounce frame after the last input. Do not
    tell the user to press an apply button.
 5. 轻薄 / 标准 / 厚重 are glass recipes, not motion presets. The switch only
