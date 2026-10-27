@@ -38,7 +38,7 @@ const CSS_LIMIT_BYTES = 256 * 1024;
 const WALLPAPER_EXTENSIONS = Object.freeze(["png", "jpg", "jpeg", "webp", "avif", "svg"]);
 const WALLPAPER_MAX_BYTES = 4 * 1024 * 1024;
 
-const FITS = Object.freeze(["fill", "scale-down"]);
+const FITS = Object.freeze(["fill", "contain", "cover", "none", "scale-down"]);
 
 // One preset is one glass recipe. `sidebar`, `chrome` and `overlay` are fill
 // opacities in percent: the higher the number, the more the surface hides what
@@ -46,9 +46,9 @@ const FITS = Object.freeze(["fill", "scale-down"]);
 // a wallpaper is set — the wallpaper has to be *seen* through the window, and
 // an opaque pane would hide all of it.
 const PRESETS = Object.freeze({
-  light: Object.freeze({ blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16, canvas: 90 }),
-  standard: Object.freeze({ blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22, canvas: 84 }),
-  deep: Object.freeze({ blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28, canvas: 78 }),
+  light: Object.freeze({ blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16, canvas: 90, scrim: 0.12 }),
+  standard: Object.freeze({ blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22, canvas: 84, scrim: 0.2 }),
+  deep: Object.freeze({ blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28, canvas: 78, scrim: 0.28 }),
 });
 
 const DEFAULT_CONFIG = Object.freeze({
@@ -139,6 +139,12 @@ function glassTokens(input = {}) {
     chrome: firmUp(preset.chrome),
     overlay: firmUp(preset.overlay),
     glow: Math.round(clamp(preset.glow * scale, 8, 46)),
+    // The dimming rides on the backdrop layer instead of the surface fills.
+    // A surface's `background-color` and its `backdrop-filter` composite in an
+    // order that is not stable across tiles: sampling a real window showed a
+    // sidebar section drawn with the fill and the one below it without. Painting
+    // the scrim into the image layer makes every reveal the same brightness.
+    scrim: Math.round(clamp(preset.scrim * (0.85 + 0.15 * scale), 0.04, 0.55) * 100) / 100,
     // 100% keeps the pane exactly as the host paints it, so a user who never
     // picks a wallpaper sees no change at all.
     canvas: config.wallpaper ? firmUp(preset.canvas) : 100,
@@ -150,6 +156,39 @@ const LIGHT_FIELD =
   "radial-gradient(110% 90% at 105% 8%,color-mix(in oklab,var(--ds-bg-tertiary) 85%,transparent),transparent 66%)," +
   "radial-gradient(130% 110% at 42% 122%,color-mix(in oklab,var(--ds-accent) calc(var(--pg-glow) * .8),transparent),transparent 64%)";
 
+
+/**
+ * The `background-size` declarations for one fit mode.
+ *
+ * `scale-down` is the only mode CSS cannot express directly: `background-size`
+ * has no access to an image's natural size, so the pseudo element is clamped to
+ * `min(100%, natural)` and centred with `inset` + `margin: auto` (never
+ * `transform`), then `contain` fills that box — which is exactly
+ * `object-fit: scale-down`. Without a known size it degrades to plain `contain`.
+ */
+function fitDeclarations(fit, size) {
+  switch (fit) {
+    case "contain":
+      return "background-size:contain;background-position:center;background-repeat:no-repeat;";
+    case "cover":
+      return "background-size:cover;background-position:center;background-repeat:no-repeat;";
+    case "none":
+      return "background-size:auto;background-position:center;background-repeat:no-repeat;";
+    case "scale-down": {
+      const width = Number(size && size.width);
+      const height = Number(size && size.height);
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return "background-size:contain;background-position:center;background-repeat:no-repeat;";
+      }
+      const boxWidth = Math.round(width);
+      const boxHeight = Math.round(height);
+      return `inset:0;margin:auto;width:min(100%,${boxWidth}px);height:min(100%,${boxHeight}px);background-size:contain;background-position:center;background-repeat:no-repeat;`;
+    }
+    case "fill":
+    default:
+      return "background-size:100% 100%;background-repeat:no-repeat;";
+  }
+}
 /**
  * The stylesheet, or an empty string when glass is off.
  *
@@ -179,7 +218,7 @@ const LIGHT_FIELD =
  * containing-block side effect, so it is applied only to elements whose fixed
  * descendants are the popups themselves (see the note in README).
  */
-function buildGlassCss(input = {}) {
+function buildGlassCss(input = {}, options = {}) {
   const config = normalizeGlassConfig(input);
   if (!config.enabled) return "";
 
@@ -187,15 +226,14 @@ function buildGlassCss(input = {}) {
   const wallpaper = wallpaperCssUrl(config.wallpaper);
   // A photo already carries the detail the light field was standing in for, and
   // leaving it out keeps one fewer full-window gradient to recomposite.
-  const backdrop = wallpaper ? `url("${wallpaper}")` : LIGHT_FIELD;
-  const sizing = wallpaper
-    ? config.fit === "scale-down"
-      ? "background-size:contain;background-position:center;background-repeat:no-repeat;"
-      : "background-size:100% 100%;background-repeat:no-repeat;"
-    : "";
+  // The scrim is the first layer so every surface that reveals the photo sees the
+  // same dimmed version of it, whatever the compositor decides about the fills.
+  const scrim = "linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim)))";
+  const backdrop = wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
+  const sizing = wallpaper ? fitDeclarations(config.fit, options.size) : "";
 
   const css = `${CSS_MARKER}
-:root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%}
+:root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
 :is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);-webkit-backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))}
 .main-titlebar{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);-webkit-backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))}
@@ -226,6 +264,7 @@ module.exports = {
   WALLPAPER_MAX_BYTES,
   buildGlassCss,
   glassTokens,
+  fitDeclarations,
   isSupportedWallpaper,
   normalizeGlassConfig,
   wallpaperCssUrl,

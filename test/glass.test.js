@@ -259,7 +259,8 @@ test("the motion theme is the only way the glass layer reaches the host", () => 
   const motion = read("features/motion/index.js");
   // Built from the motion stylesheet plus the glass layer, in that order.
   assert.match(motion, /`\$\{motion\.buildThemeCss\(config, base\)\}\$\{await readGlassCss\(\)\}`/);
-  assert.match(motion, /glass\.buildGlassCss\(settings && settings\[glass\.SETTINGS_KEY\]\)/);
+  assert.match(motion, /glass\.buildGlassCss\(config, \{ size \}\)/);
+  assert.match(motion, /readImageSize\(config\.wallpaper\)/);
   // and a failed settings read must not cost the motion layer
   assert.match(motion, /An unreadable setting must not cost the motion layer/);
 });
@@ -347,22 +348,97 @@ test("a wallpaper replaces the light field and thins the content pane", () => {
 
   assert.ok(plain.includes("radial-gradient("), "no wallpaper keeps the light field");
   assert.equal(photo.includes("radial-gradient("), false, "a photo carries its own detail");
-  assert.ok(photo.includes('background-image:url("/pictures/shot.png")'));
+  // The photo rides under a scrim layer, so every reveal of it is equally dim.
+  assert.ok(photo.includes('url("/pictures/shot.png")'));
+  assert.ok(photo.includes("background-image:linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim))),url("));
+  assert.match(photo, /--pg-scrim:0\.2\b/);
+  assert.equal(plain.includes("background-image:url("), false, "the light field needs no scrim");
   assert.match(plain, /--pg-canvas-alpha:100%/);
   assert.match(photo, /--pg-canvas-alpha:84%/);
   assert.ok(plain.includes(".main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}"));
 });
 
-test("fill stretches the photo and scale-down keeps all of it", () => {
-  const fill = glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "fill" });
-  const contain = glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "scale-down" });
+test("every fill mode maps to its own sizing declaration", () => {
+  const css = (fit, size) => glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit }, { size });
+
+  const fill = css("fill");
   assert.ok(fill.includes("background-size:100% 100%"));
   assert.equal(fill.includes("background-position:center"), false);
-  assert.ok(contain.includes("background-size:contain"));
-  assert.ok(contain.includes("background-position:center"));
-  assert.ok(contain.includes("background-repeat:no-repeat"));
-  const unknown = glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "cover" });
-  assert.ok(unknown.includes("background-size:100% 100%"));
+
+  for (const mode of ["contain", "cover"]) {
+    const layer = css(mode);
+    assert.ok(layer.includes(`background-size:${mode}`), mode);
+    assert.ok(layer.includes("background-position:center"), mode);
+    assert.ok(layer.includes("background-repeat:no-repeat"), mode);
+  }
+
+  const none = css("none");
+  assert.ok(none.includes("background-size:auto"));
+  assert.ok(none.includes("background-position:center"));
+
+  // An unknown value falls back to fill instead of dropping the layer.
+  assert.ok(css("stretch").includes("background-size:100% 100%"));
+});
+
+test("scale-down never enlarges, which needs the image's natural size", () => {
+  const sized = (size) => glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "scale-down" }, { size });
+
+  // With a known size the layer is clamped to the photo's own box and centred
+  // without a transform, so a small image stays small.
+  const small = sized({ width: 400, height: 300 });
+  assert.ok(small.includes("width:min(100%,400px)"));
+  assert.ok(small.includes("height:min(100%,300px)"));
+  assert.ok(small.includes("margin:auto"));
+  assert.ok(small.includes("background-size:contain"));
+  assert.equal(small.includes("transform"), false);
+
+  // Without one it degrades to contain: it may enlarge, but it never breaks.
+  const unknown = sized(null);
+  assert.ok(unknown.includes("background-size:contain"));
+  assert.equal(unknown.includes("min(100%,"), false);
+  // AVIF is the format we cannot measure, so this is the path it takes.
+  assert.ok(sized(undefined).includes("background-size:contain"));
+});
+
+test("the image header reader finds the natural size of the formats the host allows", () => {
+  const { readImageSize } = require("../features/glass/image-size.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-size-"));
+  try {
+    // Minimal PNG header: signature + IHDR with a 3×2 image.
+    const png = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+    png.writeUInt32BE(13, 8);
+    png.write("IHDR", 12, "ascii");
+    png.writeUInt32BE(3, 16);
+    png.writeUInt32BE(2, 20);
+    const pngPath = path.join(dir, "a.png");
+    fs.writeFileSync(pngPath, png);
+    assert.deepEqual(readImageSize(pngPath), { width: 3, height: 2 });
+
+    // SOF0 carries height then width, both big endian.
+    const jpeg = Buffer.from([
+      0xff, 0xd8,
+      0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x20,
+      0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+    ]);
+    const jpegPath = path.join(dir, "a.jpg");
+    fs.writeFileSync(jpegPath, jpeg);
+    assert.deepEqual(readImageSize(jpegPath), { width: 32, height: 16 });
+
+    const svgPath = path.join(dir, "a.svg");
+    fs.writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 45"></svg>');
+    assert.deepEqual(readImageSize(svgPath), { width: 120, height: 45 });
+    fs.writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"></svg>');
+    assert.deepEqual(readImageSize(svgPath), { width: 64, height: 48 });
+
+    // Unreadable input answers null instead of throwing.
+    fs.writeFileSync(path.join(dir, "bad.png"), Buffer.from("not an image at all"));
+    assert.equal(readImageSize(path.join(dir, "bad.png")), null);
+    assert.equal(readImageSize(path.join(dir, "missing.png")), null);
+    assert.equal(readImageSize(""), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("picking a wallpaper stores it and turns glass on", async () => {
@@ -468,7 +544,7 @@ test("the panel gets the values it renders the controls from", async () => {
   try {
     const state = await feature.onPanelInvoke("glass.getState", {});
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
-    assert.deepEqual(state.fits, ["fill", "scale-down"]);
+    assert.deepEqual(state.fits, ["fill", "contain", "cover", "none", "scale-down"]);
     assert.deepEqual(state.limits.intensity, [0.6, 1.6]);
   } finally {
     delete global.pi;

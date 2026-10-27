@@ -20,12 +20,20 @@
  */
 
 const PRESETS = {
-  light: { blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16, canvas: 90 },
-  standard: { blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22, canvas: 84 },
-  deep: { blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28, canvas: 78 },
+  light: { blur: 16, saturate: 1.35, sidebar: 34, chrome: 58, overlay: 76, glow: 16, canvas: 90, scrim: 0.12 },
+  standard: { blur: 28, saturate: 1.65, sidebar: 44, chrome: 66, overlay: 82, glow: 22, canvas: 84, scrim: 0.2 },
+  deep: { blur: 44, saturate: 2, sidebar: 54, chrome: 74, overlay: 88, glow: 28, canvas: 78, scrim: 0.28 },
 };
 const DEFAULT_CONFIG = { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" };
 const LIMITS = { intensity: [0.6, 1.6] };
+const FITS = ["fill", "contain", "cover", "none", "scale-down"];
+const FIT_COPY = {
+  fill: "拉伸铺满整个窗口，比例会变形",
+  contain: "等比缩放，整张图完整显示",
+  cover: "等比缩放铺满窗口，超出部分裁切",
+  none: "保持图片原始像素尺寸，超出部分裁切",
+  "scale-down": "等比缩放，但不会超过图片原始尺寸",
+};
 const WALLPAPER_MAX_BYTES = 4 * 1024 * 1024;
 const WALLPAPER_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "avif", "svg"];
 
@@ -70,7 +78,7 @@ function normalizeConfig(input) {
     preset,
     intensity: Math.round(clamp(finiteNumber(source.intensity, 1), LIMITS.intensity[0], LIMITS.intensity[1]) * 100) / 100,
     wallpaper: typeof source.wallpaper === "string" ? source.wallpaper : "",
-    fit: source.fit === "scale-down" ? "scale-down" : "fill",
+    fit: FITS.includes(source.fit) ? source.fit : "fill",
   };
 }
 
@@ -89,6 +97,7 @@ function localTokens(input) {
     overlay: firmUp(preset.overlay),
     glow: Math.round(clamp(preset.glow * scale, 8, 46)),
     canvas: config.wallpaper ? firmUp(preset.canvas) : 100,
+    scrim: Math.round(clamp(preset.scrim * (0.85 + 0.15 * scale), 0.04, 0.55) * 100) / 100,
   };
 }
 
@@ -195,6 +204,7 @@ function renderConfig() {
   elements.intensityValue.textContent = `${Math.round(config.intensity * 100)}%`;
   paintRange(elements.intensity);
   elements.summary.textContent = config.enabled ? (PRESET_COPY[config.preset] || PRESET_COPY.standard) : OFF_COPY;
+  elements.fitHint.textContent = FIT_COPY[config.fit] || FIT_COPY.fill;
 
   const name = basename(config.wallpaper);
   elements.wallpaperName.textContent = name || "未选择：玻璃背后是柔光场";
@@ -392,6 +402,7 @@ async function initialize() {
     wallpaperName: byId("glass-wallpaper-name"),
     pickButton: byId("glass-wallpaper-pick"),
     clearButton: byId("glass-wallpaper-clear"),
+    fitHint: byId("glass-fit-hint"),
     fileInput: byId("glass-wallpaper-file"),
     tokenBlur: byId("glass-token-blur"),
     tokenStrong: byId("glass-token-strong"),

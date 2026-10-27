@@ -95,6 +95,8 @@ PiOpt bundles four features in one plugin:
    visible on a dark theme.
 6. A wallpaper is uploaded from the panel, stored in the plugin data folder,
    and referenced by absolute path; the host rewrites that to a
-   `plugin-asset:` URL with a 4 MB ceiling. `fill` stretches, `scale-down`
-   keeps the whole image. Picking one also turns glass on — an image behind
-   opaque surfaces would show nothing, so it is not a separate switch.
+   `plugin-asset:` URL with a 4 MB ceiling. Five fill modes, labelled in Chinese
+   in the panel: 拉伸填满 (fill), 等比适应 (contain), 等比铺满 (cover),
+   原始尺寸 (none), 等比不放大 (scale-down). Picking one also turns glass on —
+   an image behind opaque surfaces would show nothing, so it is not a separate
+   switch.

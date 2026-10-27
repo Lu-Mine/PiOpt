@@ -249,9 +249,10 @@ h1 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; }
   font: 12px/1.5 var(--ui-mono);
 }
 .glass-wallpaper-name[data-empty="true"] { color: var(--ui-muted); font-family: inherit; }
-.glass-segmented-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.glass-fit-hint { display: flex; justify-content: space-between; margin-top: 7px; color: var(--ui-faint); }
-.glass-fit-hint small { font-size: 10px; }
+/* Five fill modes on a three-column grid: two rows, the second one short. */
+.glass-segmented-fit { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.glass-fit-hint { margin-top: 8px; color: var(--ui-muted); line-height: 1.5; }
+.glass-fit-hint small { font-size: 11px; }
 
 /* The readings card spans both columns, so it can afford three across. */
 .glass-panel-wide { grid-column: 1 / -1; }

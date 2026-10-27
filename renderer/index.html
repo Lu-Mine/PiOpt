@@ -226,16 +226,19 @@
 
               <div>
                 <div class="glass-field-label">填充</div>
-                <div class="glass-segmented glass-segmented-two" role="group" aria-label="背景图填充">
-                  <button type="button" data-glass-fit="fill">fill</button>
-                  <button type="button" data-glass-fit="scale-down">scale-down</button>
+                <div class="glass-segmented glass-segmented-fit" role="group" aria-label="背景图填充">
+                  <button type="button" data-glass-fit="fill">拉伸填满</button>
+                  <button type="button" data-glass-fit="contain">等比适应</button>
+                  <button type="button" data-glass-fit="cover">等比铺满</button>
+                  <button type="button" data-glass-fit="none">原始尺寸</button>
+                  <button type="button" data-glass-fit="scale-down">等比不放大</button>
                 </div>
-                <div class="glass-fit-hint" aria-hidden="true"><small>拉伸填满</small><small>等比完整</small></div>
+                <div class="glass-fit-hint"><small id="glass-fit-hint">拉伸铺满整个窗口，比例会变形</small></div>
               </div>
 
               <p class="glass-note">
                 选图后会同时开启玻璃：不透明表面会把图片整个挡住。图片按绝对路径引用，
-                宿主在注册主题时把它重写成 <strong>plugin-asset</strong> 资源，单张上限 4 MB。
+                宿主在注册主题时把它重写成自己的图片资源地址，单张上限 4 MB。
               </p>
             </section>
 

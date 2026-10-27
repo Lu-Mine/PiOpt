@@ -2,6 +2,7 @@
 
 const motion = require("./motion.js");
 const glass = require("../glass/glass.js");
+const { readImageSize } = require("../glass/image-size.js");
 
 const COMMAND_ID = "pi-modify.open";
 const PREFERENCE_KEY = "motion.hostPreference";
@@ -85,7 +86,11 @@ function resetThemeCache() {
 async function readGlassCss() {
   try {
     const settings = await pi.plugin.getSettings();
-    return glass.buildGlassCss(settings && settings[glass.SETTINGS_KEY]);
+    const config = glass.normalizeGlassConfig(settings && settings[glass.SETTINGS_KEY]);
+    // `scale-down` needs the photo's natural size, which CSS cannot read: without
+    // it the mode would enlarge a small image instead of leaving it be.
+    const size = config.wallpaper ? readImageSize(config.wallpaper) : null;
+    return glass.buildGlassCss(config, { size });
   } catch {
     // An unreadable setting must not cost the motion layer.
     return "";

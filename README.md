@@ -73,7 +73,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 | 质感 | 标准 | 轻薄 / 标准 / 厚重，决定模糊半径与底色不透明度 |
 | 强度 | 100% | 60–160%，放大模糊与光场；底色随强度略微变厚，保证小字仍有底 |
 | 背景图 | 无 | 选一张图片做玻璃背后的底；没有图时用柔光场 |
-| 填充 | fill | `fill` 拉伸铺满；`scale-down` 等比完整显示 |
+| 填充 | 拉伸填满 | 拉伸填满 / 等比适应 / 等比铺满 / 原始尺寸 / 等比不放大 |
 
 三档质感对应的初始 token：
 
@@ -100,12 +100,18 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 这样 256 KB 的主题 CSS 预算完全不受图片大小影响，图片上限就是宿主自己的 4 MB 资源上限。
 
-| 填充 | CSS | 行为 |
-|---|---|---|
-| `fill` | `background-size:100% 100%` | 拉伸铺满，比例会变形 |
-| `scale-down` | `background-size:contain` + 居中 | 等比缩放，完整显示不裁切 |
+| 界面上的名字 | 内部值 | CSS | 行为 |
+|---|---|---|---|
+| 拉伸填满 | `fill` | `background-size:100% 100%` | 铺满整个窗口，比例会变形 |
+| 等比适应 | `contain` | `contain` + 居中 | 整张图完整显示 |
+| 等比铺满 | `cover` | `cover` + 居中 | 铺满窗口，超出部分裁切 |
+| 原始尺寸 | `none` | `auto` + 居中 | 按图片原始像素显示，超出裁切 |
+| 等比不放大 | `scale-down` | 限宽高的盒子 + `contain` | 缩小到放得下，但不放大 |
 
-`scale-down` 用 `contain` 实现：图片比窗口大时两者等价；图片比窗口小时 `contain` 会放大，而 `object-fit: scale-down` 不会——`background-size` 读不到图片的自然尺寸，要精确不放大就得在插件里解析图片头，目前没做。
+
+`scale-down` 是唯一 CSS 表达不了的：`background-size` 读不到图片的自然尺寸。所以插件读图时顺手从文件头解析宽高（PNG 的 IHDR、JPEG 的 SOF、WebP 的 VP8/VP8L/VP8X、SVG 的 `width` 或 `viewBox`），把 `::before` 的盒子压到 `min(100%, 自然尺寸)` 再用 `inset` + `margin: auto` 居中（不用 `transform`），最后由 `contain` 填满这个盒子——等价于 `object-fit: scale-down`。读不到尺寸时（AVIF）退回 `contain`：会放大，但不会错位。
+
+图片上还压着一层 `--pg-scrim`（轻薄 12% / 标准 20% / 厚重 28%）。压暗做在背景图层里，而不是靠表面的 `background-color`：实测同一次渲染里，侧栏上半段叠上了底色、下半段没有——`background-color` 与 `backdrop-filter` 的合成顺序在分块边界上并不稳定。把压暗放进图层之后，不管哪个表面透出来，看到的都是同一个亮度。
 
 选图成功后会**同时开启玻璃**：不透明表面会把图片整个挡住，不开玻璃就什么都看不见。用 400×300 的测试图在 1828×1216 的窗口里实测：
 
