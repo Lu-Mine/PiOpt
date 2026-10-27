@@ -88,7 +88,11 @@ data/local.piopt/downloads/<id>-<version>.piplug
 四条规则各自解决一个问题：
 
 1. `.app-shell::before` 铺背景层：有背景图时就是那张图，没有时是一层柔光场。宿主界面底色是一整块纯色，半透明表面盖上去只能看到同一个颜色，`backdrop-filter` 也没有东西可模糊。`z-index:-1` 让它落在 `.app-shell` 自己背景之上、内容之下，不改动任何层级。
-2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、顶部标题栏（`.main-titlebar` 与 `.conversation-topbar`）、右侧工作面板（`.work-panel` 及其 `.work-panel-header`）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-sidebar` / `--ds-bg-primary` / `--ds-bg-dock(-raised)`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。模糊只加在这几个"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。
+2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、右侧工作面板（`.work-panel`）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-under` / `--ds-bg-dock`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。
+
+   三条"标题栏"共用同一个配方：窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`，以及右侧工作面板的表头 `.work-panel-header`。最后那条带着工作面板的 tab 列表（浏览器 / 审阅 / 侧边聊天），而那些 tab 自身没有底色、完全透出表头，所以表头换配方就等于那排 tab 换配方。三者读同一个 `--ds-bg-primary` 与同一个 `--pg-chrome-alpha`，视觉上才是一家人，而不是各自配一个相近值。
+
+   模糊只加在这几个"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。
 3. 内容区（`.main-pane`）只改底色不透明度，不加滤镜——它里面有 composer 等固定层，加 `backdrop-filter` 会改变它们的包含块。没有背景图时这一项是 100%，等于不改。
 4. 菜单、对话框、弹出层用更强的模糊——这是唯一"真正磨砂"的地方：它们本来就浮在活动内容之上，模糊在做事而不是在装饰颜色。
 

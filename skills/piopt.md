@@ -87,12 +87,16 @@ PiOpt bundles four features in one plugin:
 3. The layer rides the one `Motion Lab` runtime theme, so it only exists while
    PI-Desktop has that theme selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
-   The surfaces it covers are the left sidebar, the top title bars
-   (`.main-titlebar` and `.conversation-topbar`) and the right work panel
-   (`.work-panel` and its header). Blur is safe on all of them because the
-   host portals every popup (context menu, submenus, notifications, usage
-   popovers) to `document.body`, so none of them is a descendant whose
-   `position: fixed` would re-anchor against the blurred panel.
+   The surfaces it covers are the left sidebar, the right work panel body, and
+   three chrome bars that share one recipe: `.main-titlebar`,
+   `.conversation-topbar` and `.work-panel-header`. That last one carries the
+   work panel's tab list (浏览器 / 审阅 / 侧边聊天) — those tabs paint no fill of
+   their own, so the header's material *is* the tab row's material. Keep all
+   three on the same token and alpha; giving them merely similar values is what
+   makes one of them look off. Blur is safe on all of them because the host
+   portals every popup (context menu, submenus, notifications, usage popovers)
+   to `document.body`, so none of them is a descendant whose `position: fixed`
+   would re-anchor against the blurred panel.
 4. Settings apply live, about one debounce frame after the last input. Do not
    tell the user to press an apply button.
 5. 轻薄 / 标准 / 厚重 are glass recipes, not motion presets. The switch only

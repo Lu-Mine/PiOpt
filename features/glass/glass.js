@@ -254,9 +254,8 @@ function buildGlassCss(input = {}, options = {}) {
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]){background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header){background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
         ".work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
-        ".work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-dock-raised) 90%,transparent)!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
       ].join("\n")
@@ -267,10 +266,14 @@ function buildGlassCss(input = {}, options = {}) {
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
 :is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]){background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}}
+/* The three chrome bars share one recipe: the window title bar, the
+   conversation top bar and the right work panel's tab header. The work panel's
+   header carries its tab list, and that tab row has no fill of its own, so it
+   reads exactly as whatever this header paints. Keeping all three on the same
+   token and the same alpha is what makes them look like one family. */
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar],.work-panel-header){background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-chrome-alpha),transparent)!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent);${blur}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 .work-panel{background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent)!important;${blur}}
-.work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-dock-raised) var(--pg-sidebar-alpha),transparent)!important}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
 :is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content,.sidebar-section-menu,.project-menu,.composer-model-menu,.agent-capability-menu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent);${blurStrong}}
 ${noBlurFallback}`;
