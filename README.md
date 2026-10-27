@@ -90,10 +90,12 @@ data/local.piopt/downloads/<id>-<version>.piplug
 1. `.app-shell::before` 铺背景层：有背景图时就是那张图，没有时是一层柔光场。宿主界面底色是一整块纯色，半透明表面盖上去只能看到同一个颜色，`backdrop-filter` 也没有东西可模糊。`z-index:-1` 让它落在 `.app-shell` 自己背景之上、内容之下，不改动任何层级。
 2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、右侧工作面板（`.work-panel`）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-under` / `--ds-bg-dock`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。
 
-   窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角窗口按钮区 `.window-controls` 与工作面板表头 `.work-panel-header` 共用同一条 `chromeFill` 规则：同一份半透明底色与底部分隔线，且**都不加 `backdrop-filter`**。模糊会按各自背后的内容分别取样，同一条 46px 高度上左边是侧栏、中间是主内容区、右边是侧工作面板，分别磨砂就得到三种颜色（实测 0.21.0：窗口按钮区 `rgb(17,52,62)`，旁边面板表头 `rgb(20,43,52)`）。此外整条顶栏只保留**一个下层**：侧栏与侧工作面板的顶部 46px 都不再铺自己的底色（侧栏 `background-color: transparent`，底色与顶部高光从 `--ds-toolbar-height` 之下才开始），否则同一份填色压在黑色侧栏上是 `lum 14`，压在主内容区上是 `lum 24`。
+   横幅材质由变量 `chromeFill` 统一下发，窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角装最小化 / 最大化 / 关闭的 `.window-controls` 拼进**同一个选择器**——不是三份拷贝，拷贝就是它们跑偏的方式。`.window-controls` 要归进来，是因为宿主给它的是 `position: fixed` 的实色块（`background: var(--ds-bg-primary)`），并且在**打开工作面板时会换成 `--ds-bg-dock-raised`**——于是那个角上永远是一块和旁边标题栏不同的材质。
+
+   工作面板表头 `.work-panel-header` 是唯一的例外：**它不画任何底色**（`background-color: transparent`），只留一道分隔线。因为它本来就坐在 `.work-panel` 上，而 `.work-panel` 自己已经在画玻璃；再给它叠一层 `chromeFill` 就是两层不透明叠在一起，背景图被挡死。实测那个位置蓝红差（B-R，越大越透出图）只有 10–11，而紧邻下面同样的面板内容区是 55–80——肉眼看到的就是"tab 那一条是死灰的"。改成透明之后同一位置升到 68–74，和下方内容区一致。它里面的 tab（浏览器 / 审阅 / 侧边聊天）自身也没有底色，所以跟着一起透。
 
 
-   顶栏本身不磨砂，但侧栏与工作面板仍然磨砂；除顶栏外，模糊只加在这些"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。
+   模糊只加在这几个"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。
 3. 内容区（`.main-pane`）只改底色不透明度，不加滤镜——它里面有 composer 等固定层，加 `backdrop-filter` 会改变它们的包含块。没有背景图时这一项是 100%，等于不改。
 4. 菜单、对话框、弹出层用更强的模糊——这是唯一"真正磨砂"的地方：它们本来就浮在活动内容之上，模糊在做事而不是在装饰颜色。
 
