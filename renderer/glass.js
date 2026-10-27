@@ -42,7 +42,7 @@ const PRESET_COPY = {
   standard: "标准：明确的玻璃分层与弹层模糊",
   deep: "厚重：更厚的底色与更强的模糊",
 };
-const OFF_COPY = "已关闭：宿主窗口保持原来的实心表面";
+const OFF_COPY = "已关闭：界面保持原来的实心表面";
 
 const state = {
   config: { ...DEFAULT_CONFIG },
@@ -203,7 +203,12 @@ function renderConfig() {
   elements.intensity.value = String(Math.round(config.intensity * 100));
   elements.intensityValue.textContent = `${Math.round(config.intensity * 100)}%`;
   paintRange(elements.intensity);
-  elements.summary.textContent = config.enabled ? (PRESET_COPY[config.preset] || PRESET_COPY.standard) : OFF_COPY;
+  // With a photo behind it, "off" means "not frosted" rather than "nothing shown".
+  elements.summary.textContent = config.enabled
+    ? (PRESET_COPY[config.preset] || PRESET_COPY.standard)
+    : config.wallpaper
+      ? "已关闭磨砂：背景图仍然显示，表面保持清晰"
+      : OFF_COPY;
   elements.fitHint.textContent = FIT_COPY[config.fit] || FIT_COPY.fill;
 
   const name = basename(config.wallpaper);

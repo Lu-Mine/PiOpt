@@ -111,9 +111,10 @@ async function adoptWallpaper(path) {
     return refuse(problem);
   }
 
-  // A wallpaper is invisible behind opaque surfaces, so turning glass on here is
-  // what makes the pick show a result instead of nothing.
-  await persist({ ...currentConfig, wallpaper: path, enabled: true });
+  // Turning glass on here would be a surprise: the switch is the user's.
+  // The photo is its own layer and stays visible with the glass off, so picking
+  // one must not silently flip the user's switch.
+  await persist({ ...currentConfig, wallpaper: path });
   return { ok: true, ...statePayload() };
 }
 

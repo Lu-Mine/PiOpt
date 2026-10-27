@@ -89,14 +89,16 @@ PiOpt bundles four features in one plugin:
    glass; the stored on/off setting survives and comes back with the theme.
 4. Settings apply live, about one debounce frame after the last input. Do not
    tell the user to press an apply button.
-5. 轻薄 / 标准 / 厚重 are glass recipes, not motion presets. Turning glass off
-   writes no glass rules at all, so the interface returns to exactly what it
-   was — that is also the honest answer to "did it work?" when nothing is
-   visible on a dark theme.
+5. 轻薄 / 标准 / 厚重 are glass recipes, not motion presets. The switch only
+   decides whether the surfaces are frosted (`backdrop-filter` plus translucent
+   fills). With no wallpaper and the switch off the generator returns an empty
+   string, so the interface is pixel-identical to the stock one — that is also
+   the honest answer to "did it work?" when nothing is visible on a dark theme.
 6. A wallpaper is uploaded from the panel, stored in the plugin data folder,
    and referenced by absolute path; the host rewrites that to a
    `plugin-asset:` URL with a 4 MB ceiling. Five fill modes, labelled in Chinese
    in the panel: 拉伸填满 (fill), 等比适应 (contain), 等比铺满 (cover),
-   原始尺寸 (none), 等比不放大 (scale-down). Picking one also turns glass on —
-   an image behind opaque surfaces would show nothing, so it is not a separate
-   switch.
+   原始尺寸 (none), 等比不放大 (scale-down). The photo is independent of the
+   switch: it stays visible with the glass off, only the frosting goes away. A
+   missing or moved file is dropped on load and on `glass.getState`, because a
+   dead reference makes `themes.upsert` fail and takes the motion layer with it.

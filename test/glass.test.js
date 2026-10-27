@@ -441,7 +441,7 @@ test("the image header reader finds the natural size of the formats the host all
   }
 });
 
-test("picking a wallpaper stores it and turns glass on", async () => {
+test("picking a wallpaper stores it without touching the glass switch", async () => {
   const file = tempWallpaper();
   const host = makePi();
   global.pi = host.pi;
@@ -450,8 +450,9 @@ test("picking a wallpaper stores it and turns glass on", async () => {
     const result = await feature.onPanelInvoke("glass.setWallpaper", { path: file });
     assert.equal(result.ok, true);
     assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, file);
-    // An image behind opaque surfaces shows nothing, so the pick enables glass.
-    assert.equal(host.store[glass.SETTINGS_KEY].enabled, true);
+    // The photo is its own layer: it has to stay visible with the glass off, so
+    // picking one must not flip the switch behind the user's back.
+    assert.equal(host.store[glass.SETTINGS_KEY].enabled, false);
   } finally {
     delete global.pi;
   }
@@ -567,7 +568,8 @@ test("an uploaded image is written into the plugin data folder and adopted", asy
     assert.equal(result.ok, true);
     const stored = host.store[glass.SETTINGS_KEY];
     assert.equal(path.basename(stored.wallpaper), "wallpaper.png");
-    assert.equal(stored.enabled, true);
+    // The photo lives on its own layer, so the switch is left exactly as it was.
+    assert.equal(stored.enabled, false);
     assert.deepEqual(fs.readFileSync(stored.wallpaper), bytes);
   } finally {
     delete global.pi;
@@ -600,4 +602,29 @@ test("an upload of the wrong type or an oversized one is refused", async () => {
     delete global.pi;
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
+});
+
+test("the photo survives the glass switch being off", () => {
+  const photo = "/pictures/shot.png";
+  const off = glass.buildGlassCss({ enabled: false, wallpaper: photo }, { size: { width: 400, height: 300 } });
+
+  // The backdrop and the see-through content pane belong to the photo, not to
+  // the switch: without them the picture would vanish the moment glass is off.
+  assert.ok(off.includes(`url("${photo}")`));
+  assert.ok(off.includes(".app-shell::before{"));
+  assert.match(off, /--pg-canvas-alpha:84%/);
+  assert.ok(off.includes(".main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}"));
+
+  // The switch is exactly the blur: no filter anywhere in this sheet.
+  assert.equal(off.includes("backdrop-filter"), false);
+  assert.equal(off.includes("@supports not"), false);
+
+  // With the switch on, the same photo gains the frosting.
+  const on = glass.buildGlassCss({ enabled: true, wallpaper: photo }, { size: { width: 400, height: 300 } });
+  assert.ok(on.includes("backdrop-filter:blur(var(--pg-blur))"));
+  assert.ok(on.includes("backdrop-filter:blur(var(--pg-blur-strong))"));
+  assert.ok(on.includes("@supports not"));
+
+  // No photo and no switch still means an empty sheet, byte for byte.
+  assert.equal(glass.buildGlassCss({ enabled: false, wallpaper: "" }), "");
 });
