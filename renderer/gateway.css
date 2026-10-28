@@ -87,17 +87,24 @@
   cursor: default;
 }
 
-.gw-btn-primary {
+/*
+ * 主按钮的文字色要比 --ds-accent-ink 更稳，并且要用 #view-gateway 前缀
+ * 提高权重：面板公共样式里的 `.opt-view :is(button, input, select)` 会
+ * 把按钮的 color 一律设成 inherit，权重高过单个类名，主按钮就会变成
+ * 一块和底色同色、看不见字的实心块。accent 本身永远是「与底色相反的
+ * 前景色」，所以底色就是它的文字色。
+ */
+#view-gateway .gw-btn-primary {
   background: var(--ds-accent);
   border-color: transparent;
-  color: var(--ds-accent-ink);
+  color: var(--ds-bg-primary);
   font-weight: 600;
   margin-left: auto;
 }
 
-.gw-btn-primary:hover:not(:disabled) {
+#view-gateway .gw-btn-primary:hover:not(:disabled) {
   background: var(--ds-accent-hover);
-  color: var(--ds-accent-ink);
+  color: var(--ds-bg-primary);
 }
 
 /* --------------------------------------------------------------------- cards */
@@ -631,7 +638,54 @@
   color: var(--ds-warning);
 }
 
-/* Clash 出口选择 */
+/* 订阅：上面一个地址输入框，下面是解析出来的线路 */
+.gw-eg-sub {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+
+.gw-eg-sub .gw-btn-primary {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+.gw-eg-input {
+  width: 100%;
+  min-width: 0;
+  height: var(--ds-control-size);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ds-text-primary);
+  background: var(--ds-bg-inset);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-xs);
+  outline: none;
+  text-overflow: ellipsis;
+  transition: border-color 120ms ease;
+}
+
+.gw-eg-input::placeholder {
+  color: var(--ds-text-faint);
+}
+
+.gw-eg-input:hover:not(:disabled) {
+  border-color: var(--ds-border-default);
+}
+
+.gw-eg-input:focus-visible {
+  border-color: var(--ds-accent);
+}
+
+.gw-eg-input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 线路选择 */
 .gw-eg-row {
   display: grid;
   grid-template-columns: auto minmax(140px, 1fr) auto;

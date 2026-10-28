@@ -29,6 +29,9 @@ const SUPERVISOR_JSON = path.join(BIN_DIR, "supervisor.json");
 const STATUS_FILE = path.join(DEV_DIR, "egress.json");
 const PREFS_FILE = path.join(DEV_DIR, "egress-prefs.json");
 const EGRESS_LOG = path.join(DEV_DIR, "egress.log");
+// 面板里填的订阅链接落盘的位置：网关自己拉节点，不再依赖 Clash 客户端
+const SUB_URL_FILE = path.join(DEV_DIR, "subscription-url.txt");
+const SUB_CACHE = path.join(DEV_DIR, "subscription.yaml");
 
 const EGRESS_PORT = 8319;
 const PROBE_PORT = 8318;
@@ -279,6 +282,154 @@ function listOutlets(profilePath) {
   };
 }
 
+/**
+ * 订阅支持
+ *
+ * 面板上可以直接填订阅地址，网关自己拉 YAML 拿节点，不再依赖本机的 Clash 客户端。
+ * 拉下来的原文缓存在 dev/subscription.yaml，之后选线路、重建运行时配置都从缓存走，
+ * 所以断网或订阅临时抽风时，上一次的节点还能继续用。
+ */
+
+function readSubscriptionUrl() {
+  try {
+    return fs.readFileSync(SUB_URL_FILE, "utf8").trim();
+  } catch (error) {
+    return "";
+  }
+}
+
+function writeSubscriptionUrl(url) {
+  try {
+    fs.mkdirSync(DEV_DIR, { recursive: true });
+    fs.writeFileSync(SUB_URL_FILE, String(url || "").trim(), "utf8");
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/** 回显时只留协议与主机，避免订阅 token 在面板上明文铺开 */
+function maskSubscription(url) {
+  const text = String(url || "").trim();
+  if (!text) return "";
+  try {
+    const u = new URL(text);
+    const tail = u.pathname.split("/").filter(Boolean).pop() || "";
+    const short = tail.length > 8 ? tail.slice(0, 4) + "…" + tail.slice(-2) : tail;
+    return `${u.protocol}//${u.host}/${short}`;
+  } catch (error) {
+    return "（地址格式无法解析）";
+  }
+}
+
+/** 拉订阅：跟随重定向、带超时，并确认拿回来的确实是 Clash 订阅 */
+function fetchSubscription(url, timeoutMs = 25000) {
+  return new Promise((resolve) => {
+    let target;
+    try {
+      target = new URL(url);
+    } catch (error) {
+      resolve({ ok: false, reason: "订阅地址不是合法的 URL" });
+      return;
+    }
+    if (!/^https?:$/.test(target.protocol)) {
+      resolve({ ok: false, reason: "订阅地址必须以 http:// 或 https:// 开头" });
+      return;
+    }
+
+    const go = (current, depth) => {
+      if (depth > 5) {
+        resolve({ ok: false, reason: "重定向次数过多" });
+        return;
+      }
+      const module = current.protocol === "https:" ? require("https") : http;
+      const req = module.request(
+        {
+          host: current.hostname,
+          port: current.port || (current.protocol === "https:" ? 443 : 80),
+          path: current.pathname + current.search,
+          method: "GET",
+          timeout: timeoutMs,
+          headers: {
+            "User-Agent": "clash-verge/v2.5.8 mihomo/v1.19",
+            Accept: "application/yaml, text/yaml, text/plain, */*",
+          },
+        },
+        (res) => {
+          if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+            res.resume();
+            try {
+              go(new URL(res.headers.location, current), depth + 1);
+            } catch (error) {
+              resolve({ ok: false, reason: "订阅重定向地址无法解析" });
+            }
+            return;
+          }
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            if (res.statusCode !== 200) {
+              resolve({ ok: false, reason: `订阅服务器返回 HTTP ${res.statusCode}` });
+              return;
+            }
+            const body = Buffer.concat(chunks).toString("utf8");
+            if (!/^\s*proxies:/m.test(body)) {
+              resolve({ ok: false, reason: "返回内容不是 Clash 订阅（找不到 proxies 段）" });
+              return;
+            }
+            resolve({ ok: true, body });
+          });
+          res.on("error", (error) => resolve({ ok: false, reason: "读取订阅响应失败：" + error.message }));
+        }
+      );
+      req.on("timeout", () => {
+        req.destroy();
+        resolve({ ok: false, reason: "订阅拉取超时" });
+      });
+      req.on("error", (error) => resolve({ ok: false, reason: "订阅拉取失败：" + error.message }));
+      req.end();
+    };
+
+    go(target, 0);
+  });
+}
+
+/** 面板点「应用」：拉一次订阅 → 落缓存 → 按缓存重建运行时配置 */
+async function applySubscription(url, options = {}) {
+  const text = String(url || "").trim();
+  if (!text) return { ok: false, reason: "订阅地址不能为空" };
+
+  const fetched = await fetchSubscription(text);
+  if (!fetched.ok) {
+    log(`订阅拉取失败：${fetched.reason}`);
+    return fetched;
+  }
+
+  try {
+    fs.mkdirSync(DEV_DIR, { recursive: true });
+    fs.writeFileSync(SUB_CACHE, fetched.body, "utf8");
+  } catch (error) {
+    return { ok: false, reason: "订阅缓存写入失败" };
+  }
+  writeSubscriptionUrl(text);
+
+  const outlets = listOutlets(SUB_CACHE);
+  if (!outlets.groups.length && !outlets.nodes.length) {
+    return { ok: false, reason: "订阅里没有解析出任何节点" };
+  }
+
+  // 换了订阅，旧出口多半不在新列表里，清掉偏好让它重新挑一个
+  writePrefs({ dialer: "" });
+  log(`订阅已更新：${outlets.groups.length} 个组 / ${outlets.nodes.length} 个节点`);
+  return prepare(options);
+}
+
+/** 节点来源：面板填过订阅就用订阅缓存，否则退回 Clash 客户端里的那份 */
+function activeProfile() {
+  if (readSubscriptionUrl() && fs.existsSync(SUB_CACHE)) return SUB_CACHE;
+  return findClashProfile();
+}
+
 function readPrefs() {
   return readJsonSafe(PREFS_FILE) || {};
 }
@@ -525,11 +676,12 @@ function readStatus() {
 
 /** 供面板展示：发现的路径、可选出口、当前选择 */
 function describe() {
-  const profile = findClashProfile();
+  const profile = activeProfile();
   const binPath = findMihomo();
   const outlets = profile ? listOutlets(profile) : { groups: [], nodes: [] };
   const prefs = readPrefs();
   const status = readStatus();
+  const subUrl = readSubscriptionUrl();
   return {
     profile,
     binPath,
@@ -540,6 +692,10 @@ function describe() {
     prefsDialer: prefs.dialer || "",
     status,
     port: EGRESS_PORT,
+    // 面板的订阅输入框：填过就把地址（脱敏）回显出来，并标出节点是不是从订阅来的
+    subscriptionUrl: subUrl ? maskSubscription(subUrl) : "",
+    subscriptionSet: Boolean(subUrl),
+    subscriptionSource: subUrl && fs.existsSync(SUB_CACHE) ? "subscription" : profile ? "clash" : "",
   };
 }
 
@@ -548,7 +704,7 @@ function describe() {
  * 成功则 mihomo 交给 supervisor 托管、网关指向它；失败则清掉配置退回直连。
  */
 async function prepare(options = {}) {
-  const profile = findClashProfile();
+  const profile = activeProfile();
   const binPath = findMihomo();
 
   const fallback = (reason) => {
@@ -599,7 +755,7 @@ async function prepare(options = {}) {
 
 /** 切换出口：记住选择并立即重建配置（调用方决定何时重启网关） */
 async function setDialer(name, options = {}) {
-  const outlets = listOutlets(findClashProfile());
+  const outlets = listOutlets(activeProfile());
   const all = [...outlets.groups, ...outlets.nodes];
   if (name && !all.includes(name)) {
     return { ok: false, reason: `订阅里没有名为「${name}」的出口` };
@@ -629,7 +785,19 @@ module.exports = {
   findMihomo,
   listOutlets,
   buildRuntimeConfig,
+  applySubscription,
+  readSubscriptionUrl,
+  maskSubscription,
+  activeProfile,
   EGRESS_PORT,
   PROXY_SUFFIXES,
-  _internals: { applyProxyUrl, applySupervisorConfig, probe, portOpen, discoverClashDirs, readPrefs },
+  _internals: {
+    applyProxyUrl,
+    applySupervisorConfig,
+    probe,
+    portOpen,
+    discoverClashDirs,
+    readPrefs,
+    fetchSubscription,
+  },
 };

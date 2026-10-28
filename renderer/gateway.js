@@ -19,6 +19,9 @@
     flash: "",
     egressBusy: false,
     egressPick: "",
+    // 订阅输入框：草稿留在 state 里，重渲染时不至于把用户刚粘进去的地址清空
+    egressSubDraft: "",
+    egressSubBusy: false,
     flashTimer: null,
     flashArmed: "",
   };
@@ -382,7 +385,7 @@
     return box;
   }
 
-  // Clash 出口：选哪个节点/组给 Google 域用
+  // Clash 出口：先填订阅拿节点，再从这里选一条线路给 Google 域用
   function egressCard() {
     const d = state.data || {};
     const e = d.egress || {};
@@ -390,13 +393,44 @@
     const groups = e.groups || [];
     const box = card("Clash 出口", { wide: true, badge: nodes.length });
 
+    // ── 订阅：填一次地址，网关自己拉节点，不再依赖本机 Clash 客户端 ──
+    const subRow = el("div", "gw-eg-sub");
+    const subInput = el("input", "gw-eg-input");
+    subInput.type = "url";
+    subInput.spellcheck = false;
+    subInput.autocomplete = "off";
+    subInput.placeholder = "粘贴订阅链接，例如 https://example.com/sub/xxxx/clash";
+    subInput.value = state.egressSubDraft || "";
+    subInput.disabled = Boolean(state.egressSubBusy);
+    subInput.addEventListener("input", () => {
+      state.egressSubDraft = subInput.value;
+    });
+    subInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !state.egressSubBusy) applySubscription(subInput.value);
+    });
+
+    const subApply = el("button", "gw-btn gw-btn-primary", state.egressSubBusy ? "拉取中…" : "应用订阅");
+    subApply.type = "button";
+    subApply.disabled = Boolean(state.egressSubBusy);
+    subApply.addEventListener("click", () => applySubscription(subInput.value));
+
+    subRow.append(subInput, subApply);
+    box.append(subRow);
+
+    if (e.subscriptionSet) {
+      box.append(el("p", "gw-hint", `当前订阅 ${e.subscriptionUrl}（拖下来的节点已缓存，断网也能沿用）`));
+    } else {
+      box.append(el("p", "gw-hint", "填订阅地址后点「应用订阅」，节点会列到下面的线路列表里。"));
+    }
+
+    // ── 线路：订阅或 Clash 配置里解析出来的组与节点 ──
     if (!e.profile) {
-      box.append(el("p", "gw-hint", "没找到 Clash 订阅（已扫描常见安装位置）"));
+      box.append(el("p", "gw-hint", nodes.length ? "" : "还没有节点来源：先填订阅地址，或在本机装一个 Clash 客户端。"));
       return box;
     }
 
     const row = el("div", "gw-eg-row");
-    row.append(el("span", "gw-eg-label", "出口"));
+    row.append(el("span", "gw-eg-label", "线路"));
 
     const sel = el("select", "gw-eg-select");
     const current = state.egressPick || e.selected || "";
@@ -424,12 +458,12 @@
     row.append(sel, apply);
     box.append(row);
 
-    box.append(el("p", "gw-hint", `订阅 ${e.profile}`));
+    box.append(el("p", "gw-hint", `节点来源 ${e.subscriptionSource === "subscription" ? "订阅缓存" : "Clash 配置"}：${e.profile}`));
     if (e.binPath) box.append(el("p", "gw-hint", `内核 ${e.binPath}`));
 
     const st = e.status || {};
     if (st.ok) {
-      box.append(el("p", "gw-hint", `运行中：出口「${st.dialer}」，本地端口 ${st.port}，仅 Google/AI 域名走它。`));
+      box.append(el("p", "gw-hint", `运行中：线路「${st.dialer}」，本地端口 ${st.port}，仅 Google/AI 域名走它。`));
     } else if (st.reason) {
       box.append(el("p", "gw-hint", `未启用：${st.reason}`));
     }
@@ -656,6 +690,49 @@
       state.error = `切换失败：${(error && error.message) || error}`;
     } finally {
       state.egressBusy = false;
+      setTimeout(async () => {
+        await load(false);
+        render();
+      }, 3000);
+    }
+  }
+
+  // 应用订阅：拉节点 → 重建配置 → 重启网关；成功后把草稿收进状态，让选中项跟着刷新
+  async function applySubscription(rawUrl) {
+    const url = String(rawUrl || "").trim();
+    if (state.egressSubBusy) return;
+    if (!url) {
+      state.error = "先填订阅地址";
+      render();
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      state.error = "订阅地址要以 http:// 或 https:// 开头";
+      render();
+      return;
+    }
+
+    state.egressSubBusy = true;
+    state.error = "";
+    state.flash = "正在拉取订阅并验证线路…";
+    render();
+
+    try {
+      const res = await invoke("gateway.egressSubscribe", { url });
+      const st = (res && res.status) || {};
+      if (st.ok) {
+        state.egressSubDraft = url;
+        state.egressPick = "";
+        state.flash = `订阅已应用，线路「${st.dialer || "自动"}」已生效。`;
+      } else {
+        state.error = `订阅未生效：${st.reason || "未知原因"}`;
+        state.flash = "";
+      }
+    } catch (error) {
+      state.error = `订阅失败：${(error && error.message) || error}`;
+      state.flash = "";
+    } finally {
+      state.egressSubBusy = false;
       setTimeout(async () => {
         await load(false);
         render();

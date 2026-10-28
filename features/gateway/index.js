@@ -615,6 +615,19 @@ function onPanelInvoke(channel, payload = {}) {
     case "gateway.egressOff":
     case "gateway.egressOff":
       return { status: egress.disable(), restartNeeded: true };
+    // 面板填订阅地址：拉到节点 → 重建配置 → 重启网关生效
+    case "gateway.egressSubscribe": {
+      const url = payload && payload.url;
+      return egress.applySubscription(url, { skipProbe: false }).then(result => {
+        if (!result || result.ok === false) {
+          return { status: result, restartNeeded: false };
+        }
+        stopSupervisor();
+        return new Promise(resolve => {
+          setTimeout(() => resolve({ status: result, restartNeeded: true, ...startSupervisor() }), 1200);
+        });
+      });
+    }
     // 换出口：写偏好 → 重建配置并真起一次内核验证 → 重启网关生效
     case "gateway.egressPick": {
       const target = payload && payload.dialer;
