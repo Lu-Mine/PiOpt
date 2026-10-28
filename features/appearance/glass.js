@@ -333,7 +333,12 @@ function buildGlassCss(input = {}, options = {}) {
 .work-panel.is-exiting{animation:work-panel-out-glass 1ms linear both!important;overflow:hidden}
 /* No transform here: it would re-anchor the host's fixed popups. */
 @keyframes work-panel-out-glass{from{flex-basis:var(--work-panel-width);width:var(--work-panel-width)}to{flex-basis:0;width:0}}
-.work-panel::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent);${blur}}
+/* The panel's own fill starts BELOW the header band. The header already paints
+   the shared chromeFill; if the panel's glass also covered the top 46px the two
+   translucent layers stacked and the header read as a different, muddier colour
+   from the title bar beside it. Leaving that strip unpainted lets the header's
+   own material show through cleanly, exactly matching the window controls. */
+.work-panel::before{content:"";position:absolute;inset:var(--ds-toolbar-height) 0 0 0;z-index:-1;pointer-events:none;background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent);${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
 /* Popups get the stronger fill but NOT the stronger blur.
 

@@ -146,6 +146,10 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   // .work-panel itself would make it the Backdrop Root of the header, and the
   // header's blur would sample the panel's empty box instead of the photo.
   assert.match(css, /\.work-panel::before\{[^}]*background-color:color-mix\(in oklab,var\(--ds-bg-dock\)[^}]*backdrop-filter:blur/);
+  // The panel's fill must start below the header band: the header paints its
+  // own chromeFill, and stacking the panel glass on top of it double-tints the
+  // strip and breaks the match with the window controls.
+  assert.match(css, /\.work-panel::before\{content:"";position:absolute;inset:var\(--ds-toolbar-height\) 0 0 0;/);
   assert.doesNotMatch(css, /\.work-panel\{[^}]*backdrop-filter/);
   assert.match(css, /\.work-panel\{background-color:transparent!important;animation:none!important\}/);
   // This guard must survive motion being disabled. The host's work-panel-in
