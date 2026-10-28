@@ -17,6 +17,11 @@ const PRESETS = Object.freeze({
 });
 
 const DEFAULT_CONFIG = Object.freeze({
+  // 总开关：关掉后不再向宿主写任何动效规则，完全交给 PI-Desktop 自己。
+  override: true,
+  // 彻底停用：所有过渡与动画压到 1ms。不用 none——宿主靠 animationend 卸载
+  // 进场节点，none 会让这些事件永远不来，浮层就留在树上了。
+  disabled: false,
   preset: "balanced",
   intensity: 1,
   speed: 1,
@@ -42,6 +47,8 @@ function normalizeConfig(input = {}) {
     : DEFAULT_CONFIG.mode;
 
   return {
+    override: input.override !== false,
+    disabled: input.disabled === true,
     preset,
     intensity: Math.round(clamp(finiteNumber(input.intensity, 1), 0.5, 1.5) * 100) / 100,
     speed: Math.round(clamp(finiteNumber(input.speed, 1), 0.6, 1.6) * 100) / 100,
@@ -100,8 +107,18 @@ function tokenDeclarations(tokens) {
   ].join(";");
 }
 
+const DISABLED_CSS = `/* PiOpt motion: disabled. Every transition and animation is flattened to 1ms
+   rather than "none": the host unmounts entering nodes on animationend, and
+   "none" would mean those events never fire. */
+*,*::before,*::after{animation-duration:1ms!important;animation-delay:0ms!important;animation-iteration-count:1!important;transition-duration:1ms!important;transition-delay:0ms!important;scroll-behavior:auto!important}
+`;
+
 function buildThemeCss(input = {}, base = "dark") {
   const config = normalizeConfig(input);
+  // 完全禁用优先于总开关：这是用户对「还要不要动效」的直接回答。
+  if (config.disabled) return DISABLED_CSS;
+  // 总开关关掉时一行都不写，宿主保持原样。
+  if (!config.override) return "";
   const tokens = motionTokens(config);
   const spinRule = tokens.continuous
     ? ".spinner,[data-loading=true] .loading-spinner{animation:pm-spin 900ms linear infinite}"
@@ -231,6 +248,7 @@ module.exports = {
   LEGACY_THEME_IDS,
   preferenceFrom,
   buildThemeCss,
+  DISABLED_CSS,
   motionTokens,
   normalizeConfig,
   resolveBase,

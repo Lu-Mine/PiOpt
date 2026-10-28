@@ -10,9 +10,11 @@ PiOpt bundles three features in one plugin:
 - **插件市场 (market)** — the download-and-verify half of a plugin update.
   Installing stays a user action in the Plugins page.
 - **外观 (appearance)** — how the window looks, in one view with two sections:
-  **界面动效** (restrained motion presets) and **窗口材质** (an optional
-  frosted-glass layer). They are one feature because they write one runtime
-  theme; the view is one page, the sections are not separate panels.
+  **界面动效** (a master switch, a kill-all-animations switch, and strength /
+  speed sliders) and **窗口材质** (an optional frosted-glass layer, a wallpaper
+  with a recent list). They are one feature because they write one runtime
+  theme; the view is one page, the sections are not separate panels. Each
+  section has a 重置 button with a confirm step.
 - **AI 网关 (gateway)** — status, restart and logs for the local AI gateway.
 
 ## Market: when to use

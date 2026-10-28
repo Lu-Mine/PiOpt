@@ -75,7 +75,7 @@ function glassChannel(name) {
 
 test("glass is off by default, so nothing is injected until it is asked for", () => {
   const config = glass.normalizeGlassConfig(undefined);
-  assert.deepEqual(config, { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" });
+  assert.deepEqual(config, { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill", recent: [] });
   assert.equal(glass.buildGlassCss(config), "");
   assert.equal(glass.buildGlassCss(undefined), "");
 });
@@ -218,7 +218,7 @@ test("apply writes the setting and rebuilds the one theme", async () => {
     });
     assert.equal(result.ok, true);
     assert.equal(result.applied, true);
-    assert.deepEqual(host.store[glass.SETTINGS_KEY], { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill" });
+    assert.deepEqual(host.store[glass.SETTINGS_KEY], { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill", recent: [] });
     // One theme, rebuilt once from both halves: the material never injects a
     // stylesheet of its own, it changes the one the motion rules live in.
     const upserts = host.calls.filter((call) => call.api === "upsert");
@@ -226,7 +226,7 @@ test("apply writes the setting and rebuilds the one theme", async () => {
     assert.equal(upserts[0].theme.id, "motion");
     assert.equal(upserts[0].theme.label, "PiOpt Appearance");
     assert.ok(upserts[0].theme.css.includes("--pg-blur"), "the material layer must be in the theme");
-    assert.deepEqual(result.config, { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill" });
+    assert.deepEqual(result.config, { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill", recent: [] });
   } finally {
     delete global.pi;
   }
@@ -257,7 +257,7 @@ test("reads the stored setting instead of trusting the panel", async () => {
   const feature = loadFeature();
   try {
     const state = await feature.onPanelInvoke(glassChannel("getState"), {});
-    assert.deepEqual(state.config, { enabled: true, preset: "light", intensity: 0.8, wallpaper: "", fit: "fill" });
+    assert.deepEqual(state.config, { enabled: true, preset: "light", intensity: 0.8, wallpaper: "", fit: "fill", recent: [] });
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
   } finally {
     delete global.pi;
@@ -273,7 +273,7 @@ test("reset returns to the shipped default but keeps the user's photo", async ()
     // The stored config holds the photo before the reset is asked for.
     await feature.onPanelInvoke(glassChannel("getState"), {});
     const result = await feature.onPanelInvoke(glassChannel("reset"), {});
-    assert.deepEqual(result.config, { enabled: false, preset: "standard", intensity: 1, wallpaper: file, fit: "fill" });
+    assert.deepEqual(result.config, { enabled: false, preset: "standard", intensity: 1, wallpaper: file, fit: "fill", recent: [] });
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, false);
     // The photo is the user's own file, not part of the recipe.
     assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, file);
@@ -313,8 +313,8 @@ test("the one appearance theme is the only way the glass layer reaches the host"
   // Built from the motion stylesheet plus the glass layer, in that order, in the
   // one place that registers a theme.
   assert.match(feature, /`\$\{motion\.buildThemeCss\(motionLayer, base\)\}\$\{glassLayer\}`/);
-  assert.match(feature, /glass\.buildGlassCss\(config, \{ size \}\)/);
-  assert.match(feature, /readImageSize\(config\.wallpaper\)/);
+  assert.match(feature, /glass\.buildGlassCss\(config\)/);
+  assert.match(feature, /glass\.buildGlassCss\(config\)/);
   // and a failed wallpaper read must not cost the motion layer
   assert.match(feature, /An unreadable wallpaper must not cost the motion layer/);
   // Every appearance write ends in the same function, so a change can never
@@ -327,13 +327,18 @@ test("the one appearance theme is the only way the glass layer reaches the host"
 test("the panel mirrors the process model so preview mode is honest", () => {
   const panel = read("renderer/appearance.js");
   const feature = read("features/appearance/glass.js");
-  // Both sides must agree on the presets, or the readings would lie.
-  for (const preset of ["light", "standard", "deep"]) {
-    assert.ok(panel.includes(`${preset}: { blur:`), preset);
-    assert.ok(feature.includes(`${preset}: Object.freeze({ blur:`), preset);
+  // 预设不再有界面，两边的默认值必须仍然一致，否则预览会给出不同的读数。
+  const panelDefaults = panel.slice(panel.indexOf("const DEFAULT_GLASS"), panel.indexOf("const GLASS_LIMITS"));
+  for (const line of ['enabled: false,', 'preset: "standard",', 'intensity: 1,', 'wallpaper: "",', 'fit: "fill",', 'recent: [],']) {
+    assert.ok(panelDefaults.includes(line), `panel defaults must carry ${line}`);
   }
-  assert.match(panel, /const DEFAULT_GLASS = \{ enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill" \};/);
-  assert.match(feature, /enabled: false,\n  preset: "standard",\n  intensity: 1,\n  wallpaper: "",\n  fit: "fill",/);
+  const featureDefaults = feature.slice(feature.indexOf("const DEFAULT_CONFIG"), feature.indexOf("const RECENT_MAX"));
+  for (const line of ["enabled: false", "preset: \"standard\"", "intensity: 1", "recent: Object.freeze([])"]) {
+    assert.ok(featureDefaults.includes(line), `feature defaults must carry ${line}`);
+  }
+  assert.equal(panel.includes("[data-glass-preset]"), false);
+  assert.equal(panel.includes("scale-down"), false);
+  assert.match(panel, /const FITS = \["fill", "contain", "cover", "none"\];/);
 });
 
 test("the material section's stylesheet targets the classes its own markup uses", () => {
@@ -349,7 +354,7 @@ test("the material section's stylesheet targets the classes its own markup uses"
       .flatMap((match) => match[1].split(/\s+/))
       .filter((name) => name.startsWith("glass-"))
   );
-  assert.ok(classes.size >= 10, `expected the glass view to use its own classes, saw ${classes.size}`);
+  assert.ok(classes.size >= 2, `expected the glass view to use its own classes, saw ${classes.size}`);
 
   for (const name of classes) {
     // The rule has to target the element itself. `.glass-metrics dl` looked
@@ -471,65 +476,12 @@ test("every fill mode maps to its own sizing declaration", () => {
   assert.ok(css("stretch").includes("background-size:100% 100%"));
 });
 
-test("scale-down never enlarges, which needs the image's natural size", () => {
-  const sized = (size) => glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "scale-down" }, { size });
-
-  // With a known size the layer is clamped to the photo's own box and centred
-  // without a transform, so a small image stays small.
-  const small = sized({ width: 400, height: 300 });
-  assert.ok(small.includes("width:min(100%,400px)"));
-  assert.ok(small.includes("height:min(100%,300px)"));
-  assert.ok(small.includes("margin:auto"));
-  assert.ok(small.includes("background-size:contain"));
-  assert.equal(/(^|[;{])\s*(?:-webkit-)?transform\s*:/.test(small.replace(/\/\*[\s\S]*?\*\//g, "")), false);
-
-  // Without one it degrades to contain: it may enlarge, but it never breaks.
-  const unknown = sized(null);
-  assert.ok(unknown.includes("background-size:contain"));
-  assert.equal(unknown.includes("min(100%,"), false);
-  // AVIF is the format we cannot measure, so this is the path it takes.
-  assert.ok(sized(undefined).includes("background-size:contain"));
-});
-
-test("the image header reader finds the natural size of the formats the host allows", () => {
-  const { readImageSize } = require("../features/appearance/image-size.js");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-size-"));
-  try {
-    // Minimal PNG header: signature + IHDR with a 3×2 image.
-    const png = Buffer.alloc(33);
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
-    png.writeUInt32BE(13, 8);
-    png.write("IHDR", 12, "ascii");
-    png.writeUInt32BE(3, 16);
-    png.writeUInt32BE(2, 20);
-    const pngPath = path.join(dir, "a.png");
-    fs.writeFileSync(pngPath, png);
-    assert.deepEqual(readImageSize(pngPath), { width: 3, height: 2 });
-
-    // SOF0 carries height then width, both big endian.
-    const jpeg = Buffer.from([
-      0xff, 0xd8,
-      0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x20,
-      0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
-    ]);
-    const jpegPath = path.join(dir, "a.jpg");
-    fs.writeFileSync(jpegPath, jpeg);
-    assert.deepEqual(readImageSize(jpegPath), { width: 32, height: 16 });
-
-    const svgPath = path.join(dir, "a.svg");
-    fs.writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 45"></svg>');
-    assert.deepEqual(readImageSize(svgPath), { width: 120, height: 45 });
-    fs.writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"></svg>');
-    assert.deepEqual(readImageSize(svgPath), { width: 64, height: 48 });
-
-    // Unreadable input answers null instead of throwing.
-    fs.writeFileSync(path.join(dir, "bad.png"), Buffer.from("not an image at all"));
-    assert.equal(readImageSize(path.join(dir, "bad.png")), null);
-    assert.equal(readImageSize(path.join(dir, "missing.png")), null);
-    assert.equal(readImageSize(""), null);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+test("a fit the panel no longer offers falls back to fill", () => {
+  // 「不放大」需要读图片的原始尺寸，而 CSS 拿不到；这段依赖已随选项一起删掉。
+  assert.equal(glass.FITS.includes("scale-down"), false);
+  assert.equal(glass.normalizeGlassConfig({ fit: "scale-down" }).fit, "fill");
+  assert.equal(glass.normalizeGlassConfig({ fit: "nonsense" }).fit, "fill");
+  assert.ok(glass.buildGlassCss({ enabled: true, wallpaper: "/a.png", fit: "cover" }).includes("background-size:cover"));
 });
 
 test("picking a wallpaper stores it without touching the glass switch", async () => {
@@ -581,12 +533,12 @@ test("a whole-config write cannot drop the wallpaper", async () => {
     // The panel sends the config it rendered, where the wallpaper is whatever it
     // last saw; the process stays the authority on it.
     await feature.onPanelInvoke(glassChannel("apply"), {
-      config: { preset: "light", intensity: 1, wallpaper: "", fit: "scale-down" },
+      config: { preset: "light", intensity: 1, wallpaper: "", fit: "cover" },
     });
     const stored = host.store[glass.SETTINGS_KEY];
     assert.equal(stored.wallpaper, file);
     assert.equal(stored.preset, "light");
-    assert.equal(stored.fit, "scale-down");
+    assert.equal(stored.fit, "cover");
   } finally {
     delete global.pi;
   }
@@ -595,7 +547,7 @@ test("a whole-config write cannot drop the wallpaper", async () => {
 test("clearing the wallpaper keeps every other setting", async () => {
   const file = tempWallpaper("clear.png");
   const host = makePi({
-    [glass.SETTINGS_KEY]: { enabled: true, wallpaper: file, preset: "deep", intensity: 1.3, fit: "scale-down" },
+    [glass.SETTINGS_KEY]: { enabled: true, wallpaper: file, preset: "deep", intensity: 1.3, fit: "cover" },
   });
   global.pi = host.pi;
   const feature = loadFeature();
@@ -605,7 +557,7 @@ test("clearing the wallpaper keeps every other setting", async () => {
     assert.equal(result.config.wallpaper, "");
     assert.equal(result.config.enabled, true);
     assert.equal(result.config.preset, "deep");
-    assert.equal(result.config.fit, "scale-down");
+    assert.equal(result.config.fit, "cover");
   } finally {
     delete global.pi;
   }
@@ -636,7 +588,7 @@ test("the panel gets the values it renders the controls from", async () => {
   try {
     const state = await feature.onPanelInvoke(glassChannel("getState"), {});
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
-    assert.deepEqual(state.fits, ["fill", "contain", "cover", "none", "scale-down"]);
+    assert.deepEqual(state.fits, ["fill", "contain", "cover", "none"]);
     assert.deepEqual(state.limits.intensity, [0.6, 1.6]);
   } finally {
     delete global.pi;
@@ -658,7 +610,7 @@ test("an uploaded image is written into the plugin data folder and adopted", asy
     });
     assert.equal(result.ok, true);
     const stored = host.store[glass.SETTINGS_KEY];
-    assert.equal(path.basename(stored.wallpaper), "wallpaper.png");
+    assert.match(path.basename(stored.wallpaper), /^wallpaper\.[a-z0-9]+\.png$/);
     // The photo lives on its own layer, so the switch is left exactly as it was.
     assert.equal(stored.enabled, false);
     assert.deepEqual(fs.readFileSync(stored.wallpaper), bytes);

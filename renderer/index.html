@@ -84,26 +84,33 @@
           <header class="appearance-heading">
             <div>
               <h1 id="appearance-motion-title">界面动效</h1>
-              <p id="preset-summary">平衡的响应速度与空间感</p>
+              <p>PI-Desktop 界面的过渡与动画。</p>
             </div>
-            <span class="sync-dot" id="sync-dot" data-state="ready" title="已实时应用"></span>
+            <button type="button" class="ui-btn ui-btn-sm" data-reset="motion">重置</button>
           </header>
 
-          <div class="settings-group">
-            <div class="settings-row">
-              <div class="settings-row-copy">
-                <div class="settings-row-title">动画预设</div>
-                <div class="settings-row-detail">整体过渡节奏与运动幅度</div>
-              </div>
-              <div class="settings-row-control">
-                <div class="segmented preset-options" role="group" aria-label="动画预设">
-                  <button type="button" data-preset="agile">敏捷</button>
-                  <button type="button" data-preset="balanced">平衡</button>
-                  <button type="button" data-preset="gentle">柔和</button>
-                  <button type="button" data-preset="reduced">减弱</button>
-                </div>
-              </div>
-            </div>
+          <div class="settings-group" id="motion-group">
+            <label class="settings-row switch-row" for="motion-override">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">覆盖宿主动画</span>
+                <span class="settings-row-detail">关闭后完全使用 PI-Desktop 自带的动效</span>
+              </span>
+              <span class="settings-row-control">
+                <input id="motion-override" type="checkbox" checked />
+                <span class="switch" aria-hidden="true"><span></span></span>
+              </span>
+            </label>
+
+            <label class="settings-row switch-row" for="motion-disabled">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">完全禁用动画</span>
+                <span class="settings-row-detail">所有过渡与动画压到最短</span>
+              </span>
+              <span class="settings-row-control">
+                <input id="motion-disabled" type="checkbox" />
+                <span class="switch" aria-hidden="true"><span></span></span>
+              </span>
+            </label>
 
             <label class="settings-row" for="intensity">
               <span class="settings-row-copy">
@@ -127,20 +134,6 @@
               </span>
             </label>
 
-            <div class="settings-row">
-              <div class="settings-row-copy">
-                <div class="settings-row-title">外观基底</div>
-                <div class="settings-row-detail">跟随系统或固定深浅色</div>
-              </div>
-              <div class="settings-row-control">
-                <div class="segmented mode-options" role="group" aria-label="外观基底">
-                  <button type="button" data-mode="auto">自动</button>
-                  <button type="button" data-mode="light">浅色</button>
-                  <button type="button" data-mode="dark">深色</button>
-                </div>
-              </div>
-            </div>
-
             <label class="settings-row switch-row" for="follow-reduced">
               <span class="settings-row-copy">
                 <span class="settings-row-title">跟随系统减弱动态</span>
@@ -151,11 +144,20 @@
                 <span class="switch" aria-hidden="true"><span></span></span>
               </span>
             </label>
-          </div>
 
-          <div class="control-actions">
-            <button type="button" class="button quiet" id="stop-button">停止全部动画</button>
-            <button type="button" class="button" id="reset-button">恢复平衡</button>
+            <div class="settings-row">
+              <div class="settings-row-copy">
+                <div class="settings-row-title">外观基底</div>
+                <div class="settings-row-detail">跟随系统或固定深浅色</div>
+              </div>
+              <div class="settings-row-control">
+                <div class="segmented" role="group" aria-label="外观基底">
+                  <button type="button" data-mode="auto">自动</button>
+                  <button type="button" data-mode="light">浅色</button>
+                  <button type="button" data-mode="dark">深色</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -163,83 +165,84 @@
           <header class="appearance-heading">
             <div>
               <h1 id="appearance-glass-title">窗口材质</h1>
-              <p id="glass-summary">磨砂玻璃与窗口背景</p>
+              <p>磨砂玻璃与窗口背景图。</p>
             </div>
-            <span class="glass-dot" id="glass-status" data-state="ready" title="已实时应用"></span>
+            <button type="button" class="ui-btn ui-btn-sm" data-reset="glass">重置</button>
           </header>
 
-          <div class="glass-group" id="glass-view" data-enabled="false">
-            <label class="glass-row glass-switch" for="glass-toggle">
-              <span class="glass-row-copy">
-                <span class="glass-row-title">启用磨砂玻璃</span>
-                <span class="glass-row-detail">侧栏、标题栏与弹层使用半透明模糊材质</span>
+          <div class="settings-group" id="glass-view" data-enabled="false">
+            <label class="settings-row switch-row" for="glass-toggle">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">启用磨砂玻璃</span>
+                <span class="settings-row-detail">侧栏、标题栏与弹层使用半透明模糊材质</span>
               </span>
-              <span class="glass-row-control">
+              <span class="settings-row-control">
                 <input id="glass-toggle" type="checkbox" />
-                <span class="glass-switch-track" aria-hidden="true"><span></span></span>
+                <span class="switch" aria-hidden="true"><span></span></span>
               </span>
             </label>
 
-            <div class="glass-row">
-              <div class="glass-row-copy">
-                <div class="glass-row-title">玻璃质感</div>
-                <div class="glass-row-detail">调整模糊程度与底色厚度</div>
-              </div>
-              <div class="glass-row-control">
-                <div class="glass-segmented" role="group" aria-label="玻璃质感">
-                  <button type="button" data-glass-preset="light">轻薄</button>
-                  <button type="button" data-glass-preset="standard">标准</button>
-                  <button type="button" data-glass-preset="deep">厚重</button>
-                </div>
-              </div>
-            </div>
-
-            <label class="glass-row" for="glass-intensity">
-              <span class="glass-row-copy">
-                <span class="glass-row-title">模糊强度</span>
+            <label class="settings-row" for="glass-intensity">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">模糊强度</span>
+                <span class="settings-row-detail">调整模糊半径与底色厚度</span>
               </span>
-              <span class="glass-row-control glass-range">
+              <span class="settings-row-control range-inline">
                 <input id="glass-intensity" type="range" min="60" max="160" step="5" value="100" />
                 <output id="glass-intensity-value">100%</output>
               </span>
             </label>
 
-            <div class="glass-row">
-              <div class="glass-row-copy">
-                <div class="glass-row-title">背景图</div>
-                <div class="glass-row-detail glass-wallpaper-name" id="glass-wallpaper-name">未选择图片</div>
+            <div class="settings-row">
+              <div class="settings-row-copy">
+                <div class="settings-row-title">背景图</div>
+                <div class="settings-row-detail glass-wallpaper-name" id="glass-wallpaper-name">未选择图片</div>
+                <div class="glass-path" id="glass-wallpaper-path" hidden></div>
               </div>
-              <div class="glass-row-control glass-wallpaper-actions">
-                <button type="button" class="ui-btn ui-btn-quiet" id="glass-wallpaper-clear">清除</button>
-                <button type="button" class="ui-btn" id="glass-wallpaper-pick">选择图片…</button>
+              <div class="settings-row-control">
+                <button type="button" class="ui-btn ui-btn-sm ui-btn-quiet" id="glass-wallpaper-clear">清除</button>
+                <button type="button" class="ui-btn ui-btn-sm" id="glass-wallpaper-pick">选择图片…</button>
               </div>
               <input type="file" id="glass-wallpaper-file" accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/*" hidden />
             </div>
 
-            <div class="glass-row">
-              <div class="glass-row-copy">
-                <div class="glass-row-title">填充方式</div>
-                <div class="glass-row-detail glass-fit-hint" id="glass-fit-hint">拉伸铺满整个窗口</div>
+            <div class="settings-row">
+              <div class="settings-row-copy">
+                <div class="settings-row-title">填充方式</div>
+                <div class="settings-row-detail glass-fit-hint" id="glass-fit-hint">拉伸铺满整个窗口</div>
               </div>
-              <div class="glass-row-control">
-                <div class="glass-segmented glass-segmented-fit" role="group" aria-label="背景图填充">
+              <div class="settings-row-control">
+                <div class="segmented" role="group" aria-label="背景图填充">
                   <button type="button" data-glass-fit="fill">拉伸</button>
                   <button type="button" data-glass-fit="contain">适应</button>
                   <button type="button" data-glass-fit="cover">铺满</button>
                   <button type="button" data-glass-fit="none">原始</button>
-                  <button type="button" data-glass-fit="scale-down">不放大</button>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="glass-actions">
-            <button type="button" class="ui-btn" id="glass-reset">恢复默认材质</button>
+          <div class="settings-group" id="glass-recent" hidden>
+            <div class="settings-row recent-head">
+              <span class="settings-row-title">最近使用</span>
+            </div>
+            <div id="glass-recent-list"></div>
           </div>
         </section>
       </main>
 
       <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+      <div class="confirm" id="confirm" hidden>
+        <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+          <h2 id="confirm-title">重置</h2>
+          <p id="confirm-text"></p>
+          <div class="confirm-actions">
+            <button type="button" class="ui-btn" id="confirm-cancel">取消</button>
+            <button type="button" class="ui-btn ui-btn-danger" id="confirm-ok">重置</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="view-gateway" class="opt-view" role="tabpanel" aria-labelledby="tab-gateway" hidden>

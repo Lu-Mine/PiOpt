@@ -38,7 +38,7 @@ const CSS_LIMIT_BYTES = 256 * 1024;
 const WALLPAPER_EXTENSIONS = Object.freeze(["png", "jpg", "jpeg", "webp", "avif", "svg"]);
 const WALLPAPER_MAX_BYTES = 4 * 1024 * 1024;
 
-const FITS = Object.freeze(["fill", "contain", "cover", "none", "scale-down"]);
+const FITS = Object.freeze(["fill", "contain", "cover", "none"]);
 
 // One preset is one glass recipe. `sidebar`, `chrome`, `overlay` and `canvas`
 // are fill opacities in percent: the higher the number, the more the surface
@@ -64,7 +64,48 @@ const DEFAULT_CONFIG = Object.freeze({
   intensity: 1,
   wallpaper: "",
   fit: "fill",
+  // 最近用过的背景图，最新在前。路径是绝对路径：宿主按文件系统解析。
+  recent: Object.freeze([]),
 });
+
+const RECENT_MAX = 8;
+
+function recentEntry(value) {
+  if (typeof value === "string") {
+    const path = value.trim();
+    if (!isSupportedWallpaper(path)) return null;
+    return { path, name: path.split(/[\/]/).pop() || path };
+  }
+  if (!value || typeof value !== "object") return null;
+  const path = String(value.path ?? "").trim();
+  if (!isSupportedWallpaper(path)) return null;
+  const name = typeof value.name === "string" && value.name.trim()
+    ? value.name.trim()
+    : path.split(/[\/]/).pop() || path;
+  return { path, name };
+}
+
+function normalizeRecent(input) {
+  const list = Array.isArray(input) ? input : [];
+  const seen = new Set();
+  const out = [];
+  for (const entry of list) {
+    const item = recentEntry(entry);
+    if (!item) continue;
+    const key = item.path.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= RECENT_MAX) break;
+  }
+  return out;
+}
+
+/** 把一个路径提到最近使用的最前面（去重、截断）。 */
+function rememberWallpaper(current, target, name) {
+  const list = normalizeRecent(current).filter((entry) => entry.path.toLowerCase() !== String(target).toLowerCase());
+  return normalizeRecent([{ path: target, name }, ...list]);
+}
 
 const LIMITS = Object.freeze({ intensity: Object.freeze([0.6, 1.6]) });
 
@@ -125,6 +166,7 @@ function normalizeGlassConfig(input = {}) {
       ) / 100,
     wallpaper,
     fit,
+    recent: normalizeRecent(source.recent),
   };
 }
 
@@ -173,7 +215,7 @@ const LIGHT_FIELD =
  * `transform`), then `contain` fills that box — which is exactly
  * `object-fit: scale-down`. Without a known size it degrades to plain `contain`.
  */
-function fitDeclarations(fit, size) {
+function fitDeclarations(fit) {
   switch (fit) {
     case "contain":
       return "background-size:contain;background-position:center;background-repeat:no-repeat;";
@@ -181,16 +223,6 @@ function fitDeclarations(fit, size) {
       return "background-size:cover;background-position:center;background-repeat:no-repeat;";
     case "none":
       return "background-size:auto;background-position:center;background-repeat:no-repeat;";
-    case "scale-down": {
-      const width = Number(size && size.width);
-      const height = Number(size && size.height);
-      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-        return "background-size:contain;background-position:center;background-repeat:no-repeat;";
-      }
-      const boxWidth = Math.round(width);
-      const boxHeight = Math.round(height);
-      return `inset:0;margin:auto;width:min(100%,${boxWidth}px);height:min(100%,${boxHeight}px);background-size:contain;background-position:center;background-repeat:no-repeat;`;
-    }
     case "fill":
     default:
       return "background-size:100% 100%;background-repeat:no-repeat;";
@@ -265,7 +297,7 @@ function buildGlassCss(input = {}, options = {}) {
         "}",
       ].join("\n")
     : "";
-  const sizing = wallpaper ? fitDeclarations(config.fit, options.size) : "";
+  const sizing = wallpaper ? fitDeclarations(config.fit) : "";
 
   const css = `${CSS_MARKER}
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
@@ -329,6 +361,7 @@ module.exports = {
   FITS,
   LIMITS,
   PRESETS,
+  RECENT_MAX,
   SETTINGS_KEY,
   WALLPAPER_EXTENSIONS,
   WALLPAPER_MAX_BYTES,
@@ -337,5 +370,8 @@ module.exports = {
   fitDeclarations,
   isSupportedWallpaper,
   normalizeGlassConfig,
+  normalizeRecent,
+  recentEntry,
+  rememberWallpaper,
   wallpaperCssUrl,
 };

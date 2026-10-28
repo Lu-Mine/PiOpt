@@ -1,29 +1,35 @@
 /*
- * PiOpt appearance view — host-settings-style grouped rows.
+ * PiOpt 外观：界面动效与窗口材质共用的设置页版式。
  *
- * Scoped to #view-appearance and driven exclusively by --ds-* tokens from
- * tokens.css (and any active host custom theme). Changes apply live without
- * an explicit submit button.
+ * 只用 --ds-* 令牌，明暗由 html[data-base] 决定；这里不画磨砂层本身，
+ * 那一层由 features/appearance/glass.js 生成后经运行时主题下发。
  */
 
 @scope (#view-appearance) {
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
-button, input {
-  font: inherit;
-  color: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
 button:focus-visible,
 input:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
   outline-offset: 2px;
 }
+
+::selection {
+  background: color-mix(in oklab, var(--ds-accent) 26%, transparent);
+  color: var(--ds-text-primary);
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--ds-border-strong);
+  border: 3px solid transparent;
+  border-radius: var(--radius-full);
+  background-clip: content-box;
+}
+
+/* ------------------------------------------------------------------ 版面 */
 
 .workspace {
   height: 100%;
@@ -33,7 +39,7 @@ input:focus-visible {
   padding: 24px clamp(16px, 4vw, 40px) 36px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 30px;
   background: var(--ds-bg-primary);
   scrollbar-gutter: stable;
 }
@@ -49,7 +55,7 @@ input:focus-visible {
 
 .appearance-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 0 2px;
@@ -71,37 +77,16 @@ h1 {
   line-height: var(--leading-body);
 }
 
-.sync-dot,
-.glass-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-full);
-  background: var(--ds-success);
-  transition: background var(--motion-duration-fast) var(--motion-ease-out);
-}
+/* ------------------------------------------------------------- 分组与行 */
 
-.sync-dot[data-state="pending"],
-.glass-dot[data-state="pending"] {
-  background: var(--ds-warning);
-}
-
-.sync-dot[data-state="error"],
-.glass-dot[data-state="error"] {
-  background: var(--ds-error);
-}
-
-/* Grouped settings list — mirrors PI-Desktop's settings rows */
-.settings-group,
-.glass-group {
+.settings-group {
   border: 1px solid var(--ds-border-default);
   border-radius: var(--radius-xs);
   background: var(--ds-bg-secondary);
   overflow: hidden;
 }
 
-.settings-row,
-.glass-row {
+.settings-row {
   position: relative;
   display: flex;
   align-items: center;
@@ -110,43 +95,28 @@ h1 {
   min-height: 54px;
   padding: 12px 16px;
 }
+.settings-row + .settings-row { border-top: 1px solid var(--ds-border-subtle); }
+label.settings-row { cursor: pointer; }
 
-.settings-row + .settings-row,
-.glass-row + .glass-row {
-  border-top: 1px solid var(--ds-border-subtle);
-}
-
-label.settings-row,
-label.glass-row {
-  cursor: pointer;
-}
-
-.settings-row-copy,
-.glass-row-copy {
+.settings-row-copy {
   flex: 1 1 180px;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-
-.settings-row-title,
-.glass-row-title {
+.settings-row-title {
   color: var(--ds-text-primary);
   font-size: var(--text-md);
   font-weight: var(--font-weight-medium);
   line-height: var(--leading-compact);
 }
-
-.settings-row-detail,
-.glass-row-detail {
+.settings-row-detail {
   color: var(--ds-text-muted);
   font-size: var(--text-sm);
   line-height: var(--leading-body);
 }
-
-.settings-row-control,
-.glass-row-control {
+.settings-row-control {
   flex: none;
   min-width: 0;
   max-width: 100%;
@@ -156,25 +126,25 @@ label.glass-row {
   gap: 8px;
 }
 
-/* Segmented controls — matches PI-Desktop .settings-segment */
-.segmented,
-.glass-segmented {
+/* 总开关关掉或全局禁用时，下面几行不再生效。 */
+.settings-group[data-inert="true"] .settings-row:not(:has(input:not([disabled]))) .settings-row-title,
+.settings-group[data-inert="true"] .settings-row:not(:has(input:not([disabled]))) .settings-row-detail {
+  opacity: 0.5;
+}
+
+/* ------------------------------------------------------------- 分段控件 */
+
+.segmented {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 2px;
-  border-radius: var(--radius-2xs);
   border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-2xs);
   background: var(--ds-bg-inset);
 }
 
-.glass-segmented-fit {
-  max-width: 100%;
-}
-
-.segmented button,
-.glass-segmented button {
+.segmented button {
   appearance: none;
   min-width: 0;
   height: var(--ds-control-sm);
@@ -191,29 +161,18 @@ label.glass-row {
     background var(--motion-duration-fast) var(--motion-ease-out),
     color var(--motion-duration-fast) var(--motion-ease-out);
 }
-
-.segmented button:hover,
-.glass-segmented button:hover {
-  color: var(--ds-text-primary);
-}
-
-.segmented button[aria-pressed="true"],
-.glass-segmented button[aria-pressed="true"] {
+.segmented button:hover { color: var(--ds-text-primary); }
+.segmented button[aria-pressed="true"] {
   background: var(--ds-raised);
   color: var(--ds-text-primary);
   box-shadow: var(--ds-raised-shadow), 0 0 0 1px var(--ds-border-subtle);
 }
 
-/* Inline sliders */
-.range-inline,
-.glass-range {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+/* ---------------------------------------------------------------- 滑杆 */
 
-.range-inline output,
-.glass-range output {
+.range-inline { display: flex; align-items: center; gap: 10px; }
+
+.range-inline output {
   width: 44px;
   text-align: right;
   color: var(--ds-text-secondary);
@@ -221,8 +180,7 @@ label.glass-row {
   font-variant-numeric: tabular-nums;
 }
 
-.range-inline input[type="range"],
-.glass-range input[type="range"] {
+.range-inline input[type="range"] {
   --fill: 50%;
   -webkit-appearance: none;
   appearance: none;
@@ -233,9 +191,7 @@ label.glass-row {
   background: none;
   cursor: pointer;
 }
-
-.range-inline input[type="range"]::-webkit-slider-runnable-track,
-.glass-range input[type="range"]::-webkit-slider-runnable-track {
+.range-inline input[type="range"]::-webkit-slider-runnable-track {
   height: 5px;
   border-radius: var(--radius-full);
   background: linear-gradient(
@@ -244,9 +200,7 @@ label.glass-row {
     color-mix(in oklab, var(--ds-text-primary) 14%, var(--ds-bg-primary)) var(--fill) 100%
   );
 }
-
-.range-inline input[type="range"]::-webkit-slider-thumb,
-.glass-range input[type="range"]::-webkit-slider-thumb {
+.range-inline input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 14px;
@@ -258,28 +212,22 @@ label.glass-row {
   box-shadow: 0 0 0 2px var(--ds-accent), var(--ds-raised-shadow);
   transition: transform var(--motion-duration-fast) var(--motion-ease-out);
 }
-
-.range-inline input[type="range"]:hover::-webkit-slider-thumb,
-.glass-range input[type="range"]:hover::-webkit-slider-thumb {
-  transform: scale(1.12);
-}
-
-.range-inline input[type="range"]:focus-visible,
-.glass-range input[type="range"]:focus-visible {
-  outline: none;
-}
-
-.range-inline input[type="range"]:focus-visible::-webkit-slider-thumb,
-.glass-range input[type="range"]:focus-visible::-webkit-slider-thumb {
+.range-inline input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.12); }
+.range-inline input[type="range"]:focus-visible { outline: none; }
+.range-inline input[type="range"]:focus-visible::-webkit-slider-thumb {
   box-shadow:
     0 0 0 2px var(--ds-accent),
     0 0 0 4px var(--ds-bg-secondary),
     0 0 0 6px color-mix(in oklab, var(--ds-focus) 55%, transparent);
 }
+.range-inline input[type="range"]:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 
-/* Toggle switch — matches PI-Desktop .settings-toggle */
-.switch-row input,
-.glass-switch input {
+/* ---------------------------------------------------------------- 开关 */
+
+.switch-row input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -287,8 +235,7 @@ label.glass-row {
   pointer-events: none;
 }
 
-.switch,
-.glass-switch-track {
+.switch {
   position: relative;
   flex: 0 0 32px;
   width: 32px;
@@ -297,14 +244,8 @@ label.glass-row {
   background: var(--ds-switch-track-off);
   transition: background var(--motion-duration-fast) var(--motion-ease-out);
 }
-
-.switch-row:hover .switch,
-.glass-switch:hover .glass-switch-track {
-  background: var(--ds-switch-track-off-hover);
-}
-
-.switch span,
-.glass-switch-track span {
+.switch-row:hover .switch { background: var(--ds-switch-track-off-hover); }
+.switch span {
   position: absolute;
   top: 2px;
   left: 2px;
@@ -317,120 +258,144 @@ label.glass-row {
     transform var(--motion-duration-fast) var(--motion-ease-out),
     background var(--motion-duration-fast) var(--motion-ease-out);
 }
-
-.switch-row input:checked + .switch,
-.glass-switch input:checked + .glass-switch-track {
-  background: var(--ds-accent);
-}
-
-.switch-row input:checked + .switch span,
-.glass-switch input:checked + .glass-switch-track span {
+.switch-row input:checked + .switch { background: var(--ds-accent); }
+.switch-row input:checked + .switch span {
   transform: translateX(12px);
   background: var(--ds-switch-knob-on);
 }
-
-.switch-row input:focus-visible + .switch,
-.glass-switch input:focus-visible + .glass-switch-track {
+.switch-row input:focus-visible + .switch {
   outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
   outline-offset: 2px;
 }
+/* 磨砂关闭时，模糊强度不再影响任何表面。 */
+#glass-view[data-enabled="false"] .range-inline { opacity: 0.5; }
 
-#glass-view[data-enabled="false"] :is(.glass-segmented:not(.glass-segmented-fit), .glass-range) {
-  opacity: 0.5;
-}
+/* ------------------------------------------------------------ 背景图 */
 
-/* Wallpaper & fit helpers */
 .glass-wallpaper-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
-  color: var(--ds-text-secondary);
 }
+.glass-wallpaper-name[data-empty="true"] { color: var(--ds-text-muted); }
 
-.glass-wallpaper-name[data-empty="true"] {
-  font-family: inherit;
+.glass-path {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--ds-text-muted);
+  font: var(--text-xs)/var(--leading-body) var(--font-mono);
 }
 
-.glass-wallpaper-actions {
+.recent-head { min-height: 40px; padding: 10px 16px; }
+.recent-head .settings-row-title { font-size: var(--text-sm); color: var(--ds-text-muted); }
+
+.recent-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ds-border-subtle);
 }
-
-.glass-fit-hint {
+.recent-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.recent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm-plus);
+}
+.recent-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--ds-text-muted);
+  font-size: var(--text-xs);
 }
+.recent-actions { flex: none; display: flex; align-items: center; gap: 6px; }
 
-/* Section footer actions & buttons */
-.control-actions,
-.glass-actions {
+/* ------------------------------------------------------------- 确认弹窗 */
+
+.confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--ds-scrim);
+  backdrop-filter: blur(2px);
+  animation: piopt-confirm-in var(--motion-duration-normal) var(--motion-ease-out) backwards;
+}
+@keyframes piopt-confirm-in { from { opacity: 0; } to { opacity: 1; } }
+
+.confirm-box {
+  width: min(360px, 100%);
+  padding: 18px 18px 14px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-elevated-opaque);
+  box-shadow: var(--ds-shadow-dialog);
+}
+.confirm-box h2 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
+}
+.confirm-box p {
+  margin: 6px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+.confirm-actions {
+  display: flex;
   justify-content: flex-end;
   gap: 8px;
+  margin-top: 16px;
 }
 
-/* Floating status toast */
+/* ---------------------------------------------------------------- 提示 */
+
 .toast {
   position: fixed;
-  z-index: 20;
+  z-index: 50;
   left: 50%;
   bottom: 18px;
   max-width: min(400px, calc(100vw - 32px));
   transform: translateX(-50%);
   padding: 8px 12px;
   border: 1px solid var(--ds-border-default);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-2xs);
   background: var(--ds-bg-raised);
   color: var(--ds-text-primary);
   box-shadow: var(--ds-shadow-dialog);
   font-size: var(--text-sm);
 }
-
 .toast.error {
-  border-color: color-mix(in oklab, var(--ds-error) 45%, transparent);
+  border-color: color-mix(in oklab, var(--ds-error) 60%, var(--ds-border-default));
   color: var(--ds-error);
 }
 
-@media (max-width: 640px) {
-  .workspace {
-    padding: 16px 14px 28px;
-  }
-
-  .settings-row,
-  .glass-row {
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .settings-row:not(.switch-row):not(.glass-switch) .settings-row-control,
-  .glass-row:not(.glass-switch) .glass-row-control {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .range-inline,
-  .glass-range {
-    width: 100%;
-  }
-
-  .range-inline input[type="range"],
-  .glass-range input[type="range"] {
-    flex: 1;
-    width: auto;
-  }
+@media (max-width: 560px) {
+  .settings-row { align-items: flex-start; }
+  .settings-row-control { flex-direction: column; align-items: flex-end; }
+  .range-inline input[type="range"] { width: 120px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .confirm { animation: none; }
   .segmented button,
-  .glass-segmented button,
   .switch,
   .switch span,
-  .glass-switch-track,
-  .glass-switch-track span {
+  .range-inline input[type="range"]::-webkit-slider-thumb {
     transition-duration: 0.01ms;
   }
 }
 }
+
+/* 填充方式的说明文字跟着当前选项走。 */
+.glass-fit-hint { color: var(--ds-text-muted); }

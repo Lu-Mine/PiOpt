@@ -19,7 +19,6 @@ const { basename, join } = require("node:path");
 
 const motion = require("./motion.js");
 const glass = require("./glass.js");
-const { readImageSize } = require("./image-size.js");
 
 // One command per half: they open the same view on a different section, which is
 // what the old two-view panel did with its motion and material tabs.
@@ -108,13 +107,9 @@ async function registeredThemeId() {
 
 // ------------------------------------------------------------------ stylesheet
 
-// The glass layer needs the photo's natural size for `scale-down`, which CSS
-// cannot read: without it the mode would enlarge a small image instead of
-// leaving it be.
 function buildGlassLayer(config) {
   try {
-    const size = config.wallpaper ? readImageSize(config.wallpaper) : null;
-    return glass.buildGlassCss(config, { size });
+    return glass.buildGlassCss(config);
   } catch {
     // An unreadable wallpaper must not cost the motion layer.
     return "";
@@ -269,8 +264,18 @@ function readSystemBase() {
 // ---------------------------------------------------------------------- glass
 
 function glassStatePayload() {
+  const recent = glassConfig.recent.map((entry) => {
+    const problem = wallpaperProblem(entry.path);
+    return {
+      path: entry.path,
+      name: entry.name,
+      // 只有 missing 才是「文件没了」；其它问题在选中的时候才会被拦下。
+      missing: problem === "missing" || problem === "unsupported",
+    };
+  });
   return {
     config: glassConfig,
+    recent,
     presets: Object.keys(glass.PRESETS),
     fits: [...glass.FITS],
     limits: glass.LIMITS,
@@ -330,7 +335,7 @@ function refuse(reason) {
   return { ok: false, reason, message, ...glassStatePayload() };
 }
 
-async function adoptWallpaper(target) {
+async function adoptWallpaper(target, name) {
   const problem = wallpaperProblem(target);
   if (problem) {
     // Drop a reference that stopped resolving instead of leaving the theme
@@ -345,7 +350,11 @@ async function adoptWallpaper(target) {
   // Turning glass on here would be a surprise: the switch is the user's.
   // The photo is its own layer and stays visible with the glass off, so picking
   // one must not silently flip the user's switch.
-  await persistGlass({ ...glassConfig, wallpaper: target });
+  await persistGlass({
+    ...glassConfig,
+    wallpaper: target,
+    recent: glass.rememberWallpaper(glassConfig.recent, target, name),
+  });
   return { ok: true, ...glassStatePayload() };
 }
 
@@ -355,10 +364,10 @@ function extensionOf(name) {
 }
 
 /**
- * Stores the uploaded bytes in the plugin's data folder and adopts the path.
+ * 把上传的字节写进插件数据目录，并采纳这个路径。
  *
- * One wallpaper at a time: a leftover of another format would keep a stale image
- * on disk and could still be referenced by an old setting.
+ * 每次上传都写一个独立的文件（时间戳命名），因为「最近使用」要同时留住几张图；
+ * 只在使用者从列表里删掉某一项时才删除对应文件。
  */
 async function saveWallpaperBytes(name, base64) {
   const extension = extensionOf(name);
@@ -380,22 +389,14 @@ async function saveWallpaperBytes(name, base64) {
     return refuse("unreadable");
   }
 
-  const target = join(dataDir, `${DATA_PREFIX}${extension}`);
+  const target = join(dataDir, `${DATA_PREFIX}${Date.now().toString(36)}.${extension}`);
   try {
-    for (const entry of readdirSync(dataDir)) {
-      if (!entry.startsWith(DATA_PREFIX) || entry === basename(target)) continue;
-      try {
-        unlinkSync(join(dataDir, entry));
-      } catch {
-        /* a file that cannot be removed is not worth failing the upload for */
-      }
-    }
     writeFileSync(target, buffer);
   } catch {
     return refuse("unreadable");
   }
 
-  return adoptWallpaper(target);
+  return adoptWallpaper(target, name);
 }
 
 // ------------------------------------------------------------------ lifecycle
@@ -510,12 +511,36 @@ async function onGlass(channel, payload) {
       return saveWallpaperBytes(payload.name, payload.data);
     case "appearance.glass.setWallpaper":
       // For scripted use and tests; the panel uploads bytes instead.
-      return adoptWallpaper(payload.path);
+      return adoptWallpaper(payload.path, basename(String(payload?.path ?? "")));
+    case "appearance.glass.forgetWallpaper": {
+      const target = String(payload?.path ?? "").trim();
+      if (!target) return { ok: false, reason: "empty", ...glassStatePayload() };
+      let dataDir = "";
+      try {
+        dataDir = await pi.plugin.getDataPath();
+      } catch {
+        /* 没有数据目录说明这张图不是我们存的 */
+      }
+      const owned = Boolean(dataDir) && target.startsWith(dataDir) && basename(target).startsWith(DATA_PREFIX);
+      const next = {
+        ...glassConfig,
+        recent: glassConfig.recent.filter((entry) => entry.path !== target),
+        wallpaper: glassConfig.wallpaper === target ? "" : glassConfig.wallpaper,
+      };
+      if (owned) {
+        try {
+          unlinkSync(target);
+        } catch {
+          /* 删不掉文件不影响把它从列表里去掉 */
+        }
+      }
+      return { ok: true, ...(await persistGlass(next)) };
+    }
     case "appearance.glass.clearWallpaper":
       return { ok: true, ...(await persistGlass({ ...glassConfig, wallpaper: "" })) };
     case "appearance.glass.reset": {
       // Reset keeps the photo: it is the user's own file, not a recipe.
-      const reset = { ...glass.DEFAULT_CONFIG, wallpaper: glassConfig.wallpaper };
+      const reset = { ...glass.DEFAULT_CONFIG, wallpaper: glassConfig.wallpaper, recent: glassConfig.recent };
       return { ok: true, ...(await persistGlass(reset)) };
     }
     default:
