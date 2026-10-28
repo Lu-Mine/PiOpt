@@ -688,7 +688,7 @@
 /* 线路选择 */
 .gw-eg-row {
   display: grid;
-  grid-template-columns: auto minmax(140px, 1fr) auto;
+  grid-template-columns: auto minmax(140px, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   margin: 10px 0 8px;

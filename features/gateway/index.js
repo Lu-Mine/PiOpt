@@ -616,6 +616,12 @@ function onPanelInvoke(channel, payload = {}) {
     case "gateway.egressOff":
       return { status: egress.disable(), restartNeeded: true };
     // 面板填订阅地址：拉到节点 → 重建配置 → 重启网关生效
+    case "gateway.egressHealth": {
+      const profile = egress.activeProfile();
+      if (!profile) return { ok: false, reason: "还没有节点来源" };
+      return egress.probeNodes(profile).then(health => ({ health }));
+    }
+    // 面板填订阅地址：拉到节点 → 测一遍可用性 → 重建配置 → 重启网关生效
     case "gateway.egressSubscribe": {
       const url = payload && payload.url;
       return egress.applySubscription(url, { skipProbe: false }).then(result => {

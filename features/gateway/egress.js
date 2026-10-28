@@ -51,6 +51,41 @@ const PROXY_SUFFIXES = [
   "chatgpt.com",
 ];
 
+
+
+/**
+ * 出网要走物理网卡，不能落进系统 Clash 的 TUN。
+ *
+ * TUN 装的是 0.0.0.0/0 → 198.18.0.2 的默认路由，网关进程的流量会被它整包劫走，
+ * 于是内核拿着 198.18.x.x 这种 fake-ip 去连节点，永远连不上。绑死物理网卡后
+ * 这条路径就独立了：用户怎么开关 Clash、切什么模式，都不再影响网关。
+ */
+const PHYSICAL_INTERFACE = "以太网";
+
+/**
+ * 自带 DNS，不继承系统那份（fake-ip + TUN 劫持 53）。
+ * proxy-server-nameserver 专门管「解析节点域名」，必须走真实解析，
+ * 否则节点域名又会被换成 fake-ip。
+ */
+const DNS_BLOCK = [
+  "dns:",
+  "  enable: true",
+  "  ipv6: false",
+  "  enhanced-mode: normal",
+  "  use-hosts: false",
+  "  use-system-hosts: false",
+  "  respect-rules: false",
+  "  default-nameserver:",
+  "  - 223.5.5.5",
+  "  - 119.29.29.29",
+  "  nameserver:",
+  "  - 223.5.5.5",
+  "  - 119.29.29.29",
+  "  proxy-server-nameserver:",
+  "  - 223.5.5.5",
+  "  - 119.29.29.29",
+];
+
 function log(message) {
   try {
     fs.mkdirSync(DEV_DIR, { recursive: true });
@@ -421,7 +456,25 @@ async function applySubscription(url, options = {}) {
   // 换了订阅，旧出口多半不在新列表里，清掉偏好让它重新挑一个
   writePrefs({ dialer: "" });
   log(`订阅已更新：${outlets.groups.length} 个组 / ${outlets.nodes.length} 个节点`);
-  return prepare(options);
+
+  // 订阅一落地就先测一遍，把连不通的节点筛掉；测不到也不阻止保存，
+  // 只是面板会显示「未检测」，用户可以手动重测
+  let health = null;
+  if (options.skipHealth !== true) {
+    health = await probeNodes(SUB_CACHE, { timeout: options.probeTimeout || 5000 });
+    if (!health.ok) log(`节点检测没跑成：${health.reason}`);
+  }
+
+  const prepared = await prepare(options);
+  // 一个能用的都没有时，把话说明白，而不是给一句含糊的「未启用」
+  if (health && health.ok && health.usable.length === 0) {
+    return {
+      ...prepared,
+      ok: false,
+      reason: `订阅里 ${health.tested} 个节点全部连不通（可能是订阅过期、设备被限，或本机网络无法直连这些节点）`,
+    };
+  }
+  return prepared;
 }
 
 /** 节点来源：面板填过订阅就用订阅缓存，否则退回 Clash 客户端里的那份 */
@@ -445,10 +498,230 @@ function writePrefs(patch) {
   return next;
 }
 
-/** 默认出口：优先自动选择组，其次任意组，最后第一个节点 */
-function pickDialer(outlets, preferred) {
+/**
+ * 节点健康检测
+ *
+ * 订阅里几十个节点常常大半是死的，全列出来只会让人选到连不通的那个。
+ * 这里用同一个内核起一个临时实例（带控制口、不绑网卡也不需要），
+ * 逐节点问一次延迟，只把真正能出网的留下。
+ *
+ * 用 mihomo 自己的 /proxies/<name>/delay 而不是自己开 socket：
+ * 节点的协议（hysteria2 / anytls / vless）各不相同，只有内核知道怎么握手。
+ */
+
+const PROBE_CTRL_PORT = 8326;
+const PROBE_MIXED_PORT = 8329;
+
+/** 结果缓存：同一份订阅在 TTL 内不重复测，避免每次开面板都等十几秒 */
+function healthFile() {
+  return path.join(DEV_DIR, "node-health.json");
+}
+
+function readHealth() {
+  const doc = readJsonSafe(healthFile());
+  if (!doc || !doc.updatedAt || !Array.isArray(doc.usable)) return null;
+  return doc;
+}
+
+function isHealthFresh(doc, ttlMs = 10 * 60 * 1000) {
+  if (!doc || !doc.updatedAt) return false;
+  return Date.now() - new Date(doc.updatedAt).getTime() < ttlMs;
+}
+
+/** 订阅内容变了（同样的地址重新拉过）也要作废旧的检测结果 */
+function subscriptionFingerprint() {
+  try {
+    const st = fs.statSync(SUB_CACHE);
+    return `${st.size}-${Math.round(st.mtimeMs)}`;
+  } catch (error) {
+    return "";
+  }
+}
+
+function delayOf(port, name, url, timeoutMs) {
+  return new Promise((resolve) => {
+    const q = `url=${encodeURIComponent(url)}&timeout=${timeoutMs}`;
+    const req = http.request(
+      {
+        host: "127.0.0.1",
+        port,
+        path: `/proxies/${encodeURIComponent(name)}/delay?${q}`,
+        headers: { Authorization: "Bearer probe" },
+        timeout: timeoutMs + 3000,
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+            resolve(typeof body.delay === "number" && body.delay > 0 ? body.delay : 0);
+          } catch (error) {
+            resolve(0);
+          }
+        });
+      }
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(0);
+    });
+    req.on("error", () => resolve(0));
+    req.end();
+  });
+}
+
+/**
+ * 逐节点测一遍，返回 [{ name, delay }]（只含可用的）与全量结果。
+ * 探测实例用一个临时端口，测完立刻收掉，不影响正在跑的 8319。
+ */
+async function probeNodes(profilePath, options = {}) {
+  const binPath = findMihomo();
+  if (!binPath) return { ok: false, reason: "没找到 mihomo 内核", usable: [], dead: [] };
+
+  const outlets = listOutlets(profilePath);
+  const targets = outlets.nodes.length ? outlets.nodes : [];
+  if (!targets.length) return { ok: false, reason: "订阅里没有单个节点可测", usable: [], dead: [] };
+
+  const raw = fs.readFileSync(profilePath, "utf8").replace(/\r/g, "");
+  const rulesIdx = raw.split("\n").findIndex((l) => /^rules:\s*$/.test(l));
+  const lines = raw.split("\n");
+  const body = rulesIdx > 0 ? lines.slice(0, rulesIdx) : lines;
+
+  // 探测实例：不绑网卡（要借用系统当前的出网路径去连节点），只留控制口
+  const DROP = /^(port|socks-port|redir-port|tproxy-port|mixed-port|allow-lan|mode|log-level|ipv6|unified-delay|tcp-concurrent|external-controller|external-ui|external-ui-name|external-ui-url|secret|tun|sniffer|experimental|profile|interface-name|dns):/;
+  const keep = [];
+  let skipping = false;
+  for (const line of body) {
+    if (/^---\s*$/.test(line)) continue;
+    const isTop = /^[a-zA-Z][\w-]*:/.test(line);
+    if (isTop) {
+      skipping = DROP.test(line);
+      if (skipping) continue;
+      keep.push(line);
+      continue;
+    }
+    if (skipping) continue;
+    keep.push(line);
+  }
+
+  const yaml = [
+    `mixed-port: ${PROBE_MIXED_PORT}`,
+    "allow-lan: false",
+    "mode: global",
+    "log-level: silent",
+    "ipv6: false",
+    `external-controller: 127.0.0.1:${PROBE_CTRL_PORT}`,
+    "secret: probe",
+    `interface-name: ${options.interfaceName || PHYSICAL_INTERFACE}`,
+  ]
+    .concat(DNS_BLOCK, keep, ["rules:", "  - MATCH,DIRECT"])
+    .join("\n");
+
+  const cfgPath = path.join(BIN_DIR, "mihomo-health.yaml");
+  try {
+    fs.mkdirSync(BIN_DIR, { recursive: true });
+    fs.writeFileSync(cfgPath, yaml + "\n", "utf8");
+  } catch (error) {
+    return { ok: false, reason: "写探测配置失败", usable: [], dead: [] };
+  }
+
+  let child;
+  try {
+    child = spawn(binPath, ["-f", cfgPath], { cwd: BIN_DIR, windowsHide: true, stdio: "ignore" });
+    child.on("error", () => {});
+
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      if (await portOpen(PROBE_CTRL_PORT)) break;
+      await sleep(300);
+    }
+    if (!(await portOpen(PROBE_CTRL_PORT))) {
+      return { ok: false, reason: "探测内核没起来", usable: [], dead: [] };
+    }
+
+    const url = options.url || "https://www.gstatic.com/generate_204";
+    const timeout = options.timeout || 5000;
+    const results = [];
+
+    // 并发测，太快会让本机代理端口堆积，分四路
+    const lanes = 4;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < targets.length) {
+        const name = targets[cursor];
+        cursor += 1;
+        const delay = await delayOf(PROBE_CTRL_PORT, name, url, timeout);
+        results.push({ name, delay });
+      }
+    };
+    await Promise.all(Array.from({ length: lanes }, worker));
+
+    const usable = results.filter((r) => r.delay > 0).sort((a, b) => a.delay - b.delay);
+    const dead = results.filter((r) => !r.delay).map((r) => r.name);
+
+    const doc = {
+      ok: true,
+      updatedAt: new Date().toISOString(),
+      fingerprint: subscriptionFingerprint(),
+      profile: profilePath,
+      usable,
+      dead,
+      tested: results.length,
+    };
+    try {
+      fs.mkdirSync(DEV_DIR, { recursive: true });
+      fs.writeFileSync(healthFile(), JSON.stringify(doc, null, 2), "utf8");
+    } catch (error) {
+      // 缓存写不进去不影响返回值
+    }
+    log(`节点检测完成：可用 ${usable.length} / 共 ${results.length}`);
+    return doc;
+  } catch (error) {
+    return { ok: false, reason: String(error && error.message ? error.message : error), usable: [], dead: [] };
+  } finally {
+    if (child && child.pid) killTree(child.pid);
+    try {
+      fs.unlinkSync(cfgPath);
+    } catch (error) {
+      // 忽略
+    }
+  }
+}
+
+/** 有缓存且没过期就直接用，否则返回 null（由调用方决定要不要重新测） */
+function cachedHealthy(profilePath, ttlMs) {
+  const doc = readHealth();
+  if (!doc) return null;
+  if (path.resolve(doc.profile || "") !== path.resolve(profilePath || "")) return null;
+  if (doc.fingerprint !== subscriptionFingerprint()) return null;
+  return isHealthFresh(doc, ttlMs) ? doc : null;
+}
+
+/**
+ * 插件自建的「自动切换」组名。
+ *
+ * 订阅里通常已经有一个「自动选择」，但那是订阅方定义的，候选集和服务商
+ * 绑死，选到死的节点也没人管。这里另外造一个只认实测可用节点的 group，
+ * 由内核按 url-test 每 60 秒重排，最快的那个自动上位；某个节点挂了，
+ * 下一次健康检查就把它从候选里摘掉，流量自动落到下一个。
+ */
+const AUTO_NAME = "⚡ 自动切换（最快可用）";
+
+function isAutoDialer(name) {
+  return String(name || "") === AUTO_NAME;
+}
+
+/** 订阅里叫「自动选择」的那个组——用户选它时仍然按订阅方定义走 */
+function subscriptionAutoGroup(outlets) {
+  return outlets.groups.find((g) => /自动选择|自动|auto/i.test(g)) || "";
+}
+
+/** 默认出口：有可用节点时首选自建自动切换；用户显式选了某一项且该项在当前候选里则尊重；其次才是订阅自带的组/节点 */
+function pickDialer(outlets, preferred, options = {}) {
   const all = [...outlets.groups, ...outlets.nodes];
-  if (preferred && all.includes(preferred)) return preferred;
+  if (preferred && (all.includes(preferred) || isAutoDialer(preferred))) return preferred;
+  if (options.autoAvailable) return AUTO_NAME;
   const auto = outlets.groups.find((g) => /自动选择|自动|auto/i.test(g));
   if (auto) return auto;
   if (outlets.groups.length) return outlets.groups[0];
@@ -460,7 +733,7 @@ function pickDialer(outlets, preferred) {
  * 保留 proxies / proxy-groups，丢掉端口、外部控制器、DNS 段，
  * 规则换成"只给 Google/AI 域名走指定出口，其余 MATCH,DIRECT"。
  */
-function buildRuntimeConfig(profilePath, preferredDialer) {
+function buildRuntimeConfig(profilePath, preferredDialer, options = {}) {
   const raw = fs.readFileSync(profilePath, "utf8").replace(/\r/g, "");
   const lines = raw.split("\n");
 
@@ -468,8 +741,15 @@ function buildRuntimeConfig(profilePath, preferredDialer) {
   const body = rulesIdx > 0 ? lines.slice(0, rulesIdx) : lines;
 
   const outlets = listOutlets(profilePath);
-  const dialer = pickDialer(outlets, preferredDialer);
-  if (!dialer) throw new Error("订阅里找不到可用的代理组或节点");
+
+  // 「自动切换」组：候选只放实测可用的节点，交给内核按延迟排序。
+  // 没有健康数据时不注入，免得把整份配置搞成没有候选的空组。
+  const healthy = options.healthy || cachedHealthy(profilePath);
+  const usableNames = healthy ? healthy.usable.map((u) => u.name) : [];
+  const autoAvailable = Boolean(usableNames.length);
+
+  const dialer = pickDialer(outlets, preferredDialer, { autoAvailable });
+  if (!dialer && !isAutoDialer(preferredDialer)) throw new Error("订阅里找不到可用的代理组或节点");
 
   // 这些键由下方 header 统一给出，原文里的必须丢掉，否则 YAML 重复顶层键会被内核拒绝
   const DROP_TOP =
@@ -479,6 +759,7 @@ function buildRuntimeConfig(profilePath, preferredDialer) {
   const keep = [];
   let skipping = false;
   for (const line of body) {
+    if (/^---\s*$/.test(line)) continue;
     const isTop = /^[a-zA-Z][\w-]*:/.test(line);
     if (isTop) {
       if (DROP_TOP.test(line)) {
@@ -501,14 +782,35 @@ function buildRuntimeConfig(profilePath, preferredDialer) {
     "log-level: warning",
     "ipv6: false",
     "unified-delay: true",
-  ];
+    `interface-name: ${options.interfaceName || PHYSICAL_INTERFACE}`,
+  ].concat(DNS_BLOCK);
+
+  const extraGroups = [];
+  if (usableNames.length) {
+    const q = (s) => `"${s.replace(/"/g, '\\"')}"`;
+    extraGroups.push(
+      [
+        `- name: ${q(AUTO_NAME)}`,
+        "  type: url-test",
+        '  url: https://www.gstatic.com/generate_204',
+        "  interval: 60",
+        "  tolerance: 30",
+        "  lazy: false",
+        "  proxies:",
+        ...usableNames.map((n) => `  - ${q(n)}`),
+      ].join("\n")
+    );
+  }
 
   // 出口名可能带 emoji 与空格，整条规则用双引号包起来最稳
+  const effectiveDialer = isAutoDialer(dialer) && usableNames.length ? AUTO_NAME : dialer;
   const rules = ["rules:"];
-  for (const s of PROXY_SUFFIXES) rules.push(`  - "DOMAIN-SUFFIX,${s},${dialer}"`);
+  for (const s of PROXY_SUFFIXES) rules.push(`  - "DOMAIN-SUFFIX,${s},${effectiveDialer}"`);
   rules.push("  - MATCH,DIRECT");
 
-  return { yaml: header.concat(keep, rules).join("\n") + "\n", dialer, outlets };
+  // 自建组要插在 proxy-groups 之后、rules 之前
+  const text = header.concat(keep, extraGroups, rules).join("\n") + "\n";
+  return { yaml: text, dialer: effectiveDialer, outlets, autoAvailable: Boolean(usableNames.length) };
 }
 
 function portOpen(port) {
@@ -682,13 +984,33 @@ function describe() {
   const prefs = readPrefs();
   const status = readStatus();
   const subUrl = readSubscriptionUrl();
+
+  // 节点列表只给可用的：没测过就先用缓存，缓存也没有就原样返回（面板会提示去测一次）
+  const health = profile ? cachedHealthy(profile, 30 * 60 * 1000) : null;
+  const usable = health ? health.usable : [];
+  const visibleNodes = health ? usable.map((u) => u.name) : outlets.nodes;
+  const delayOf = (name) => {
+    const hit = usable.find((u) => u.name === name);
+    return hit ? hit.delay : 0;
+  };
+
   return {
     profile,
     binPath,
     clashDirs: discoverClashDirs().map((c) => c.dir),
     groups: outlets.groups,
-    nodes: outlets.nodes,
-    selected: pickDialer(outlets, prefs.dialer),
+    nodes: visibleNodes,
+    nodeDelays: visibleNodes.map((n) => ({ name: n, delay: delayOf(n) })),
+    hiddenNodes: health ? health.dead.length : 0,
+    health: health
+      ? { updatedAt: health.updatedAt, tested: health.tested, usable: usable.length, dead: health.dead.length }
+      : null,
+    // 插件自建的自动切换：候选来自实测可用节点，不是订阅里的组
+    autoName: AUTO_NAME,
+    autoAvailable: Boolean(usable.length),
+    selected: pickDialer({ groups: outlets.groups, nodes: visibleNodes }, prefs.dialer, {
+      autoAvailable: Boolean(usable.length),
+    }),
     prefsDialer: prefs.dialer || "",
     status,
     port: EGRESS_PORT,
@@ -722,7 +1044,7 @@ async function prepare(options = {}) {
   const prefs = readPrefs();
   let built;
   try {
-    built = buildRuntimeConfig(profile, prefs.dialer || options.dialer);
+    built = buildRuntimeConfig(profile, prefs.dialer || options.dialer, options);
     fs.mkdirSync(BIN_DIR, { recursive: true });
     fs.writeFileSync(RUNTIME_CFG, built.yaml, "utf8");
   } catch (error) {
@@ -789,6 +1111,11 @@ module.exports = {
   readSubscriptionUrl,
   maskSubscription,
   activeProfile,
+  probeNodes,
+  readHealth,
+  cachedHealthy,
+  AUTO_NAME,
+  isAutoDialer,
   EGRESS_PORT,
   PROXY_SUFFIXES,
   _internals: {

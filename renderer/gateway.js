@@ -22,6 +22,7 @@
     // 订阅输入框：草稿留在 state 里，重渲染时不至于把用户刚粘进去的地址清空
     egressSubDraft: "",
     egressSubBusy: false,
+    egressHealthBusy: false,
     flashTimer: null,
     flashArmed: "",
   };
@@ -434,6 +435,18 @@
 
     const sel = el("select", "gw-eg-select");
     const current = state.egressPick || e.selected || "";
+
+    // 「自动切换」是插件自己造的组，不是订阅里那个：候选只有实测可用的节点，
+    // 内核每 60 秒按延迟重排，某个节点挂了就自动落到下一个。
+    if (e.autoAvailable) {
+      const auto = document.createElement("option");
+      auto.value = e.autoName;
+      auto.textContent = `${e.autoName} · 推荐`;
+      if (current === e.autoName) auto.selected = true;
+      sel.append(auto);
+    }
+
+    const delays = new Map((e.nodeDelays || []).map((n) => [n.name, n.delay]));
     const addGroup = (title, items) => {
       if (!items.length) return;
       const og = document.createElement("optgroup");
@@ -441,22 +454,39 @@
       for (const it of items) {
         const o = document.createElement("option");
         o.value = it;
-        o.textContent = it;
+        const ms = delays.get(it);
+        o.textContent = ms ? `${it} — ${ms} ms` : it;
         if (it === current) o.selected = true;
         og.append(o);
       }
       sel.append(og);
     };
-    addGroup("代理组", groups);
-    addGroup("单个节点", nodes);
+    addGroup("订阅里的组", groups);
+    addGroup(`可用节点（${nodes.length}）`, nodes);
 
     const apply = el("button", "gw-btn gw-btn-primary", state.egressBusy ? "切换中…" : "应用");
     apply.type = "button";
     apply.disabled = Boolean(state.egressBusy);
     apply.addEventListener("click", () => pickEgress(sel.value));
 
-    row.append(sel, apply);
+    const recheck = el("button", "gw-btn", state.egressHealthBusy ? "检测中…" : "重测节点");
+    recheck.type = "button";
+    recheck.disabled = Boolean(state.egressHealthBusy);
+    recheck.addEventListener("click", () => refreshHealth());
+
+    row.append(sel, apply, recheck);
     box.append(row);
+
+    // 测出来的结论要看得见：多少可用、筛掉了多少、什么时候测的
+    const h = e.health;
+    if (h) {
+      const when = new Date(h.updatedAt);
+      const hhmm = `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
+      const parts = [`可用 ${h.usable} / 共 ${h.tested}`, `已隐藏 ${h.dead} 个连不通的节点`, `${hhmm} 检测`];
+      box.append(el("p", "gw-hint", parts.join(" · ")));
+    } else {
+      box.append(el("p", "gw-hint", "还没测过节点可用性：点「重测节点」筛掉连不通的，再选线路。"));
+    }
 
     box.append(el("p", "gw-hint", `节点来源 ${e.subscriptionSource === "subscription" ? "订阅缓存" : "Clash 配置"}：${e.profile}`));
     if (e.binPath) box.append(el("p", "gw-hint", `内核 ${e.binPath}`));
@@ -737,6 +767,33 @@
         await load(false);
         render();
       }, 3000);
+    }
+  }
+
+  // 重测节点：把连不通的筛掉后刷新列表，用户再选线路
+  async function refreshHealth() {
+    if (state.egressHealthBusy) return;
+    state.egressHealthBusy = true;
+    state.error = "";
+    state.flash = "正在逐个节点测速，几十个节点大约要十几秒…";
+    render();
+    try {
+      const res = await invoke("gateway.egressHealth");
+      const h = res && res.health;
+      if (h && h.ok) {
+        state.flash = `检测完成：可用 ${h.usable.length} 个，隐藏 ${h.dead.length} 个连不通的。`;
+        state.egressPick = "";
+      } else {
+        state.error = `检测失败：${(h && h.reason) || "未知原因"}`;
+        state.flash = "";
+      }
+    } catch (error) {
+      state.error = `检测失败：${(error && error.message) || error}`;
+      state.flash = "";
+    } finally {
+      state.egressHealthBusy = false;
+      await load(false);
+      render();
     }
   }
 
