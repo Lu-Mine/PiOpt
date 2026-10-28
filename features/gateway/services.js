@@ -23,23 +23,6 @@ async function readSettings() {
   }
 }
 
-async function saveConnection(kind, values) {
-  const settings = await readSettings();
-  const current = settings.gatewayConnections && typeof settings.gatewayConnections === "object"
-    ? settings.gatewayConnections
-    : {};
-  const previous = current[kind] && typeof current[kind] === "object" ? current[kind] : {};
-  const next = { ...current, [kind]: { ...previous } };
-  for (const field of ["username", "password"]) {
-    if (typeof values[field] === "string") next[kind][field] = values[field];
-  }
-  if (kind === "cp" && typeof values.managementKey === "string") {
-    next[kind].managementKey = values.managementKey;
-  }
-  await pi.plugin.setSettings({ gatewayConnections: next });
-  return next[kind];
-}
-
 function localManagementKey() {
   try {
     const yaml = fs.readFileSync(path.join(GATEWAY_DIR, "cliproxy", "config.yaml"), "utf8");
@@ -50,24 +33,16 @@ function localManagementKey() {
     return "";
   }
 }
-async function cpAuth() {
-  const saved = await readSettings();
-  const configured = saved.gatewayConnections && saved.gatewayConnections.cp;
-  return {
-    username: configured && configured.username || "",
-    password: configured && configured.password || "",
-    managementKey: configured && configured.managementKey || localManagementKey(),
-  };
+// 管理密钥只从本机 config.yaml 读，没有就让它报缺密钥：不需要用户手填。
+function cpAuth() {
+  return { managementKey: localManagementKey() };
 }
 
 
 async function cpRequest(pathname, options = {}) {
-  const auth = await cpAuth();
+  const auth = cpAuth();
   const headers = { Accept: "application/json", ...(options.headers || {}) };
   if (auth.managementKey) headers.Authorization = `Bearer ${auth.managementKey}`;
-  if (auth.username || auth.password) {
-    headers.Authorization = `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString("base64")}`;
-  }
   const body = options.body === undefined ? undefined : JSON.stringify(options.body);
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(CP_BASE + MGMT + pathname, {
@@ -198,25 +173,33 @@ async function antigravityQuota(force = false) {
   }));
 }
 
-async function wbAuth(login = false) {
+// wb2api 的口令不需要用户填：先试默认口令，失败再试历史保存的那一个。
+async function wbCandidates() {
   const settings = await readSettings();
   const saved = settings.gatewayConnections && settings.gatewayConnections.wb || {};
-  if (wbSession && !login) return wbSession;
-  const password = String(saved.password || "admin");
-  const response = await fetch(WB_BASE + "/panel/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-    signal: AbortSignal.timeout(10000),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.token) {
-    const error = new Error(result.error && result.error.message || "wb2api 面板密码错误或服务未就绪");
-    error.status = response.status;
-    throw error;
+  return [...new Set(["admin", String(saved.password || "")].filter(Boolean))];
+}
+
+async function wbAuth() {
+  if (wbSession) return wbSession;
+  let lastError = null;
+  for (const password of await wbCandidates()) {
+    const response = await fetch(WB_BASE + "/panel/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.ok && result.token) {
+      wbSession = result.token;
+      return wbSession;
+    }
+    lastError = new Error(result.error && result.error.message || "wb2api 面板口令不匹配或服务未就绪");
+    lastError.status = response.status;
+    if (response.status !== 401) break;
   }
-  wbSession = result.token;
-  return wbSession;
+  throw lastError || new Error("wb2api 面板登录失败");
 }
 
 async function wbRequest(pathname, options = {}, retry = true) {
@@ -243,24 +226,13 @@ async function wbRequest(pathname, options = {}, retry = true) {
   return result;
 }
 
-function wbConnection(saved) {
-  return {
-    configured: Boolean(saved && saved.password),
-    username: saved && saved.username || "",
-    passwordSet: Boolean(saved && saved.password),
-    defaultPassword: !(saved && saved.password),
-  };
+// 面板状态只报「能不能连上」，不暴露口令也不要求填写。
+function wbConnection() {
+  return { auth: "panel-session" };
 }
 
-async function cpConnection() {
-  const saved = await cpAuth();
-  return {
-    configured: Boolean(saved.managementKey || saved.username || saved.password),
-    username: saved.username,
-    passwordSet: Boolean(saved.password),
-    managementKeySet: Boolean(saved.managementKey),
-    usingLocalConfig: !saved.managementKey,
-  };
+function cpConnection() {
+  return { auth: localManagementKey() ? "local-config" : "missing-key" };
 }
 
 function publicError(error) {
@@ -268,15 +240,13 @@ function publicError(error) {
 }
 
 async function overview() {
-  const settings = await readSettings();
-  const wbSaved = settings.gatewayConnections && settings.gatewayConnections.wb || {};
   const out = {
     ok: true,
     generatedAt: Date.now(),
     baseUrl: CP_BASE,
     panels: {
       cp: { name: "CLIProxyAPI", url: CP_BASE + "/management.html", connection: await cpConnection() },
-      wb: { name: "wb2api", url: WB_BASE + "/", connection: wbConnection(wbSaved) },
+      wb: { name: "wb2api", url: WB_BASE + "/", connection: wbConnection() },
     },
     protocols: [
       { id: "openai", label: "OpenAI", url: CP_BASE + "/v1" },
@@ -398,7 +368,6 @@ module.exports = {
   CP_BASE,
   WB_BASE,
   readSettings,
-  saveConnection,
   overview,
   usage,
   keyAction,

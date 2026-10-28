@@ -147,6 +147,8 @@
     return bar;
   }
 
+  // 凭据自动取：CLIProxyAPI 用本机 config.yaml 的密钥，wb2api 用面板会话。
+  // 这里只报状态与入口，不提供任何手填框。
   function panelConnection(kind) {
     const panel = state.data && state.data.panels && state.data.panels[kind];
     if (!panel) return el("div");
@@ -155,19 +157,16 @@
     head.append(el("strong", "", panel.name));
     head.append(button("打开面板", () => openExternal("panel", panel.url), { small: true }));
     box.append(head);
-    const fields = el("div", "gw-connection-fields");
-    const username = input(panel.connection.username, "账号（如有）", value => { state.drafts[`${kind}Username`] = value; });
-    username.value = state.drafts[`${kind}Username`] ?? panel.connection.username;
-    const password = input("", panel.connection.passwordSet ? "密码（已保存，留空保持不变）" : "密码（如有）", value => { state.drafts[`${kind}Password`] = value; }, { type: "password" });
-    password.value = state.drafts[`${kind}Password`] || "";
-    fields.append(username, password);
-    if (kind === "cp") {
-      const management = input("", panel.connection.managementKeySet ? "管理密钥（已保存，留空保持不变）" : "管理密钥（面板需要时填写）", value => { state.drafts.cpManagementKey = value; }, { type: "password" });
-      management.value = state.drafts.cpManagementKey || "";
-      fields.append(management);
-    }
-    fields.append(button("保存连接", () => saveConnection(kind), { small: true, disabled: state.actionBusy === `connection-${kind}` }));
-    box.append(fields);
+    const auth = panel.connection && panel.connection.auth;
+    const ready = auth !== "missing-key";
+    const state_ = el("span", `gw-panel-state ${ready ? "is-ok" : "is-off"}`);
+    state_.append(el("i", "ui-dot"), el("span", "", ready ? "凭据已自动读取" : "缺少管理密钥"));
+    state_.dataset.state = ready ? "ok" : "bad";
+    box.append(state_);
+    const note = el("p", "gw-hint", kind === "cp"
+      ? (ready ? "使用本机 config.yaml 的 management.secret-key" : "config.yaml 里没有 management.secret-key")
+      : "使用面板会话语义，先自动登录再读取数据");
+    box.append(note);
     return box;
   }
 
@@ -667,16 +666,6 @@
     try { await invoke("gateway.open", { kind, url }); }
     catch (error) { notify(`打开浏览器失败：${errorText(error)}`, true); }
   }
-
-  async function saveConnection(kind) {
-    await runAction(`connection-${kind}`, "gateway.connectionSave", {
-      kind,
-      username: state.drafts[`${kind}Username`] ?? "",
-      password: state.drafts[`${kind}Password`] || undefined,
-      ...(kind === "cp" ? { managementKey: state.drafts.cpManagementKey || undefined } : {}),
-    }, "连接信息已保存");
-  }
-
   async function runAction(id, channel, payload, message, refresh = true) {
     if (state.actionBusy) return;
     state.actionBusy = id;

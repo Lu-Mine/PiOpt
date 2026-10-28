@@ -23,12 +23,11 @@ PiOpt bundles three features in one plugin:
 
 - 连接: CLIProxyAPI (`:8317/management.html`) and wb2api (`:8318`) each get an
   "打开面板" button that hands the loopback URL to `shell.openExternal`; the
-  plugin never embeds either UI, so their own logins keep working. Saved
-  credentials live in this plugin's settings, and a blank password field means
-  "keep the stored one", never "clear it".
-- CLIProxyAPI 鉴权按优先级取：面板保存的管理密钥 → 本机 `config.yaml` 的
-  `management.secret-key`。密钥从不写入页面、日志或截图；缺密钥时如实显示
-  `missing management key`，不伪造成功。
+  plugin never embeds either UI, so their own logins keep working.
+- 凭据全自动，页面上没有任何账号/口令填空：CLIProxyAPI 直接读本机
+  `config.yaml` 的 `management.secret-key`；wb2api 用面板默认口令自动登录，
+  401 时再试历史保存的那个。密钥从不写入页面、日志或截图；读不到就如实显示
+  「缺少管理密钥」，不伪造成功，也不要让用户去填。
 - API Key 的备注名只存在本插件设置里（按密钥 sha256 前 16 位索引），不写回
   CLIProxyAPI 配置；添加与删除是直接 PUT 整个 `access.api-keys` 数组。
 - 用量: Antigravity 的三个分类（Gemini / Claude·GPT / Argon 4）来自

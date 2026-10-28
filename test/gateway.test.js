@@ -200,7 +200,7 @@ test("gateway page keeps only the requested sections and sticky process status",
   ]) {
     assert.ok(script.includes(text), text);
   }
-  for (const removed of ["egress", "runCredits", "creditsCard", "Clash 出口", "发送到已停用"]) {
+  for (const removed of ["egress", "runCredits", "creditsCard", "Clash 出口", "发送到已停用", "保存连接", "gw-connection-fields", "管理密钥（"]) {
     assert.equal(script.includes(removed), false, removed);
   }
   assert.match(css, /\.gw-statusbar\s*\{[^}]*position:\s*sticky/s);

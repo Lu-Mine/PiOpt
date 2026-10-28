@@ -148,16 +148,19 @@
   font-size: var(--text-md-plus);
 }
 
-.gw-connection-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.gw-panel-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   margin-top: 14px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
 }
 
-.gw-connection-fields .ui-btn {
-  align-self: end;
-}
+.gw-panel-state.is-ok .ui-dot { background: var(--ds-success); }
+.gw-panel-state.is-off { color: var(--ds-warning); }
+.gw-panel-state.is-off .ui-dot { background: var(--ds-warning); }
+.gw-panel-connection .gw-hint { margin-top: 8px; color: var(--ds-text-faint); font-size: var(--text-xs-plus); }
 
 .gw-input {
   width: 100%;

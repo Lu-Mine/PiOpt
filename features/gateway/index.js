@@ -218,9 +218,6 @@ async function onPanelInvoke(channel, payload = {}) {
       return services.usage(payload.range);
     case "gateway.quota":
       return services.antigravity();
-    case "gateway.connectionSave":
-      if (!["cp", "wb"].includes(payload.kind)) throw new Error("不支持的面板");
-      return { ok: true, connection: await services.saveConnection(payload.kind, payload) };
     case "gateway.open":
       if (payload.kind === "panel") {
         const url = localHttpUrl(payload.url);

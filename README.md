@@ -34,13 +34,13 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 | 区块 | 内容 |
 |---|---|
-| **一、连接** | CLIProxyAPI（`:8317/management.html`）与 wb2api（`:8318`）各有账号/密码输入与「打开面板」按钮（交给系统默认浏览器，插件不内嵌它们的界面）；四种客户端协议地址（`/v1`、`/v1/messages`、`/v1/responses`、`/v1beta/models`）可一键复制；CLIProxyAPI 的 API Key 可添加、生成、复制、改备注名、删除；下面是两家支持的模型清单，每个模型带自己的品牌图标。 |
+| **一、连接** | CLIProxyAPI（`:8317/management.html`）与 wb2api（`:8318`）各有一张状态卡：凭据自动读取的结果（已读/缺密钥）与「打开面板」按钮（交给系统默认浏览器，插件不内嵌它们的界面）。没有账号、密码之类的填空。四种客户端协议地址（`/v1`、`/v1/messages`、`/v1/responses`、`/v1beta/models`）可一键复制；CLIProxyAPI 的 API Key 可添加、生成、复制、改备注名、删除；下面是两家支持的模型清单，每个模型带自己的品牌图标。 |
 | **二、上游** | CLIProxyAPI 凭证：逐个刷新、全部刷新、OAuth 添加、删除。wb2api 账号池：OAuth 授权（国际版/国内版）、全部签到、刷新所有积分统计、刷新所有凭证、删除；每行左侧是账号名与可用状态，中间是余额/总额与当日 Token，最右侧是启用开关。表头每一列都能点一下切换升序/降序。 |
 | **三、用量** | Antigravity 三个分类的剩余百分比（Gemini / Claude·GPT / Argon 4）；wb2api 号池条按「剩余 / 总额」画，另一半染成「已使用」。看板按今日 / 近 3 日 / 本周 / 本月 / 近 30 天 / 近一年取数：总 Token、请求与成功率、生成速度与首字、缓存命中、积分与等价花费，Token 时序图（可切 Token / 请求数 / 吞吐量）、最近请求、按模型 / 账号 / API Key 的用量明细。 |
 
 几条实现上的边界：
 
-- **密钥不落页面**：CLIProxyAPI 的管理密钥从插件设置读，缺省时读本机 `config.yaml` 的 `management.secret-key`；两者都没有就如实显示 `missing management key`。密码框留空表示「保持已存的值」，不会把已有口令清掉。
+- **凭据全自动**：CLIProxyAPI 的管理密钥直接读本机 `config.yaml` 的 `management.secret-key`；wb2api 用面板默认口令自动登录、失败再试历史保存的那个。两者都不需要、也没有地方让用户手填；读不到就如实显示「缺少管理密钥」。 |
 - **备注名存本地**：API Key 的备注按密钥 sha256 前 16 位索引，存在插件设置里，不写回 CLIProxyAPI 配置；增删是直接 PUT 整个 `access.api-keys` 数组。
 - **取不到就说取不到**：Antigravity 配额来自 `retrieveUserQuotaSummary`，网络不通时显示「暂无配额数据」，不会画成 0%。
 - **只读看板**：用量全部来自 wb2api 的 `/usage/analytics`、`/usage/timeseries`、`/usage/recent`，图表是原生 SVG，没有图表库。
