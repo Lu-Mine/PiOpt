@@ -23,26 +23,42 @@ async function readSettings() {
   }
 }
 
-function localManagementKey() {
+const BCRYPT_KEY = /^\$2[aby]\$/;
+
+// CLIProxyAPI 启动时会把 config.yaml 里的明文管理密钥哈希后回写，哈希无法反推明文，
+// 直接拿去请求必然 401；连续失败会让管理接口按 IP 临时封禁，所以绝不能把哈希当密钥发出去。
+async function localManagementKey() {
+  const settings = await readSettings();
+  const configured = typeof settings.gatewayManagementKey === "string" ? settings.gatewayManagementKey.trim() : "";
+  if (configured) return configured;
   try {
     const yaml = fs.readFileSync(path.join(GATEWAY_DIR, "cliproxy", "config.yaml"), "utf8");
     const block = yaml.match(/^management:\s*\n((?:[ \t]+.*\n?)*)/m);
     const match = block && block[1].match(/^[ \t]+secret-key:[ \t]*["']?([^\s"']+)/m);
-    return match ? match[1] : "";
+    const value = match ? match[1] : "";
+    return BCRYPT_KEY.test(value) ? "" : value;
   } catch {
     return "";
   }
 }
-// 管理密钥只从本机 config.yaml 读，没有就让它报缺密钥：不需要用户手填。
-function cpAuth() {
-  return { managementKey: localManagementKey() };
+
+// 取密钥顺序：插件设置里的明文 > config.yaml 里尚未被哈希的明文。
+async function cpAuth() {
+  return { managementKey: await localManagementKey() };
+}
+
+function missingKeyError() {
+  const error = new Error("CLIProxyAPI: 缺少管理密钥。config.yaml 的 secret-key 是 bcrypt 哈希，无法用于认证；请在 PiOpt 设置里填写「网关管理密钥」明文，或把 config.yaml 改回明文后重启网关。");
+  error.status = 0;
+  return error;
 }
 
 
 async function cpRequest(pathname, options = {}) {
-  const auth = cpAuth();
+  const auth = await cpAuth();
+  if (!auth.managementKey) throw missingKeyError();
   const headers = { Accept: "application/json", ...(options.headers || {}) };
-  if (auth.managementKey) headers.Authorization = `Bearer ${auth.managementKey}`;
+  headers.Authorization = `Bearer ${auth.managementKey}`;
   const body = options.body === undefined ? undefined : JSON.stringify(options.body);
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(CP_BASE + MGMT + pathname, {
@@ -231,8 +247,8 @@ function wbConnection() {
   return { auth: "panel-session" };
 }
 
-function cpConnection() {
-  return { auth: localManagementKey() ? "local-config" : "missing-key" };
+async function cpConnection() {
+  return { auth: (await localManagementKey()) ? "settings-or-config" : "missing-key" };
 }
 
 function publicError(error) {

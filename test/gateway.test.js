@@ -83,7 +83,7 @@ test("API keys support add, label and delete with hashed ids", async t => {
   const writes = [];
   global.pi = {
     plugin: {
-      settings: {},
+      settings: { gatewayManagementKey: "test-management-key" },
       async getSettings() { return this.settings; },
       async setSettings(patch) { Object.assign(this.settings, patch); },
     },
@@ -123,7 +123,7 @@ test("API keys support add, label and delete with hashed ids", async t => {
 
 test("credential and account actions preserve upstream request contracts", async t => {
   const calls = [];
-  global.pi = { plugin: { getSettings: async () => ({}) } };
+  global.pi = { plugin: { getSettings: async () => ({ gatewayManagementKey: "test-management-key" }) } };
   const service = await mockServices(t, async (request, response) => {
     const payload = await readBody(request);
     calls.push({ method: request.method, url: request.url, payload, panel: request.headers["x-panel-token"] });
@@ -166,6 +166,25 @@ test("credential and account actions preserve upstream request contracts", async
   assert.deepEqual(calls[11].payload, { platform: "CLI", realm: "cn" });
   assert.equal(calls[6].panel, "session");
   await assert.rejects(() => service.cpAction({ action: "oauthStart", provider: "unknown" }), /不支持/);
+});
+
+// 回归：config.yaml 的 secret-key 被 CLIProxyAPI 哈希回写后，若还把它当明文发出去，
+// 每次 401 都会累计失败次数，最终把本机 IP 封禁 30 分钟（曾真实发生）。
+test("bcrypt management key is never sent, so no request can trip the IP ban", async t => {
+  const hits = [];
+  global.pi = { plugin: { getSettings: async () => ({}) } };
+  const service = await mockServices(t, async (request, response) => {
+    hits.push(request.url);
+    if (request.url === "/v1/models") return json(response, { data: [] });
+    if (request.url === "/panel/login") return json(response, { token: "panel" });
+    if (request.url.startsWith("/accounts")) return json(response, { accounts: [] });
+    json(response, { files: [] });
+  });
+  t.after(() => { delete global.pi; });
+
+  await assert.rejects(() => service.cpAction({ action: "refresh", all: true }), /缺少管理密钥/);
+  await service.overview();
+  assert.deepEqual(hits.filter(url => url.includes("/v8/management")), []);
 });
 
 test("usage supports all six ranges and returns real analytics shapes", async t => {
