@@ -195,8 +195,8 @@ test("gateway page keeps only the requested sections and sticky process status",
   const script = fs.readFileSync(path.join(root, "renderer/gateway.js"), "utf8");
   const css = fs.readFileSync(path.join(root, "renderer/gateway.css"), "utf8");
   for (const text of [
-    "一、连接", "二、上游", "三、用量", "重启网关", "全部签到",
-    "刷新所有积分", "刷新所有凭证", "OAuth 授权", "近 30 天",
+    "连接", "上游", "用量", "重启", "全部签到",
+    "刷新积分", "刷新凭证", "OAuth 授权", "近 30 天",
   ]) {
     assert.ok(script.includes(text), text);
   }

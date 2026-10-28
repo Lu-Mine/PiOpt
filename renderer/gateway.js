@@ -3,26 +3,23 @@
 
   const bridge = window.pluginBridge;
   const root = () => document.getElementById("view-gateway");
+
   const state = {
-    booted: false,
-    timer: null,
-    busy: false,
-    status: null,
-    data: null,
-    usage: null,
-    quota: null,
-    quotaLoading: false,
-    range: "today",
-    metric: "tokens",
-    dimension: "model",
-    sortKey: "name",
-    sortDir: 1,
-    actionBusy: "",
-    error: "",
-    flash: "",
-    oauth: null,
-    drafts: {},
+    booted: false, timer: null, busy: false,
+    status: null, data: null, usage: null, quota: null, quotaLoading: false,
+    range: "today", metric: "tokens", dimension: "model",
+    sortKey: "name", sortDir: 1,
+    actionBusy: "", error: "", flash: "",
+    oauth: null, drafts: {},
   };
+
+  const RANGES = [["today", "今日"], ["d3", "近 3 日"], ["week", "本周"], ["month", "本月"], ["d30", "近 30 天"], ["all", "近一年"]];
+  const METRICS = [["tokens", "Token"], ["requests", "请求数"], ["throughput", "吞吐量"]];
+  const DIMENSIONS = [["model", "模型"], ["account", "账号"], ["key", "API Key"]];
+  const CP_PROVIDERS = ["antigravity", "claude", "codex", "gemini"];
+  const WB_PROVIDERS = [["intl", "国际版"], ["cn", "国内版"]];
+
+  // ---- 小工具 -----------------------------------------------------------------
 
   function invoke(channel, payload) {
     if (!bridge || typeof bridge.invoke !== "function") return Promise.reject(new Error("plugin bridge 不可用"));
@@ -36,24 +33,73 @@
     return node;
   }
 
-  function button(text, handler, options = {}) {
-    const node = el("button", `ui-btn ${options.primary ? "ui-btn-primary" : ""} ${options.small ? "ui-btn-sm" : ""} ${options.danger ? "ui-btn-danger" : ""}`, text);
+  function svgIcon(paths, size = 16) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", size); svg.setAttribute("height", size);
+    svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.7"); svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round"); svg.setAttribute("aria-hidden", "true");
+    for (const d of paths) {
+      const p = document.createElementNS(svg.namespaceURI, "path");
+      p.setAttribute("d", d);
+      svg.append(p);
+    }
+    return svg;
+  }
+
+  const I = {
+    external: () => svgIcon(["M14 4h6v6", "M20 4 11 13", "M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"]),
+    copy: () => svgIcon(["M9 9h10v12H9z", "M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"]),
+    plus: () => svgIcon(["M12 5v14", "M5 12h14"]),
+    refresh: () => svgIcon(["M21 12a9 9 0 1 1-2.64-6.36", "M21 3v6h-6"]),
+    trash: () => svgIcon(["M4 7h16", "M9 7V4h6v3", "M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13", "M10 11v6M14 11v6"]),
+    key: () => svgIcon(["M15 9a6 6 0 1 0-5.2 8.97L12 20v-2h2v-2h2v-2h2l2-2V9z", "M16.5 7.5h.01"]),
+    check: () => svgIcon(["M20 6 9 17l-5-5"]),
+    x: () => svgIcon(["M18 6 6 18", "M6 6l12 12"]),
+    link: () => svgIcon(["M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71", "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"]),
+    bolt: () => svgIcon(["M13 2 3 14h7l-1 8 11-13h-8z"]),
+    sort: () => svgIcon(["M9 9l3-3 3 3", "M9 15l3 3 3-3"], 13),
+    up: () => svgIcon(["M9 15l3-3 3 3"], 13),
+    down: () => svgIcon(["M9 9l3 3 3-3"], 13),
+  };
+
+  function actionButton(label, iconName, handler, options = {}) {
+    const node = el("button", `ui-btn ui-btn-sm ${options.primary ? "ui-btn-primary" : ""} ${options.danger ? "ui-btn-danger" : ""}`);
     node.type = "button";
-    node.disabled = Boolean(options.disabled);
+    if (iconName && I[iconName]) node.append(I[iconName]());
+    if (label) node.append(el("span", "", label));
+    else node.setAttribute("aria-label", options.aria || label);
+    if (options.aria) node.setAttribute("aria-label", options.aria);
     if (options.title) node.title = options.title;
+    node.disabled = Boolean(options.disabled);
     node.addEventListener("click", handler);
     return node;
   }
 
-  function input(value, placeholder, onInput, options = {}) {
+  function fieldInput(value, placeholder, onInput, options = {}) {
     const node = el("input", "gw-input");
     node.type = options.type || "text";
     node.value = value || "";
     node.placeholder = placeholder || "";
     node.autocomplete = "off";
     node.spellcheck = false;
+    if (options.aria) node.setAttribute("aria-label", options.aria);
     node.addEventListener("input", () => onInput(node.value));
     return node;
+  }
+
+  function segmented(items, current, onPick, label) {
+    const group = el("div", "gw-segmented");
+    if (label) group.setAttribute("role", "group"), group.setAttribute("aria-label", label);
+    for (const [id, text] of items) {
+      const node = el("button", current === id ? "is-active" : "", text);
+      node.type = "button";
+      node.setAttribute("aria-pressed", String(current === id));
+      node.addEventListener("click", () => onPick(id));
+      group.append(node);
+    }
+    return group;
   }
 
   function fmt(value, digits = 0) {
@@ -78,108 +124,11 @@
 
   function uptime(value) {
     const n = Number(value) || 0;
-    if (n < 3600) return `${Math.floor(n / 60)} 分`;
-    return `${Math.floor(n / 3600)} 时 ${Math.floor((n % 3600) / 60)} 分`;
+    if (n < 3600) return `${Math.floor(n / 60)} 分钟`;
+    return `${Math.floor(n / 3600)} 小时 ${Math.floor((n % 3600) / 60)} 分`;
   }
 
-  function errorText(error) {
-    return error && error.message ? error.message : String(error);
-  }
-
-  function notify(message, isError = false) {
-    if (isError) state.error = message;
-    else {
-      state.flash = message;
-      state.error = "";
-    }
-    render();
-  }
-
-  function toast() {
-    const text = state.error || state.flash;
-    if (!text) return null;
-    const box = el("div", `gw-toast ${state.error ? "is-error" : ""}`);
-    box.setAttribute("role", state.error ? "alert" : "status");
-    box.append(el("span", "", text));
-    const close = el("button", "gw-toast-close", "×");
-    close.type = "button";
-    close.setAttribute("aria-label", "关闭提示");
-    close.addEventListener("click", () => { state.error = ""; state.flash = ""; render(); });
-    box.append(close);
-    return box;
-  }
-
-  function section(id, title, subtitle, actions) {
-    const box = el("section", "gw-section");
-    box.id = id;
-    const head = el("header", "gw-section-head");
-    const copy = el("div", "gw-section-copy");
-    copy.append(el("h2", "", title));
-    if (subtitle) copy.append(el("p", "", subtitle));
-    head.append(copy);
-    if (actions && actions.length) {
-      const tools = el("div", "gw-section-actions");
-      tools.append(...actions);
-      head.append(tools);
-    }
-    box.append(head);
-    return box;
-  }
-
-  function statusBar() {
-    const status = state.status || {};
-    const bar = el("header", "gw-statusbar");
-    const dot = el("i", "ui-dot");
-    dot.dataset.live = String(Boolean(status.ok));
-    bar.append(dot, el("strong", "", status.ok ? "网关运行中" : "网关未运行"));
-    const meta = el("span", "gw-status-meta");
-    const parts = [];
-    if (status.supervisor) parts.push(`PID ${status.supervisor.pid}`, `已运行 ${uptime(status.supervisor.uptimeSeconds)}`);
-    if (status.lastError) parts.push(status.lastError);
-    meta.textContent = parts.join(" · ");
-    bar.append(meta);
-    const actions = el("div", "gw-status-actions");
-    actions.append(
-      button(state.busy ? "刷新中…" : "刷新", () => load(true), { small: true, disabled: state.busy }),
-      button(state.actionBusy === "restart" ? "重启中…" : "重启网关", restart, { small: true, disabled: state.actionBusy === "restart" }),
-    );
-    bar.append(actions);
-    return bar;
-  }
-
-  // 凭据自动取：CLIProxyAPI 用本机 config.yaml 的密钥，wb2api 用面板会话。
-  // 这里只报状态与入口，不提供任何手填框。
-  function panelConnection(kind) {
-    const panel = state.data && state.data.panels && state.data.panels[kind];
-    if (!panel) return el("div");
-    const box = el("article", "gw-panel-connection");
-    const head = el("div", "gw-panel-title");
-    head.append(el("strong", "", panel.name));
-    head.append(button("打开面板", () => openExternal("panel", panel.url), { small: true }));
-    box.append(head);
-    const auth = panel.connection && panel.connection.auth;
-    const ready = auth !== "missing-key";
-    const state_ = el("span", `gw-panel-state ${ready ? "is-ok" : "is-off"}`);
-    state_.append(el("i", "ui-dot"), el("span", "", ready ? "凭据已自动读取" : "缺少管理密钥"));
-    state_.dataset.state = ready ? "ok" : "bad";
-    box.append(state_);
-    const note = el("p", "gw-hint", kind === "cp"
-      ? (ready ? "使用本机 config.yaml 的 management.secret-key" : "config.yaml 里没有 management.secret-key")
-      : "使用面板会话语义，先自动登录再读取数据");
-    box.append(note);
-    return box;
-  }
-
-  function protocolRows() {
-    const box = el("div", "gw-protocols");
-    for (const protocol of (state.data && state.data.protocols) || []) {
-      const row = el("div", "gw-protocol-row");
-      row.append(el("span", "gw-protocol-label", protocol.label), el("code", "", protocol.url));
-      row.append(button("复制", () => copy(protocol.url), { small: true }));
-      box.append(row);
-    }
-    return box;
-  }
+  function errorText(error) { return error && error.message ? error.message : String(error); }
 
   function modelLogo(id) {
     const value = String(id || "").toLowerCase();
@@ -205,10 +154,107 @@
     return image;
   }
 
+  // ---- 顶栏 -------------------------------------------------------------------
+
+  function statusBar() {
+    const status = state.status || {};
+    const bar = el("header", "gw-statusbar");
+    const dot = el("i", "ui-dot");
+    dot.dataset.live = String(Boolean(status.ok));
+    bar.append(dot, el("strong", "", status.ok ? "网关运行中" : "网关未运行"));
+    if (status.supervisor) {
+      bar.append(el("span", "gw-status-meta", `PID ${status.supervisor.pid} · ${uptime(status.supervisor.uptimeSeconds)}`));
+    }
+    if (status.lastError) bar.append(el("span", "gw-status-error", status.lastError));
+    const actions = el("div", "gw-status-actions");
+    actions.append(
+      actionButton(state.busy ? "刷新中" : "刷新", "refresh", () => load(true), { disabled: state.busy }),
+      actionButton("重启", "bolt", restart, { disabled: state.actionBusy === "restart" }),
+    );
+    bar.append(actions);
+    return bar;
+  }
+
+  function toast() {
+    const text = state.error || state.flash;
+    if (!text) return null;
+    const box = el("div", `gw-toast ${state.error ? "is-error" : ""}`);
+    box.setAttribute("role", state.error ? "alert" : "status");
+    box.append(el("span", "", text));
+    box.append(actionButton("", "x", () => { state.error = ""; state.flash = ""; render(); }, { aria: "关闭提示" }));
+    return box;
+  }
+
+  // 主分区用 h2，子块用 h3：字号台阶是唯一需要的层级信号。
+  function sectionHead(title, tools, level = "h2") {
+    const head = el("header", "gw-section-head");
+    head.append(el(level, "", title));
+    if (tools && tools.length) {
+      const box = el("div", "gw-section-tools");
+      box.append(...tools);
+      head.append(box);
+    }
+    return head;
+  }
+
+  // ---- 一、连接 ---------------------------------------------------------------
+
+  function panelCard(kind) {
+    const panel = state.data.panels && state.data.panels[kind];
+    if (!panel) return null;
+    const ready = panel.connection.auth !== "missing-key";
+    const card = el("article", "gw-panel-card");
+    card.append(el("strong", "", panel.name));
+    const dot = el("i", "ui-dot");
+    dot.dataset.state = ready ? "ok" : "bad";
+    const state_ = el("span", "gw-panel-state");
+    state_.append(dot, el("span", "", ready ? "凭据就绪" : "缺密钥"));
+    card.append(state_);
+    card.append(actionButton("打开", "external", () => openExternal("panel", panel.url), { aria: `打开 ${panel.name} 面板` }));
+    return card;
+  }
+
+  function protocolsBlock() {
+    const box = el("div", "gw-protocols");
+    for (const p of state.data.protocols || []) {
+      const row = el("div", "gw-protocol-row");
+      row.append(el("span", "gw-protocol-label", p.label), el("code", "", p.url));
+      row.append(actionButton("复制", "copy", () => copy(p.url), { aria: `复制 ${p.label} 地址` }));
+      box.append(row);
+    }
+    return box;
+  }
+
+  function keysBlock() {
+    const box = el("section", "gw-block");
+    const head = sectionHead("API Key", [actionButton("生成并添加", "key", generateKey, { primary: true, disabled: state.actionBusy === "add-key" })], "h3");
+    box.append(head);
+    for (const key of state.data.keys || []) {
+      const row = el("div", "gw-key-row");
+      const name = fieldInput(state.drafts[`label-${key.id}`] ?? key.label, "备注名", value => { state.drafts[`label-${key.id}`] = value; }, { aria: "密钥备注名" });
+      name.addEventListener("change", () => runAction(`label-${key.id}`, "gateway.keys", { action: "label", id: key.id, label: name.value }, "备注已保存", false));
+      row.append(name, el("code", "gw-key-mask", key.mask));
+      row.append(actionButton("复制", "copy", () => copy(key.key), { aria: "复制 API Key" }));
+      row.append(actionButton("", "trash", () => confirmAction("删除这个 API Key？客户端将无法继续用它访问。", () => runAction(`delete-key-${key.id}`, "gateway.keys", { action: "delete", id: key.id }, "API Key 已删除")), { aria: "删除 API Key", danger: true }));
+      box.append(row);
+    }
+    const add = el("div", "gw-key-add");
+    const label = fieldInput(state.drafts.newKeyLabel || "", "备注名", value => { state.drafts.newKeyLabel = value; }, { aria: "新密钥备注名" });
+    const value = fieldInput(state.drafts.newKey || "", "粘贴新 API Key", value => { state.drafts.newKey = value; }, { type: "password", aria: "新 API Key" });
+    add.append(label, value, actionButton("添加", "plus", async () => {
+      if (!state.drafts.newKey) return notify("请先填写 API Key", true);
+      await runAction("add-key", "gateway.keys", { action: "add", key: state.drafts.newKey, label: state.drafts.newKeyLabel || "" }, "API Key 已添加");
+      state.drafts.newKey = "";
+      state.drafts.newKeyLabel = "";
+    }, { primary: true, disabled: state.actionBusy === "add-key" }));
+    box.append(add);
+    return box;
+  }
+
   function modelList(models, error) {
-    const box = el("div", "gw-model-list");
     if (error) return el("p", "gw-empty", error);
-    if (!models || !models.length) return el("p", "gw-empty", "暂无模型数据");
+    if (!models || !models.length) return el("p", "gw-empty", "暂无模型");
+    const box = el("div", "gw-model-list");
     for (const model of models) {
       const row = el("div", "gw-model-row");
       row.append(modelLogo(model.id), el("code", "", model.id));
@@ -217,75 +263,40 @@
     return box;
   }
 
-  function keysBlock() {
-    const box = el("div", "gw-block");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "CLIProxyAPI API Key"), el("span", "gw-count", String((state.data.keys || []).length)));
-    box.append(head);
-    for (const key of (state.data && state.data.keys) || []) {
-      const row = el("div", "gw-key-row");
-      const name = input(key.label, "备注名", value => { state.drafts[`label-${key.id}`] = value; });
-      name.value = state.drafts[`label-${key.id}`] ?? key.label;
-      name.addEventListener("change", () => runAction(`label-${key.id}`, "gateway.keys", { action: "label", id: key.id, label: name.value }, "备注已保存", false));
-      row.append(name, el("code", "gw-key-mask", key.mask));
-      row.append(button("复制", () => copy(key.key), { small: true }));
-      row.append(button("删除", () => confirmAction("确定删除这个 API Key？删除后客户端将无法继续用它访问。", () => runAction(`delete-key-${key.id}`, "gateway.keys", { action: "delete", id: key.id }, "API Key 已删除")), { small: true, danger: true }));
-      box.append(row);
-    }
-    const add = el("div", "gw-key-add");
-    const label = input("", "备注名（可选）", value => { state.drafts.newKeyLabel = value; });
-    label.value = state.drafts.newKeyLabel || "";
-    const value = input("", "粘贴新 API Key", value => { state.drafts.newKey = value; }, { type: "password" });
-    value.value = state.drafts.newKey || "";
-    add.append(label, value, button("生成并添加", async () => {
-      const bytes = new Uint8Array(36);
-      crypto.getRandomValues(bytes);
-      const key = `sk-${Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")}`;
-      await runAction("add-key", "gateway.keys", { action: "add", key, label: state.drafts.newKeyLabel || "" }, "已生成并添加 API Key");
-      state.drafts.newKey = "";
-      state.drafts.newKeyLabel = "";
-    }, { small: true, disabled: state.actionBusy === "add-key" }), button("添加", async () => {
-      if (!state.drafts.newKey) return notify("请先填写 API Key", true);
-      await runAction("add-key", "gateway.keys", { action: "add", key: state.drafts.newKey, label: state.drafts.newKeyLabel || "" }, "API Key 已添加");
-      state.drafts.newKey = "";
-      state.drafts.newKeyLabel = "";
-    }, { small: true, primary: true, disabled: state.actionBusy === "add-key" }));
-    box.append(add);
-    return box;
-  }
-
   function connectionSection() {
-    const box = section("gw-connection", "一、连接", "本机服务、客户端入口与可用模型");
+    const box = el("section", "gw-section");
+    box.id = "gw-connection";
+    box.append(sectionHead("连接"));
     const panels = el("div", "gw-panel-grid");
-    panels.append(panelConnection("cp"), panelConnection("wb"));
-    box.append(panels, protocolRows(), keysBlock());
-    const models = el("div", "gw-block");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "支持的模型"), el("span", "gw-count", String((state.data.models || []).length)));
-    models.append(head, modelList(state.data.models, state.data.errors.models));
+    panels.append(panelCard("cp"), panelCard("wb"));
+    box.append(panels, protocolsBlock(), keysBlock());
+    const models = el("section", "gw-block");
+    models.append(sectionHead("模型", [el("span", "gw-count", String((state.data.models || []).length))], "h3"));
+    models.append(modelList(state.data.models, state.data.errors.models));
     box.append(models);
     return box;
   }
 
+  // ---- 二、上游 ---------------------------------------------------------------
+
   function credentialsBlock() {
-    const box = el("div", "gw-block");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "CLIProxyAPI 凭证"));
-    const actions = el("div", "gw-inline-actions");
-    actions.append(button("OAuth 添加", () => openOAuth("cp"), { small: true }));
-    actions.append(button("全部刷新", () => runAction("cp-refresh-all", "gateway.credentials", { action: "refresh", all: true }, "全部凭证已刷新"), { small: true, disabled: state.actionBusy === "cp-refresh-all" }));
-    head.append(actions);
-    box.append(head);
-    if (!(state.data.credentials || []).length) box.append(el("p", "gw-empty", state.data.errors.credentials || "暂无 OAuth 凭证"));
+    const box = el("section", "gw-block");
+    box.id = "gw-credentials";
+    box.append(sectionHead("凭证", [
+      actionButton("OAuth 添加", "plus", () => toggleOAuth("cp")),
+      actionButton("全部刷新", "refresh", () => runAction("cp-refresh-all", "gateway.credentials", { action: "refresh", all: true }, "全部凭证已刷新"), { disabled: state.actionBusy === "cp-refresh-all" }),
+    ], "h3"));
+    if (state.oauth && state.oauth.kind === "cp") box.append(oauthInline());
+    if (!(state.data.credentials || []).length) box.append(el("p", "gw-empty", state.data.errors.credentials || "暂无凭证"));
     for (const credential of state.data.credentials || []) {
       const row = el("div", "gw-credential-row");
       const copy = el("div", "gw-credential-copy");
       copy.append(el("strong", "", credential.account));
-      copy.append(el("span", "", `${credential.provider} · ${credential.disabled ? "已停用" : credential.unavailable ? "不可用" : "可用"}${credential.failed ? ` · 失败 ${credential.failed}` : ""}`));
+      copy.append(el("span", "", credential.disabled ? "已停用" : credential.unavailable ? "不可用" : credential.provider));
       row.append(copy);
-      const actions = el("div", "gw-inline-actions");
-      actions.append(button("刷新", () => runAction(`cp-refresh-${credential.name}`, "gateway.credentials", { action: "refresh", name: credential.name, authIndex: credential.authIndex }, "凭证已刷新"), { small: true, disabled: Boolean(state.actionBusy) }));
-      actions.append(button("删除", () => confirmAction(`确定删除凭证「${credential.account}」？`, () => runAction(`cp-delete-${credential.name}`, "gateway.credentials", { action: "delete", name: credential.name }, "凭证已删除")), { small: true, danger: true }));
+      const actions = el("div", "gw-row-actions");
+      actions.append(actionButton("刷新", "refresh", () => runAction(`cp-refresh-${credential.name}`, "gateway.credentials", { action: "refresh", name: credential.name, authIndex: credential.authIndex }, "凭证已刷新"), { disabled: Boolean(state.actionBusy) }));
+      actions.append(actionButton("", "trash", () => confirmAction(`删除凭证「${credential.account}」？`, () => runAction(`cp-delete-${credential.name}`, "gateway.credentials", { action: "delete", name: credential.name }, "凭证已删除")), { aria: "删除凭证", danger: true }));
       row.append(actions);
       box.append(row);
     }
@@ -295,7 +306,7 @@
   function sortHeader(label, key) {
     const node = el("button", "gw-sort", label);
     node.type = "button";
-    node.append(el("span", "gw-sort-arrow", state.sortKey === key ? (state.sortDir > 0 ? "↑" : "↓") : "↕"));
+    node.append(I[state.sortKey !== key ? "sort" : state.sortDir > 0 ? "up" : "down"]());
     node.setAttribute("aria-label", `${label}排序`);
     node.addEventListener("click", () => {
       if (state.sortKey === key) state.sortDir *= -1;
@@ -317,21 +328,18 @@
   }
 
   function accountsBlock() {
-    const box = el("div", "gw-block");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "wb2api 账号池"), el("span", "gw-count", `${state.data.pool.available} / ${(state.data.accounts || []).length} 可用`));
-    box.append(head);
-    const actions = el("div", "gw-account-actions");
-    actions.append(
-      button("OAuth 授权", () => openOAuth("wb"), { small: true }),
-      button("全部签到", () => runAction("wb-checkin", "gateway.accounts", { action: "checkin" }, "签到完成"), { small: true, disabled: state.actionBusy === "wb-checkin" }),
-      button("刷新所有积分", () => runAction("wb-credits", "gateway.accounts", { action: "credits" }, "积分统计已刷新"), { small: true, disabled: state.actionBusy === "wb-credits" }),
-      button("刷新所有凭证", () => runAction("wb-refresh", "gateway.accounts", { action: "refresh" }, "所有凭证已刷新"), { small: true, disabled: state.actionBusy === "wb-refresh" }),
-    );
-    box.append(actions);
+    const box = el("section", "gw-block");
+    box.id = "gw-accounts";
+    box.append(sectionHead("账号池", [
+      actionButton("OAuth 授权", "plus", () => toggleOAuth("wb")),
+      actionButton("全部签到", "check", () => runAction("wb-checkin", "gateway.accounts", { action: "checkin" }, "签到完成"), { disabled: state.actionBusy === "wb-checkin" }),
+      actionButton("刷新积分", "refresh", () => runAction("wb-credits", "gateway.accounts", { action: "credits" }, "积分统计已刷新"), { disabled: state.actionBusy === "wb-credits" }),
+      actionButton("刷新凭证", "refresh", () => runAction("wb-refresh", "gateway.accounts", { action: "refresh" }, "所有凭证已刷新"), { disabled: state.actionBusy === "wb-refresh" }),
+    ], "h3"));
+    if (state.oauth && state.oauth.kind === "wb") box.append(oauthInline());
     const table = el("div", "gw-account-table");
     const header = el("div", "gw-account-row gw-account-header");
-    header.append(sortHeader("账号名", "name"), sortHeader("状态", "available"), sortHeader("积分余额", "remain"), sortHeader("积分总额", "total"), sortHeader("今日 Token", "tokens"), el("span", "", "启用"));
+    header.append(sortHeader("账号", "name"), sortHeader("状态", "available"), sortHeader("余额", "remain"), sortHeader("总额", "total"), sortHeader("Token", "tokens"), el("span", "", "启用"));
     table.append(header);
     for (const account of sortedAccounts()) {
       const row = el("div", "gw-account-row");
@@ -341,14 +349,14 @@
       const status = el("span", `gw-account-state ${account.available ? "is-ok" : "is-off"}`, !account.enabled ? "已停用" : account.available ? "可用" : "不可用");
       if (account.error) status.title = account.error;
       row.append(status, el("span", "gw-number", fmt(account.remain, 2)), el("span", "gw-number", fmt(account.total, 2)), el("span", "gw-number", compact(account.tokens)));
-      const tools = el("div", "gw-account-tools");
+      const tools = el("div", "gw-row-actions");
       const toggle = el("input", "gw-switch");
       toggle.type = "checkbox";
       toggle.checked = account.enabled;
       toggle.disabled = Boolean(state.actionBusy);
       toggle.setAttribute("aria-label", `${account.enabled ? "停用" : "启用"} ${account.name}`);
       toggle.addEventListener("change", () => runAction(`toggle-${account.uid}`, "gateway.accounts", { action: "toggle", uid: account.uid, enabled: toggle.checked }, toggle.checked ? "账号已启用" : "账号已停用", false));
-      tools.append(toggle, button("删除", () => confirmAction(`确定从号池删除「${account.name}」？`, () => runAction(`delete-${account.uid}`, "gateway.accounts", { action: "delete", uid: account.uid }, "账号已删除")), { small: true, danger: true }));
+      tools.append(toggle, actionButton("", "trash", () => confirmAction(`从号池删除「${account.name}」？`, () => runAction(`delete-${account.uid}`, "gateway.accounts", { action: "delete", uid: account.uid }, "账号已删除")), { aria: "删除账号", danger: true }));
       row.append(tools);
       table.append(row);
     }
@@ -357,20 +365,23 @@
   }
 
   function upstreamSection() {
-    const box = section("gw-upstream", "二、上游", "凭证、号池与 wb2api 模型");
+    const box = el("section", "gw-section");
+    box.id = "gw-upstream";
+    box.append(sectionHead("上游"));
     box.append(credentialsBlock(), accountsBlock());
-    const models = el("div", "gw-block");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "wb2api 支持的模型"), el("span", "gw-count", String((state.data.wbModels || []).length)));
-    models.append(head, modelList(state.data.wbModels, state.data.errors.wbModels || state.data.errors.accounts));
+    const models = el("section", "gw-block");
+    models.append(sectionHead("wb2api 模型", [el("span", "gw-count", String((state.data.wbModels || []).length))], "h3"));
+    models.append(modelList(state.data.wbModels, state.data.errors.wbModels || state.data.errors.accounts));
     box.append(models);
     return box;
   }
 
+  // ---- 三、用量 ---------------------------------------------------------------
+
   function quotaBlock() {
     const box = el("div", "gw-quota-grid");
     const ag = el("article", "gw-quota-card");
-    ag.append(el("h3", "", "CLIProxyAPI · Antigravity 总剩余量"));
+    ag.append(el("h3", "", "Antigravity 剩余量"));
     const groups = state.quota && state.quota.groups ? state.quota.groups : [];
     for (const group of groups) {
       const row = el("div", "gw-quota-row");
@@ -380,47 +391,31 @@
       const fill = el("i");
       fill.style.width = `${group.percent || 0}%`;
       track.append(fill);
-      row.append(label, track, el("span", "gw-quota-meta", group.accounts ? `${group.accounts} 个账号` : "暂无配额数据"));
+      row.append(label, track);
       ag.append(row);
     }
-    if (!groups.length) {
-      ag.append(el("p", "gw-empty", state.quotaLoading ? "正在读取配额…" : (state.quota && state.quota.error) || "暂无配额数据"));
-    }
+    if (!groups.length) ag.append(el("p", "gw-empty", state.quotaLoading ? "读取中" : "暂无配额"));
     const pool = state.data.pool || { remain: 0, total: 0, used: 0 };
     const wb = el("article", "gw-quota-card");
-    wb.append(el("h3", "", "wb2api · 号池积分"));
+    wb.append(el("h3", "", "号池积分"));
     const ratio = pool.total > 0 ? Math.max(0, Math.min(100, pool.remain / pool.total * 100)) : 0;
     const head = el("div", "gw-pool-total");
-    head.append(el("strong", "", `${fmt(pool.remain, 2)} / ${fmt(pool.total, 2)}`), el("span", "", `${ratio.toFixed(1)}% 剩余`));
+    head.append(el("strong", "", `${fmt(pool.remain, 2)} / ${fmt(pool.total, 2)}`), el("span", "", `${ratio.toFixed(1)}%`));
     const track = el("div", "gw-progress gw-pool-progress");
     const remain = el("i", "is-remain"), used = el("i", "is-used");
     remain.style.width = `${ratio}%`;
     used.style.width = `${100 - ratio}%`;
     track.append(remain, used);
     const legend = el("div", "gw-pool-legend");
-    legend.append(el("span", "", `剩余 ${fmt(pool.remain, 2)}`), el("span", "", `已使用 ${fmt(pool.used, 2)}`));
+    legend.append(el("span", "", `剩余 ${fmt(pool.remain, 2)}`), el("span", "", `已用 ${fmt(pool.used, 2)}`));
     wb.append(head, track, legend);
     box.append(ag, wb);
     return box;
   }
 
-  const RANGES = [["today", "今日"], ["d3", "近 3 日"], ["week", "本周"], ["month", "本月"], ["d30", "近 30 天"], ["all", "近一年"]];
-  function rangePicker() {
-    const group = el("div", "gw-segmented");
-    for (const [id, label] of RANGES) {
-      const node = el("button", state.range === id ? "is-active" : "", label);
-      node.type = "button";
-      node.setAttribute("aria-pressed", String(state.range === id));
-      node.addEventListener("click", () => loadUsage(id));
-      group.append(node);
-    }
-    return group;
-  }
-
   function summary() {
     return state.usage && state.usage.analytics && state.usage.analytics.summary
-      ? state.usage.analytics.summary.window || {}
-      : {};
+      ? state.usage.analytics.summary.window || {} : {};
   }
 
   function metricCard(label, value, detail) {
@@ -435,11 +430,11 @@
     const success = w.requests ? (w.requests - w.errors) / w.requests * 100 : 100;
     const box = el("div", "gw-metrics-grid");
     box.append(
-      metricCard("总 Token", compact(w.total_tokens), `输入 ${compact(w.prompt_tokens)} · 输出 ${compact(w.completion_tokens)} · 思考 ${compact(w.reasoning_tokens)}`),
+      metricCard("总 Token", compact(w.total_tokens), `输入 ${compact(w.prompt_tokens)} · 输出 ${compact(w.completion_tokens)}`),
       metricCard("请求", `${fmt(w.requests)} 次`, `失败 ${fmt(w.errors)} · 成功率 ${success.toFixed(1)}%`),
-      metricCard("生成速度", w.speed_avg == null ? "—" : `${Number(w.speed_avg).toFixed(1)} tok/s`, `平均耗时 ${seconds(w.elapsed_ms_avg)} · 首字 ${seconds(w.ttft_ms_avg)}`),
-      metricCard("缓存命中", w.cache_hit_pct == null ? "—" : `${Number(w.cache_hit_pct).toFixed(1)}%`, `复用 ${compact(w.cached_tokens)} tokens`),
-      metricCard("积分消耗", fmt(w.credit, 2), w.cost_cny == null ? "暂无等价花费" : `API 等价 ¥${fmt(w.cost_cny, 2)}`),
+      metricCard("速度", w.speed_avg == null ? "—" : `${Number(w.speed_avg).toFixed(1)} tok/s`, `耗时 ${seconds(w.elapsed_ms_avg)} · 首字 ${seconds(w.ttft_ms_avg)}`),
+      metricCard("缓存命中", w.cache_hit_pct == null ? "—" : `${Number(w.cache_hit_pct).toFixed(1)}%`, `复用 ${compact(w.cached_tokens)} tok`),
+      metricCard("积分消耗", fmt(w.credit, 2), w.cost_cny == null ? "" : `¥${fmt(w.cost_cny, 2)}`),
     );
     return box;
   }
@@ -452,19 +447,9 @@
 
   function chartBlock() {
     const box = el("article", "gw-chart-card");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "Token 时序"));
-    const picker = el("div", "gw-segmented");
-    for (const [id, label] of [["tokens", "Token"], ["requests", "请求数"], ["throughput", "吞吐量"]]) {
-      const node = el("button", state.metric === id ? "is-active" : "", label);
-      node.type = "button";
-      node.addEventListener("click", () => { state.metric = id; render(); });
-      picker.append(node);
-    }
-    head.append(picker);
-    box.append(head);
+    box.append(sectionHead("时序", [segmented(METRICS, state.metric, id => { state.metric = id; render(); }, "时序指标")], "h3"));
     if (!state.usage || !state.usage.series || !(state.usage.series.series || []).length) {
-      box.append(el("p", "gw-empty", "该时间范围暂无时序数据"));
+      box.append(el("p", "gw-empty", "该区间暂无时序"));
       return box;
     }
     const rows = state.usage.series.series;
@@ -515,19 +500,17 @@
 
   function recentBlock() {
     const box = el("article", "gw-recent-card");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "最近请求"), el("span", "gw-count", `${(state.usage.recent && state.usage.recent.total) || 0} 条`));
-    box.append(head);
+    box.append(sectionHead("最近请求", [el("span", "gw-count", `${(state.usage.recent && state.usage.recent.total) || 0}`)], "h3"));
     const list = el("div", "gw-recent-list");
     for (const row of (state.usage.recent && state.usage.recent.rows) || []) {
       const item = el("div", "gw-recent-row");
       item.append(el("span", "gw-recent-time", String(row.iso || "").slice(11, 19)));
       const model = el("div", "gw-recent-model");
       model.append(modelLogo(row.model), el("code", "", row.model || "未知模型"));
-      item.append(model, el("span", "gw-number", `${compact(row.total_tokens)} tok · ${seconds(row.elapsed_ms)}`));
+      item.append(model, el("span", "gw-number", `${compact(row.total_tokens)} · ${seconds(row.elapsed_ms)}`));
       list.append(item);
     }
-    if (!list.children.length) list.append(el("p", "gw-empty", "暂无请求记录"));
+    if (!list.children.length) list.append(el("p", "gw-empty", "暂无请求"));
     box.append(list);
     return box;
   }
@@ -553,20 +536,10 @@
 
   function usageTable() {
     const box = el("article", "gw-usage-table-card");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", "用量明细"));
-    const picker = el("div", "gw-segmented");
-    for (const [id, label] of [["model", "按模型"], ["account", "按账号"], ["key", "按 API Key"]]) {
-      const node = el("button", state.dimension === id ? "is-active" : "", label);
-      node.type = "button";
-      node.addEventListener("click", () => { state.dimension = id; render(); });
-      picker.append(node);
-    }
-    head.append(picker);
-    box.append(head);
+    box.append(sectionHead("明细", [segmented(DIMENSIONS, state.dimension, id => { state.dimension = id; render(); }, "用量维度")], "h3"));
     const table = el("div", "gw-usage-table");
     const header = el("div", "gw-usage-row gw-usage-header");
-    for (const text of ["名称", "请求", "Token", "平均速度", "缓存命中", "积分", "等价花费"]) header.append(el("span", "", text));
+    for (const text of ["名称", "请求", "Token", "速度", "缓存", "积分", "花费"]) header.append(el("span", "", text));
     table.append(header);
     for (const row of dimensionRows()) {
       const line = el("div", "gw-usage-row");
@@ -576,15 +549,17 @@
       line.append(name, el("span", "gw-number", fmt(row.requests)), el("span", "gw-number", compact(row.tokens)), el("span", "gw-number", row.speed == null ? "—" : `${Number(row.speed).toFixed(0)} tok/s`), el("span", "gw-number", row.cache == null ? "—" : `${Number(row.cache).toFixed(1)}%`), el("span", "gw-number", row.credit == null ? "—" : fmt(row.credit, 2)), el("span", "gw-number", row.cost == null ? "—" : `¥${fmt(row.cost, 2)}`));
       table.append(line);
     }
-    if (!dimensionRows().length) table.append(el("p", "gw-empty", "该时间范围暂无用量"));
+    if (!dimensionRows().length) table.append(el("p", "gw-empty", "该区间暂无用量"));
     box.append(table);
     return box;
   }
 
   function usageSection() {
-    const box = section("gw-usage", "三、用量", "账号剩余量与 wb2api 请求统计", [rangePicker()]);
+    const box = el("section", "gw-section");
+    box.id = "gw-usage";
+    box.append(sectionHead("用量", [segmented(RANGES, state.range, id => loadUsage(id), "时间范围")]));
     box.append(quotaBlock());
-    if (!state.usage) box.append(el("p", "gw-empty", state.usageError || "正在读取用量…"));
+    if (!state.usage) box.append(el("p", "gw-empty", state.usageError || "读取中"));
     else {
       box.append(usageMetrics());
       const charts = el("div", "gw-chart-grid");
@@ -594,52 +569,43 @@
     return box;
   }
 
-  function oauthDialog() {
-    if (!state.oauth) return null;
-    const flow = state.oauth;
-    const veil = el("div", "gw-dialog-veil");
-    const dialog = el("div", "gw-dialog");
-    dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-modal", "true");
-    dialog.setAttribute("aria-labelledby", "gw-oauth-title");
-    const head = el("div", "gw-block-head");
-    head.append(el("h3", "", flow.kind === "cp" ? "添加 CLIProxyAPI OAuth 凭证" : "wb2api OAuth 授权"));
-    head.append(button("关闭", closeOAuth, { small: true }));
-    dialog.append(head);
-    const choices = flow.kind === "cp" ? ["antigravity", "claude", "codex", "gemini"] : ["intl", "cn"];
-    const picker = el("div", "gw-segmented");
-    for (const provider of choices) {
-      const label = flow.kind === "wb" ? (provider === "intl" ? "国际版" : "国内版") : provider;
-      const node = el("button", flow.provider === provider ? "is-active" : "", label);
-      node.type = "button";
-      node.disabled = Boolean(flow.state);
-      node.addEventListener("click", () => { flow.provider = provider; render(); });
-      picker.append(node);
-    }
-    dialog.append(picker);
-    if (!flow.state) {
-      dialog.append(el("p", "gw-dialog-hint", "授权页面将在系统默认浏览器中打开，完成后这里会自动确认。"));
-      dialog.append(button(flow.busy ? "正在发起…" : "开始 OAuth 授权", startOAuth, { primary: true, disabled: flow.busy }));
-    } else {
-      dialog.append(el("p", "gw-dialog-hint", flow.message || "等待浏览器完成授权…"));
-      const link = el("code", "gw-oauth-link", flow.url || "授权链接已生成");
-      dialog.append(link);
-      const actions = el("div", "gw-inline-actions");
-      actions.append(button("打开授权页", () => openExternal("oauth", flow.url), { small: true }));
-      actions.append(button("复制链接", () => copy(flow.url), { small: true }));
-      dialog.append(actions);
-      if (flow.kind === "cp") {
-        const callback = input(flow.callback || "", "浏览器未自动回调时，粘贴完整回调 URL", value => { flow.callback = value; });
-        dialog.append(callback, button("提交回调", () => submitCallback(callback.value), { small: true, disabled: flow.busy }));
-      }
-    }
-    veil.append(dialog);
-    return veil;
+  // ---- OAuth 内联 -------------------------------------------------------------
+
+  function toggleOAuth(kind) {
+    if (state.oauth && state.oauth.kind === kind) { closeOAuth(); return; }
+    state.oauth = { kind, provider: kind === "cp" ? "antigravity" : "intl", state: "", url: "", busy: false, message: "", callback: "" };
+    render();
   }
+
+  function oauthInline() {
+    const flow = state.oauth;
+    const box = el("div", "gw-oauth-inline");
+    const choices = flow.kind === "cp" ? CP_PROVIDERS.map(p => [p, p]) : WB_PROVIDERS;
+    box.append(segmented(choices, flow.provider, id => { flow.provider = id; render(); }, "OAuth 提供方"));
+    if (!flow.state) {
+      box.append(actionButton(flow.busy ? "发起中" : "开始授权", "external", startOAuth, { primary: true, disabled: flow.busy }));
+    } else {
+      box.append(el("code", "gw-oauth-link", flow.url || ""));
+      const actions = el("div", "gw-row-actions");
+      actions.append(actionButton("打开", "external", () => openExternal("oauth", flow.url)));
+      actions.append(actionButton("复制链接", "copy", () => copy(flow.url)));
+      actions.append(actionButton("取消", "x", closeOAuth));
+      box.append(actions);
+      if (flow.kind === "cp") {
+        const callback = fieldInput(flow.callback || "", "回调 URL（未自动回调时粘贴）", value => { flow.callback = value; }, { aria: "OAuth 回调 URL" });
+        box.append(callback, actionButton("提交回调", "check", () => submitCallback(callback.value), { disabled: flow.busy }));
+      }
+      box.append(el("span", "gw-oauth-status", flow.message || "等待授权"));
+    }
+    return box;
+  }
+
+  // ---- 渲染 -------------------------------------------------------------------
 
   function render() {
     const host = root();
     if (!host || !state.data) return;
+    const scrollTop = host.querySelector(".gw-scroll") ? host.querySelector(".gw-scroll").scrollTop : 0;
     host.replaceChildren();
     const scroll = el("div", "gw-scroll");
     scroll.append(statusBar());
@@ -649,9 +615,10 @@
     content.append(connectionSection(), upstreamSection(), usageSection());
     scroll.append(content);
     host.append(scroll);
-    const dialog = oauthDialog();
-    if (dialog) host.append(dialog);
+    scroll.scrollTop = scrollTop;
   }
+
+  // ---- 动作 -------------------------------------------------------------------
 
   async function copy(text) {
     try {
@@ -666,6 +633,22 @@
     try { await invoke("gateway.open", { kind, url }); }
     catch (error) { notify(`打开浏览器失败：${errorText(error)}`, true); }
   }
+
+  function notify(message, isError = false) {
+    if (isError) state.error = message;
+    else { state.flash = message; state.error = ""; }
+    render();
+  }
+
+  async function generateKey() {
+    const bytes = new Uint8Array(36);
+    crypto.getRandomValues(bytes);
+    const key = `sk-${Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")}`;
+    await runAction("add-key", "gateway.keys", { action: "add", key, label: state.drafts.newKeyLabel || "" }, "已生成并添加 API Key");
+    state.drafts.newKey = "";
+    state.drafts.newKeyLabel = "";
+  }
+
   async function runAction(id, channel, payload, message, refresh = true) {
     if (state.actionBusy) return;
     state.actionBusy = id;
@@ -711,13 +694,9 @@
 
   async function loadQuota() {
     state.quotaLoading = true;
-    try {
-      state.quota = await invoke("gateway.quota");
-    } catch (error) {
-      state.quota = { ok: false, groups: [], error: errorText(error) };
-    } finally {
-      state.quotaLoading = false;
-    }
+    try { state.quota = await invoke("gateway.quota"); }
+    catch (error) { state.quota = { ok: false, groups: [], error: errorText(error) }; }
+    finally { state.quotaLoading = false; }
     render();
   }
 
@@ -749,11 +728,6 @@
     finally { state.actionBusy = ""; render(); }
   }
 
-  function openOAuth(kind) {
-    state.oauth = { kind, provider: kind === "cp" ? "antigravity" : "intl", state: "", url: "", busy: false, message: "", callback: "" };
-    render();
-  }
-
   function closeOAuth() {
     const flow = state.oauth;
     if (flow && flow.state) {
@@ -775,7 +749,7 @@
       flow.state = result.state;
       flow.url = result.url || result.authUrl || result.auth_url || "";
       if (!flow.state || !flow.url) throw new Error("服务未返回有效的授权地址");
-      flow.message = "授权页已打开，等待完成…";
+      flow.message = "等待授权";
       await openExternal("oauth", flow.url);
       pollOAuth();
     } catch (error) { state.error = errorText(error); flow.state = ""; }
@@ -796,7 +770,7 @@
         return;
       }
       if (["error", "expired", "unknown"].includes(result.status)) throw new Error(result.error || result.message || "授权未完成");
-      flow.message = result.message || "等待浏览器完成授权…";
+      flow.message = result.message || "等待授权";
     } catch (error) { state.error = errorText(error); }
     render();
     if (state.oauth === flow && flow.state) setTimeout(pollOAuth, 2200);
@@ -808,7 +782,7 @@
     flow.busy = true;
     try {
       await invoke("gateway.credentials", { action: "oauthCallback", provider: flow.provider, url: url.trim() });
-      flow.message = "回调已提交，等待确认…";
+      flow.message = "回调已提交";
       flow.error = "";
     } catch (error) { state.error = errorText(error); }
     finally { flow.busy = false; render(); }
