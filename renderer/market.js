@@ -152,7 +152,7 @@
       const state = {
         snapshot: null,
         jobs: [],
-        tab: 'updates',
+        tab: 'installed',
         q: '',
         open: new Set(),
         probes: {},
@@ -266,8 +266,8 @@
 
         const rail = $('#rail');
         const tabs = [
-          ['updates', stats.updates],
           ['installed', stats.installed],
+          ['updates', stats.updates],
           ['available', stats.available],
           ['queue', state.jobs.length],
         ];
@@ -287,25 +287,25 @@
       function rowActions(item, version, job) {
         const notes = TEXT[LANG];
         const ready = item.downloaded && item.downloaded.sizeMatches === true;
-        const detail = `<button class="btn tiny" data-action="detail" data-id="${esc(item.id)}">${esc(notes.btn.detail)}</button>`;
+        const detail = `<button class="ui-btn ui-btn-sm" data-action="detail" data-id="${esc(item.id)}">${esc(notes.btn.detail)}</button>`;
         if (job && job.status === 'running') {
           return `
             ${detail}
-            <button class="btn tiny danger" data-action="cancel" data-key="${esc(job.key)}">${esc(notes.btn.cancel)}</button>
+            <button class="ui-btn ui-btn-sm ui-btn-danger" data-action="cancel" data-key="${esc(job.key)}">${esc(notes.btn.cancel)}</button>
           `;
         }
         if (ready) {
           return `
             ${detail}
-            <button class="btn tiny" data-action="copy" data-copy="${esc(item.downloaded.path)}">${esc(notes.btn.copy)}</button>
-            <button class="btn tiny" data-action="verify" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.verify)}</button>
-            <button class="btn tiny danger" data-action="remove" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.remove)}</button>
+            <button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(item.downloaded.path)}">${esc(notes.btn.copy)}</button>
+            <button class="ui-btn ui-btn-sm" data-action="verify" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.verify)}</button>
+            <button class="ui-btn ui-btn-sm ui-btn-danger" data-action="remove" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.remove)}</button>
           `;
         }
         return `
           ${detail}
-          <button class="btn tiny" data-action="probe" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.probe)}</button>
-          <button class="btn tiny primary" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>
+          <button class="ui-btn ui-btn-sm" data-action="probe" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.probe)}</button>
+          <button class="ui-btn ui-btn-sm ui-btn-primary" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>
         `;
       }
 
@@ -481,10 +481,10 @@
                     <span class="meta num">${esc(version)} · ${bytes(item.latest?.sizeBytes)}</span>
                     <span class="btns">
                       ${ready
-                        ? `<button class="btn tiny" data-action="copy" data-copy="${esc(item.downloaded.path)}">${esc(notes.btn.copy)}</button>`
-                        : `<button class="btn tiny primary" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>`}
-                      <button class="btn tiny" data-action="detail" data-id="${esc(item.id)}">${esc(notes.btn.detail)}</button>
-                      <button class="btn tiny" data-action="probe" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.probe)}</button>
+                        ? `<button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(item.downloaded.path)}">${esc(notes.btn.copy)}</button>`
+                        : `<button class="ui-btn ui-btn-sm ui-btn-primary" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>`}
+                      <button class="ui-btn ui-btn-sm" data-action="detail" data-id="${esc(item.id)}">${esc(notes.btn.detail)}</button>
+                      <button class="ui-btn ui-btn-sm" data-action="probe" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.probe)}</button>
                     </span>
                   </div>
                   ${renderProgress(job)}
@@ -529,12 +529,12 @@
             </div>
             <div class="actions">
               ${job.status === 'running'
-                ? `<button class="btn tiny danger" data-action="cancel" data-key="${esc(job.key)}">${esc(notes.btn.cancel)}</button>`
+                ? `<button class="ui-btn ui-btn-sm ui-btn-danger" data-action="cancel" data-key="${esc(job.key)}">${esc(notes.btn.cancel)}</button>`
                 : job.path
-                  ? `<button class="btn tiny" data-action="copy" data-copy="${esc(job.path)}">${esc(notes.btn.copy)}</button>`
+                  ? `<button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(job.path)}">${esc(notes.btn.copy)}</button>`
                   : ''}
               ${job.status !== 'running' && job.code
-                ? `<button class="btn tiny" data-action="prepare" data-id="${esc(job.id)}" data-version="${esc(job.version)}">${esc(notes.btn.retry)}</button>`
+                ? `<button class="ui-btn ui-btn-sm" data-action="prepare" data-id="${esc(job.id)}" data-version="${esc(job.version)}">${esc(notes.btn.retry)}</button>`
                 : ''}
             </div>
           </div>
@@ -653,8 +653,8 @@
                 installed?.bundled ? ' · bundled' : ''}</div>
             </div>
             <div class="actions">
-              ${downloaded ? `<button class="btn tiny" data-action="copy" data-copy="${esc(version.downloaded.path)}">${esc(notes.copy)}</button>` : ''}
-              <button class="btn primary" data-action="detail-prepare" data-version="${esc(version.version)}">${
+              ${downloaded ? `<button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(version.downloaded.path)}">${esc(notes.copy)}</button>` : ''}
+              <button class="ui-btn ui-btn-primary" data-action="detail-prepare" data-version="${esc(version.version)}">${
                 downloaded ? esc(notes.reprepare) : `${esc(notes.prepare)} v${esc(version.version)}`}</button>
             </div>
           </div>` : '';
@@ -743,8 +743,8 @@
           </div>
           <div class="modal-foot">
             <div class="grow">${installed ? `${esc(notes.installed)} v${esc(installed.version)}` : esc(notes.notInstalled)}</div>
-            <button class="btn" data-action="detail-probe" ${detail.probeBusy ? 'disabled' : ''}>${esc(detail.probeBusy ? notes.probing : notes.probe)}</button>
-            <button class="btn" data-action="close-detail">${esc(notes.close)}</button>
+            <button class="ui-btn" data-action="detail-probe" ${detail.probeBusy ? 'disabled' : ''}>${esc(detail.probeBusy ? notes.probing : notes.probe)}</button>
+            <button class="ui-btn" data-action="close-detail">${esc(notes.close)}</button>
           </div>`;
       }
 

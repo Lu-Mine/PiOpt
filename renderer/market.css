@@ -76,37 +76,6 @@ button:focus-visible, [tabindex]:focus-visible {
 .dot.warn { background: var(--ds-warning); }
 .dot.bad { background: var(--ds-error); }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--ds-control-size);
-  padding: 0 10px;
-  border: 1px solid var(--ds-border-default);
-  border-radius: var(--radius-2xs);
-  background: transparent;
-  color: var(--ds-text-primary);
-  font-size: var(--text-sm-plus);
-  white-space: nowrap;
-  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
-}
-.btn:hover { background: var(--ds-bg-hover); }
-.btn:disabled { opacity: 0.4; cursor: default; }
-.btn.primary {
-  background: var(--ds-accent);
-  border-color: var(--ds-accent);
-  color: var(--ds-accent-ink);
-  font-weight: 500;
-}
-.btn.primary:hover { background: var(--ds-accent-hover); border-color: var(--ds-accent-hover); }
-.btn.tiny { height: 24px; padding: 0 8px; font-size: var(--text-sm); }
-.btn.tiny:not(.primary) { border-color: var(--ds-border-subtle); color: var(--ds-text-secondary); }
-.btn.tiny:not(.primary):hover { color: var(--ds-text-primary); border-color: var(--ds-border-default); }
-.btn.danger:hover {
-  color: var(--ds-error);
-  border-color: color-mix(in oklab, var(--ds-error) 45%, transparent);
-}
-
 /* ------------------------------------------------------------------ shell */
 .shell { flex: 1; display: flex; min-height: 0; }
 
