@@ -51,34 +51,31 @@
     </nav>
 
     <section id="view-market" class="opt-view" role="tabpanel" aria-labelledby="tab-market">
-    <header class="topbar">
-      <div class="brand">Pimarket <small id="hostVersion"></small></div>
-      <span class="chip" id="catalogChip"><span class="dot"></span><span>目录</span></span>
-      <span class="chip" id="updateChip"></span>
-      <div class="spacer"></div>
-      <button class="ui-btn" id="btnRefresh"></button>
-      <button class="ui-btn ui-btn-primary" id="btnPrepareAll"></button>
-    </header>
+      <header class="mkt-head">
+        <h1 class="mkt-title">插件市场<span id="hostVersion"></span></h1>
+        <span class="mkt-status" id="catalogChip"></span>
+        <span class="mkt-status" id="updateChip"></span>
+        <label class="mkt-search">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.6" /><path d="M10.5 10.5 14 14" stroke-linecap="round" />
+          </svg>
+          <input id="q" type="search" autocomplete="off" spellcheck="false" />
+        </label>
+        <button type="button" class="ui-btn ui-btn-quiet" id="btnRefresh"></button>
+        <button type="button" class="ui-btn ui-btn-primary" id="btnPrepareAll"></button>
+      </header>
 
-    <div class="shell">
-      <nav class="rail" id="rail" role="tablist" aria-label="Pimarket"></nav>
-      <section class="work">
-        <div class="toolrow">
-          <label class="search">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-              <circle cx="7" cy="7" r="4.6" /><path d="M10.5 10.5 14 14" stroke-linecap="round" />
-            </svg>
-            <input id="q" type="search" autocomplete="off" spellcheck="false" />
-          </label>
-        </div>
-        <div class="notice" id="notice"></div>
-        <div class="scroll" id="scroll"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div>
-      </section>
-    </div>
+      <div class="mkt-bar">
+        <nav class="mkt-filters" id="rail" role="tablist" aria-label="插件市场分类"></nav>
+        <div class="mkt-meta" id="marketMeta"></div>
+      </div>
 
-    <div class="veil" id="veil" hidden>
-      <div class="modal" role="dialog" aria-modal="true" id="modalBox"></div>
-    </div>
+      <div class="notice" id="notice"></div>
+      <div class="scroll" id="scroll"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div>
+
+      <div class="veil" id="veil" hidden>
+        <div class="modal" role="dialog" aria-modal="true" id="modalBox"></div>
+      </div>
     </section>
 
     <section id="view-appearance" class="opt-view" role="tabpanel" aria-labelledby="tab-appearance" hidden>

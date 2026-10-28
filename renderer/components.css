@@ -16,6 +16,17 @@
   color: inherit;
 }
 
+/*
+ * `.opt-view :is(button, input, select)` 上面那条把 color 设成 inherit，权重
+ * (0,1,1) 高过单个类名，主按钮因此会变成一块同色实心块。这里用双类名把
+ * 三个按钮变体的文字色重新压回来。
+ */
+.opt-view .ui-btn { color: var(--ds-text-primary); }
+.opt-view .ui-btn-quiet { color: var(--ds-text-secondary); }
+.opt-view .ui-btn-primary { color: var(--ds-accent-ink); }
+.opt-view .ui-btn-primary:hover:not(:disabled) { color: var(--ds-accent-ink); }
+.opt-view .ui-btn-quiet:hover:not(:disabled) { color: var(--ds-text-primary); }
+
 .opt-view button {
   cursor: pointer;
 }

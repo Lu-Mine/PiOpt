@@ -154,8 +154,6 @@
         jobs: [],
         tab: 'installed',
         q: '',
-        open: new Set(),
-        probes: {},
         notices: [],
         loading: true,
         error: null,
@@ -239,25 +237,25 @@
         const catalogChip = $('#catalogChip');
         const stats = snap?.stats || { updates: 0, installed: 0, available: 0 };
         if (!snap) {
-          catalogChip.className = 'chip';
+          catalogChip.className = 'mkt-status chip';
           catalogChip.innerHTML = `<span class="dot"></span><span>${esc(notes.catalogMissing)}</span>`;
         } else if (!snap.catalog.ok) {
-          catalogChip.className = 'chip bad';
+          catalogChip.className = 'mkt-status chip bad';
           catalogChip.innerHTML = `<span class="dot bad"></span><span>${esc(notes.catalogMissing)}</span>`;
           catalogChip.title = snap.catalog.error || '';
         } else {
-          catalogChip.className = 'chip';
+          catalogChip.className = 'mkt-status chip';
           catalogChip.innerHTML = `<span class="dot ok"></span><span>${esc(notes.catalogOk(snap.catalog.pluginCount))}</span>`;
           catalogChip.title = `${snap.catalog.path}${snap.catalog.mtimeMs ? ` · ${stamp(snap.catalog.mtimeMs)}` : ''}`;
         }
 
         const updateChip = $('#updateChip');
         if (stats.updates > 0) {
-          updateChip.className = 'chip warn';
+          updateChip.className = 'mkt-status chip warn';
           updateChip.innerHTML = `<span class="dot warn"></span><b>${stats.updates}</b><span>${esc(notes.updateChip(stats.updates).replace(`${stats.updates} `, ''))}</span>`;
           updateChip.title = snap.updates.map(item => `${item.id} ${item.version} → ${item.catalogVersion}`).join('\n');
         } else {
-          updateChip.className = 'chip';
+          updateChip.className = 'mkt-status chip';
           updateChip.innerHTML = `<span class="dot ok"></span><span>${esc(notes.noUpdates)}</span>`;
           updateChip.title = '';
         }
@@ -271,17 +269,22 @@
           ['available', stats.available],
           ['queue', state.jobs.length],
         ];
-        rail.innerHTML = tabs.map(([key, count], index) => `
-          <button class="tab${index === 0 ? '' : ''}" role="tab" data-tab="${key}" aria-selected="${state.tab === key}">
+        rail.innerHTML = tabs.map(([key, count]) => `
+          <button class="mkt-filter" role="tab" data-tab="${key}" aria-selected="${state.tab === key}">
             <span>${esc(notes.tabs[key])}</span><span class="count">${count}</span>
           </button>
-        `).join('') + `
-          <div class="rail-foot">
-            <div title="${esc(snap?.mirror?.repo || '')}">${esc(notes.label.mirror)} · <code>@${esc(snap?.mirror?.ref || '—')}</code></div>
-            <button data-action="copy" data-copy="${esc(snap?.downloadsDir || '')}" title="${esc(snap?.downloadsDir || '')}">${esc(notes.label.dataDir)} · ${esc(notes.btn.copy)}</button>
-            <div style="opacity:.75" title="${esc((snap?.mirror?.allowedHosts || []).join(' · '))}">${esc(notes.label.hosts)} ${(snap?.mirror?.allowedHosts || []).length}</div>
-          </div>
-        `;
+        `).join('');
+
+        const meta = $('#marketMeta');
+        if (meta) {
+          meta.innerHTML = `
+            <div title="${esc(snap?.mirror?.repo || '')}">${esc(notes.label.mirror)} <code>@${esc(snap?.mirror?.ref || '—')}</code></div>
+            <span class="sep"></span>
+            <button data-action="copy" data-copy="${esc(snap?.downloadsDir || '')}" title="${esc(snap?.downloadsDir || '')}">${esc(notes.label.dataDir)}</button>
+            <span class="sep"></span>
+            <div title="${esc((snap?.mirror?.allowedHosts || []).join(' · '))}">${esc(notes.label.hosts)} ${(snap?.mirror?.allowedHosts || []).length}</div>
+          `;
+        }
       }
 
       function rowActions(item, version, job) {
@@ -305,7 +308,7 @@
         return `
           ${detail}
           <button class="ui-btn ui-btn-sm" data-action="probe" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.probe)}</button>
-          <button class="ui-btn ui-btn-sm ui-btn-primary" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>
+          <button class="ui-btn ui-btn-sm" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>
         `;
       }
 
@@ -315,184 +318,123 @@
         const status = `${phaseLabel(job)}${job.percent !== null ? ` ${job.percent}%` : ''}`;
         const detail = `${job.sourceLabel || job.source ? ` · ${job.sourceLabel || job.source}` : ''}${job.total ? ` · ${bytes(job.received)} / ${bytes(job.total)}` : ''}${job.attempt ? ` · #${job.attempt}` : ''}`;
         return `
-          <div class="progress" data-progress="${esc(job.key)}">
+          <div class="mprog" data-progress="${esc(job.key)}">
             <div class="bar"><i style="width:${percent === null ? 8 : percent}%"></i></div>
             <span class="txt">${esc(status)}${esc(detail)}</span>
           </div>
         `;
       }
-      function renderDetail(item, version) {
-        const notes = TEXT[LANG];
-        const key = `${item.id}@${version}`;
-        if (!state.open.has(key)) return '';
-        const latest = item.latest || {};
-        const blocks = [];
-        blocks.push(`
-          <div class="detail">
-            <h4>${esc(notes.label.changelog)}</h4>
-            <pre>${esc(latest.changelog || '—')}</pre>
-          </div>
-        `);
-        blocks.push(`
-          <div class="detail">
-            <h4>${esc(notes.label.sha)}</h4>
-            <div class="kv">
-              <span>${esc(notes.label.sha)}</span><span>${esc(latest.sha256 || '—')}</span>
-              <span>${esc(notes.label.size)}</span><span>${bytes(latest.sizeBytes)}</span>
-              <span>${esc(notes.label.catalog)}</span><span>${esc(latest.publishedAt || '—')}</span>
-              <span>${esc(notes.label.permissions)}</span><span>${esc((latest.permissions || []).join(', ') || '—')}</span>
-              <span>${esc(notes.label.downloaded)}</span><span>${esc(item.downloaded?.path || '—')}</span>
-            </div>
-          </div>
-        `);
-        const job = jobOf(item.id, version);
-        if (job && job.attempts && job.attempts.length) {
-          blocks.push(`
-            <div class="detail">
-              <h4>${esc(notes.label.attempts)}</h4>
-              <table class="probe">
-                <tr><th>#</th><th>${esc(notes.label.source)}</th><th>code</th><th>message</th></tr>
-                ${job.attempts.map(a => `<tr><td>${a.attempt ?? ''}</td><td>${esc(a.source || '')}</td><td class="m">${esc(a.code || '')}</td><td class="m">${esc(a.message || '')}</td></tr>`).join('')}
-              </table>
-            </div>
-          `);
-        }
-        if (job && job.status === 'failed' && !job.attempts?.length) {
-          blocks.push(`<div class="detail"><h4>error</h4><pre>${esc(job.error || '')}</pre></div>`);
-        }
-        const probe = state.probes[key];
-        if (probe) {
-          blocks.push(`
-            <div class="detail">
-              <h4>${esc(notes.label.probeTitle)}</h4>
-              <table class="probe">
-                <tr><th>${esc(notes.label.source)}</th><th>status</th><th>${esc(notes.col.size)}</th><th>ms</th><th>detail</th></tr>
-                ${probe.map(r => `
-                  <tr>
-                    <td>${esc(r.label || r.id)}</td>
-                    <td class="${r.ok ? 'state ok' : 'state bad'}">${r.ok ? 'OK' : esc(r.code || r.status || '—')}</td>
-                    <td class="num">${r.contentLength ? bytes(r.contentLength) : '—'}</td>
-                    <td class="num">${r.elapsedMs ?? '—'}</td>
-                    <td class="m">${esc(r.message || r.head || r.contentType || '')}</td>
-                  </tr>
-                `).join('')}
-              </table>
-            </div>
-          `);
-        }
-        return blocks.join('');
-      }
 
       function renderUpdates() {
         const notes = TEXT[LANG];
-        const items = state.snapshot?.updates || [];
+        const items = (state.snapshot?.updates || []).filter(matches);
         if (!items.length) return emptyState('updates');
-        return `
-          <div class="list-head updates">
-            <span>${esc(notes.col.plugin)}</span><span>${esc(notes.col.version)}</span>
-            <span>${esc(notes.col.size)}</span><span>${esc(notes.col.date)}</span><span></span>
-          </div>
-          ${items.filter(matches).map(item => {
-            const version = item.latest?.version;
-            const job = jobOf(item.id, version);
-            const ready = item.downloaded?.sizeMatches === true && job?.status !== 'running';
-            const cls = ['row', 'updates', item.updateAvailable ? 'has-update' : '', ready ? 'is-ready' : '', job?.status === 'failed' ? 'is-failed' : ''].join(' ');
-            return `
-              <article class="${cls}">
-                <div class="name">
-                  <b>${esc(item.localName || item.name)}</b>
-                  <span class="id mono">${esc(item.id)}</span>
+        return items.map(item => {
+          const version = item.latest?.version;
+          const job = jobOf(item.id, version);
+          const ready = item.downloaded?.sizeMatches === true && job?.status !== 'running';
+          return `
+            <article class="mrow">
+              <div class="mrow-main">
+                <div class="mrow-line">
+                  <span class="mrow-name">${esc(item.localName || item.name)}</span>
+                  <span class="mrow-id mono">${esc(item.id)}</span>
                   ${item.bundled ? `<span class="badge bundled">bundled</span>` : ''}
                   ${item.enabled === false ? `<span class="badge off">disabled</span>` : ''}
+                  ${ready ? `<span class="badge">${esc(notes.st.done)}</span>` : ''}
+                  ${job?.status === 'failed' ? `<span class="badge warn">${esc(notes.st.failed)}</span>` : ''}
                 </div>
-                <div class="ver num">
-                  <span class="from">${esc(item.version)}</span><span class="arrow">→</span><span class="to">${esc(version)}</span>
+                <div class="mrow-sub">
+                  <span class="ver num">
+                    <span class="from">${esc(item.version)}</span><span class="arrow">→</span><span class="to">${esc(version)}</span>
+                  </span>
+                  <i class="sep"></i><span>${bytes(item.latest?.sizeBytes)}</span>
+                  <i class="sep"></i><span>${day(item.latest?.publishedAt)}</span>
                 </div>
-                <div class="size num">${bytes(item.latest?.sizeBytes)}</div>
-                <div class="date num">${day(item.latest?.publishedAt)}</div>
-                <div class="actions">${rowActions(item, version, job)}</div>
-                ${renderProgress(job)}
-                ${renderDetail(item, version)}
-              </article>
-            `;
-          }).join('')}
-        `;
+              </div>
+              <div class="mrow-side"><div class="actions">${rowActions(item, version, job)}</div></div>
+              ${renderProgress(job)}
+            </article>
+          `;
+        }).join('');
       }
 
       function renderInstalled() {
         const notes = TEXT[LANG];
         const items = (state.snapshot?.installed || []).filter(matches);
         if (!items.length) return emptyState('installed');
-        return `
-          <div class="list-head installed">
-            <span>${esc(notes.col.plugin)}</span><span>${esc(notes.col.version)}</span>
-            <span>${esc(notes.col.actions)}</span>
-          </div>
-          ${items.map(item => {
-            const version = item.version;
-            const job = jobOf(item.id, version);
-            const ready = item.downloaded?.sizeMatches === true && item.downloaded?.path?.includes(`-${version}.piplug`) && job?.status !== 'running';
-            const detailVersion = item.updateAvailable ? item.latest?.version : version;
-            const cls = ['row', 'installed', item.updateAvailable ? 'has-update' : '', ready ? 'is-ready' : ''].join(' ');
-            return `
-              <article class="${cls}">
-                <div class="name">
-                  <b>${esc(item.localName || item.name)}</b>
-                  <span class="id mono">${esc(item.id)}</span>
+        return items.map(item => {
+          const version = item.version;
+          const job = jobOf(item.id, version);
+          const ready = item.downloaded?.sizeMatches === true && item.downloaded?.path?.includes(`-${version}.piplug`) && job?.status !== 'running';
+          const detailVersion = item.updateAvailable ? item.latest?.version : version;
+          return `
+            <article class="mrow">
+              <div class="mrow-main">
+                <div class="mrow-line">
+                  <span class="mrow-name">${esc(item.localName || item.name)}</span>
+                  <span class="mrow-id mono">${esc(item.id)}</span>
                   ${item.bundled ? `<span class="badge bundled">bundled</span>` : ''}
                   ${item.enabled === false ? `<span class="badge off">disabled</span>` : ''}
                   ${!item.inCatalog ? `<span class="badge">not in catalog</span>` : ''}
+                  ${item.updateAvailable ? `<span class="badge warn">${esc(notes.tabs.updates)}</span>` : ''}
+                  ${ready ? `<span class="badge">${esc(notes.st.done)}</span>` : ''}
                 </div>
-                <div class="ver num">
-                  <span class="${item.updateAvailable ? 'from' : 'current'}">${esc(version)}</span>
-                  ${item.updateAvailable ? `<span class="arrow">→</span><span class="to">${esc(item.latest.version)}</span>` : ''}
+                <div class="mrow-sub">
+                  <span class="ver num">
+                    <span class="${item.updateAvailable ? 'from' : 'current'}">${esc(version)}</span>
+                    ${item.updateAvailable ? `<span class="arrow">→</span><span class="to">${esc(item.latest.version)}</span>` : ''}
+                  </span>
+                  ${item.bundled || !item.author ? '' : `<i class="sep"></i><span>${esc(item.author)}</span>`}
                 </div>
+              </div>
+              <div class="mrow-side">
                 <div class="actions">
-                  ${item.inCatalog ? `
-                    ${rowActions(item, item.updateAvailable ? item.latest?.version : version, job)}
-                  ` : `<span class="state">—</span>`}
+                  ${item.inCatalog
+                    ? rowActions(item, item.updateAvailable ? item.latest?.version : version, job)
+                    : `<span class="state">—</span>`}
                 </div>
-                ${renderProgress(job)}
-                ${renderDetail(item, detailVersion)}
-              </article>
-            `;
-          }).join('')}
-        `;
+              </div>
+              ${renderProgress(job)}
+            </article>
+          `;
+        }).join('');
       }
 
       function renderAvailable() {
         const notes = TEXT[LANG];
         const items = (state.snapshot?.available || []).filter(matches);
         if (!items.length) return emptyState('available');
-        return `
-          <div class="cards">
-            ${items.map(item => {
-              const version = item.latest?.version;
-              const job = jobOf(item.id, version);
-              const ready = item.downloaded?.sizeMatches === true;
-              return `
-                <article class="card">
-                  <div>
-                    <h3>${esc(item.name)}</h3>
-                    <div class="id mono">${esc(item.id)}</div>
-                  </div>
-                  <p>${esc(item.description || '')}</p>
-                  <div class="foot">
-                    <span class="meta num">${esc(version)} · ${bytes(item.latest?.sizeBytes)}</span>
-                    <span class="btns">
-                      ${ready
-                        ? `<button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(item.downloaded.path)}">${esc(notes.btn.copy)}</button>`
-                        : `<button class="ui-btn ui-btn-sm ui-btn-primary" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>`}
-                      <button class="ui-btn ui-btn-sm" data-action="detail" data-id="${esc(item.id)}">${esc(notes.btn.detail)}</button>
-                      <button class="ui-btn ui-btn-sm" data-action="probe" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.probe)}</button>
-                    </span>
-                  </div>
-                  ${renderProgress(job)}
-                </article>
-              `;
-            }).join('')}
-          </div>
-        `;
+        return items.map(item => {
+          const version = item.latest?.version;
+          const job = jobOf(item.id, version);
+          const ready = item.downloaded?.sizeMatches === true;
+          return `
+            <article class="mrow">
+              <div class="mrow-main">
+                <div class="mrow-line">
+                  <span class="mrow-name">${esc(item.name)}</span>
+                  <span class="mrow-id mono">${esc(item.id)}</span>
+                </div>
+                ${item.description ? `<p class="mrow-desc">${esc(item.description)}</p>` : ''}
+                <div class="mrow-sub">
+                  <span class="num">${esc(version)}</span>
+                  <i class="sep"></i><span>${bytes(item.latest?.sizeBytes)}</span>
+                </div>
+              </div>
+              <div class="mrow-side">
+                <div class="actions">
+                  ${ready
+                    ? `<button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(item.downloaded.path)}">${esc(notes.btn.copy)}</button>`
+                    : `<button class="ui-btn ui-btn-sm" data-action="prepare" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.prepare)}</button>`}
+                  <button class="ui-btn ui-btn-sm" data-action="detail" data-id="${esc(item.id)}">${esc(notes.btn.detail)}</button>
+                  <button class="ui-btn ui-btn-sm" data-action="probe" data-id="${esc(item.id)}" data-version="${esc(version)}">${esc(notes.btn.probe)}</button>
+                </div>
+              </div>
+              ${renderProgress(job)}
+            </article>
+          `;
+        }).join('');
       }
 
       function renderQueue() {
@@ -506,38 +448,37 @@
           return phaseLabel(job);
         };
         return items.map(job => `
-          <div class="qrow">
-            <div>
-              <div class="name">
-                <b>${esc(job.id)}</b>
-                <span class="id mono">${esc(job.version)}${job.sourceLabel ? ` · ${esc(job.sourceLabel)}` : ''}</span>
+          <article class="mrow">
+            <div class="mrow-main">
+              <div class="mrow-line">
+                <span class="mrow-name">${esc(job.id)}</span>
+                <span class="mrow-id mono">${esc(job.version)}</span>
               </div>
-              ${job.error ? `<div class="err">${esc(job.error)}</div>` : ''}
-              ${job.lastError && !job.error && job.status !== 'ready' ? `<div class="err" style="opacity:.7">${esc(job.lastError)}</div>` : ''}
-              ${job.status === 'failed' && Array.isArray(job.attempts) && job.attempts.length ? `
-                <div class="err" style="color:var(--ds-text-muted)">${job.attempts.slice(-4).map(a => `${esc(a.source)}: ${esc(a.code)}`).join('  ·  ')}${job.attempts.length > 4 ? `  ·  +${job.attempts.length - 4}` : ''}</div>
-              ` : ''}
-              ${job.status === 'running' || job.status === 'ready' ? `
-              <div class="progress" data-progress="${esc(job.key)}">
-                <div class="bar"><i style="width:${job.percent ?? (job.status === 'ready' ? 100 : 4)}%"></i></div>
-              </div>
-              ` : ''}
-            </div>
-            <div class="state ${job.status === 'ready' ? 'ok' : job.status === 'failed' ? 'bad' : ''}">
-              <span class="dot ${job.status === 'ready' ? 'ok' : job.status === 'failed' ? 'bad' : 'warn'}"></span>
-              ${esc(label(job))}${job.percent !== null && job.status === 'running' ? ` ${job.percent}%` : ''}
-            </div>
-            <div class="actions">
-              ${job.status === 'running'
-                ? `<button class="ui-btn ui-btn-sm ui-btn-danger" data-action="cancel" data-key="${esc(job.key)}">${esc(notes.btn.cancel)}</button>`
-                : job.path
-                  ? `<button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(job.path)}">${esc(notes.btn.copy)}</button>`
-                  : ''}
-              ${job.status !== 'running' && job.code
-                ? `<button class="ui-btn ui-btn-sm" data-action="prepare" data-id="${esc(job.id)}" data-version="${esc(job.version)}">${esc(notes.btn.retry)}</button>`
+              ${job.error ? `<p class="mrow-err">${esc(job.error)}</p>` : ''}
+              ${job.lastError && !job.error && job.status !== 'ready' ? `<p class="mrow-err">${esc(job.lastError)}</p>` : ''}
+              ${job.status === 'failed' && Array.isArray(job.attempts) && job.attempts.length
+                ? `<p class="mrow-note">${job.attempts.slice(-4).map(a => `${esc(a.source)}: ${esc(a.code)}`).join('  ·  ')}${job.attempts.length > 4 ? `  ·  +${job.attempts.length - 4}` : ''}</p>`
                 : ''}
+              ${job.sourceLabel ? `<div class="mrow-sub"><span>${esc(job.sourceLabel)}</span></div>` : ''}
             </div>
-          </div>
+            <div class="mrow-side">
+              <span class="state ${job.status === 'ready' ? 'ok' : job.status === 'failed' ? 'bad' : ''}">
+                <span class="dot ${job.status === 'ready' ? 'ok' : job.status === 'failed' ? 'bad' : 'warn'}"></span>
+                ${esc(label(job))}${job.percent !== null && job.status === 'running' ? ` ${job.percent}%` : ''}
+              </span>
+              <div class="actions">
+                ${job.status === 'running'
+                  ? `<button class="ui-btn ui-btn-sm ui-btn-danger" data-action="cancel" data-key="${esc(job.key)}">${esc(notes.btn.cancel)}</button>`
+                  : job.path
+                    ? `<button class="ui-btn ui-btn-sm" data-action="copy" data-copy="${esc(job.path)}">${esc(notes.btn.copy)}</button>`
+                    : ''}
+                ${job.status !== 'running' && job.code
+                  ? `<button class="ui-btn ui-btn-sm" data-action="prepare" data-id="${esc(job.id)}" data-version="${esc(job.version)}">${esc(notes.btn.retry)}</button>`
+                  : ''}
+              </div>
+            </div>
+            ${job.status === 'running' ? renderProgress(job) : ''}
+          </article>
         `).join('');
       }
 
