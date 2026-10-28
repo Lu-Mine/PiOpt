@@ -135,21 +135,28 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The window title bar, the conversation top bar, the window controls and the
-  // work panel header share the one selector rule, so they cannot drift apart
-  // into merely-similar values.
+  // The window title bar, the conversation top bar and the window controls
+  // share the one selector rule, so they cannot drift apart into merely-similar
+  // values. The work panel header is NOT among them: it sits on the panel's own
+  // glass, and a second translucent layer in the same 46px read as a doubled,
+  // muddier strip against the title bar beside it.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
-  // The work panel's glass rides on its ::before. A backdrop-filter on
-  // .work-panel itself would make it the Backdrop Root of the header, and the
-  // header's blur would sample the panel's empty box instead of the photo.
-  assert.match(css, /\.work-panel::before\{[^}]*background-color:color-mix\(in oklab,var\(--ds-bg-dock\)[^}]*backdrop-filter:blur/);
-  // The panel's fill must start below the header band: the header paints its
-  // own chromeFill, and stacking the panel glass on top of it double-tints the
-  // strip and breaks the match with the window controls.
-  assert.match(css, /\.work-panel::before\{content:"";position:absolute;inset:var\(--ds-toolbar-height\) 0 0 0;/);
+  // The header paints nothing of its own and keeps only the hairline, so the
+  // band shows exactly one frosted layer: the panel's.
+  assert.match(css, /\.work-panel-header\{background-color:transparent!important;box-shadow:inset 0 -1px 0 /);
+  assert.doesNotMatch(css, /\.work-panel-header[^{}]*\{[^}]*chrome-alpha/);
+  // The window controls share that band while a panel is open, so they must not
+  // paint over it either — otherwise that 120px corner turns into a different
+  // material from the header right beside it.
+  assert.match(css, /\.app-shell:has\(\.work-panel\)>\.window-controls\{background-color:transparent!important/);
+  // The work panel's glass rides on its ::before, covering the whole panel
+  // including the header band. A backdrop-filter on .work-panel itself would
+  // make it the Backdrop Root of the header, so the layer lives on the pseudo
+  // element and the top strip stays part of one continuous frosted column.
+  assert.match(css, /\.work-panel::before\{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-color:color-mix\(in oklab,var\(--ds-bg-dock\)[^}]*backdrop-filter:blur/);
   assert.doesNotMatch(css, /\.work-panel\{[^}]*backdrop-filter/);
   assert.match(css, /\.work-panel\{background-color:transparent!important;animation:none!important\}/);
   // This guard must survive motion being disabled. The host's work-panel-in
@@ -182,7 +189,10 @@ test("no blur lands on a container that owns the host's popups", () => {
   // The shell and the main pane hold menus, dialogs and the composer, so they
   // may only be painted through the ::before layer.
   const css = glass.buildGlassCss({ enabled: true, preset: "deep", intensity: 1.6 });
-  assert.doesNotMatch(css, /\.app-shell(?!::before)[^{}]*\{[^}]*backdrop-filter/);
+  // A `backdrop-filter:none` reset is fine — it removes a filter rather than
+  // creating one, which is what the window-controls override does while the
+  // work panel's own glass is the single layer underneath.
+  assert.doesNotMatch(css, /\.app-shell(?!::before)[^{}]*\{[^}]*backdrop-filter:(?!none)/);
   assert.doesNotMatch(css, /\.main-pane[^{}]*\{[^}]*backdrop-filter/);
   assert.doesNotMatch(css, /\.sidebar\b(?!-)[^{}]*\{[^}]*backdrop-filter/);
 });
@@ -670,8 +680,10 @@ test("the photo survives the glass switch being off", () => {
   assert.match(off, /--pg-canvas-alpha:74%/);
   assert.ok(off.includes(".main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}"));
 
-  // The switch is exactly the blur: no filter anywhere in this sheet.
-  assert.equal(off.includes("backdrop-filter"), false);
+  // The switch is exactly the blur: no filter anywhere in this sheet. The
+  // `backdrop-filter:none` resets that keep the clear header and window
+  // controls from stacking a second tint are not filters, so they stay.
+  assert.doesNotMatch(off, /backdrop-filter:(?!none)/);
   assert.equal(off.includes("@supports not"), false);
 
   // With the switch on, the same photo gains the frosting.

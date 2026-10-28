@@ -126,21 +126,24 @@ about the calls, only about the prefix.
    selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
    The surfaces it covers are the left sidebar, the right work panel body and
-   the chrome bars. Four chrome surfaces share one recipe via the `chromeFill`
+   the chrome bars. Three chrome surfaces share one recipe via the `chromeFill`
    string, emitted into a single selector rule: `.main-titlebar`,
-   `.conversation-topbar`, `.window-controls` and `.work-panel-header`. Not copies — a copy is
-   how they drift apart.
+   `.conversation-topbar` and `.window-controls`. Not copies — a copy is how
+   they drift apart.
    `.window-controls` is the minimise / maximise / close strip: the host gives
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
    that corner used to read as a different material from the bar beside it.
-   The header only matches the others because `.work-panel` itself carries no
-   `backdrop-filter`: its glass is drawn on `.work-panel::before`. An element
-   with a backdrop-filter is a Backdrop Root, so a descendant's blur only sees
-   what is painted inside it — the header used to sample the panel's empty box
-   and read as flat grey (rgb(27,30,34) against the window controls'
-   rgb(22,36,56) over a solid backdrop). With the layer on a pseudo element the
-   header, window controls and top bar all measure rgb(22,36,57).
+   `.work-panel-header` is NOT in that list: it sits on the panel's own glass,
+   and a second translucent fill in the same 46px made a doubled, muddier strip
+   (light theme: rgb(238,246,255) stacked against rgb(210,226,251) for the panel
+   body, with the seam plainly visible). The header now paints only the hairline
+   and lets the panel's single frosted layer show through; while a panel is open
+   `.window-controls` steps aside the same way, so the whole right column is one
+   continuous glass. With no panel open the base chromeFill still applies.
+   That layer lives on `.work-panel::before`, never on `.work-panel`: an element
+   with a backdrop-filter is a Backdrop Root, so a descendant's blur would see
+   only what is painted inside it instead of the photo.
    For the same Backdrop Root reason, no ancestor of a frosted surface may
    animate `opacity` (`opacity < 1` cuts off descendant `backdrop-filter` until
    the animation finishes): `.app-shell` and `.main-pane` do not animate, their

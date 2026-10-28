@@ -291,7 +291,8 @@ function buildGlassCss(input = {}, options = {}) {
     ? [
         "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){",
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
-        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
+        ".work-panel-header,.app-shell:has(.work-panel)>.window-controls{background-color:transparent!important}",
         ".work-panel::before{background-color:color-mix(in oklab,var(--ds-bg-dock) 90%,transparent)!important}",
         ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
         "}",
@@ -303,14 +304,14 @@ function buildGlassCss(input = {}, options = {}) {
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
 .app-shell::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:${backdrop};${sizing}}
 :is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-under) var(--pg-sidebar-alpha),transparent)!important;background-image:linear-gradient(180deg,var(--ds-sidebar-glass-sheen-top),transparent 220px),linear-gradient(0deg,var(--ds-sidebar-glass-sheen-bottom),transparent 160px)!important;background-repeat:no-repeat!important;box-shadow:inset -1px 0 0 color-mix(in oklab,var(--ds-text-primary) 9%,transparent);${blur}}
-/* Every chrome surface paints the identical chromeFill string: the window title
-   bar, the conversation top bar, the window controls (the 120px minimise /
-   maximise / close strip, position: fixed, which the host otherwise paints a
-   solid --ds-bg-primary or --ds-bg-dock-raised) and the work panel header.
+/* The chrome surfaces that run along the top edge — the window title bar, the
+   conversation top bar and the window controls — paint one identical fill.
 
-   The header only renders like the other three because .work-panel does not
-   carry the frosting itself — see the next rule. */
-.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{${chromeFill}}
+   The work panel header is deliberately NOT in this list: it sits inside the
+   work panel, and the panel's own glass already covers that band. Painting both
+   stacked two translucent layers in the same 46px, which read as a muddier,
+   doubled strip against the title bar beside it. See the header rule below. */
+.main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls{${chromeFill}}
 .main-pane{background-color:color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent)!important}
 /* The work panel's glass lives on its ::before, not on .work-panel.
 
@@ -333,12 +334,19 @@ function buildGlassCss(input = {}, options = {}) {
 .work-panel.is-exiting{animation:work-panel-out-glass 1ms linear both!important;overflow:hidden}
 /* No transform here: it would re-anchor the host's fixed popups. */
 @keyframes work-panel-out-glass{from{flex-basis:var(--work-panel-width);width:var(--work-panel-width)}to{flex-basis:0;width:0}}
-/* The panel's own fill starts BELOW the header band. The header already paints
-   the shared chromeFill; if the panel's glass also covered the top 46px the two
-   translucent layers stacked and the header read as a different, muddier colour
-   from the title bar beside it. Leaving that strip unpainted lets the header's
-   own material show through cleanly, exactly matching the window controls. */
-.work-panel::before{content:"";position:absolute;inset:var(--ds-toolbar-height) 0 0 0;z-index:-1;pointer-events:none;background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent);${blur}}
+/* The panel's glass covers its whole box, header band included, so the right
+   column reads as one continuous frosted surface. The header itself paints no
+   fill and no filter of its own: a second translucent layer there is exactly
+   the doubled strip that clashed with the title bar, and a filter there would
+   sample the panel's own glass instead of the photo. */
+.work-panel::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent);${blur}}
+/* The header keeps only the hairline separating the tab row from content. */
+.work-panel-header{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+/* The window controls share that band, so while a work panel is open they must
+   not paint over it either — otherwise the 120px corner turns into a different
+   material from the header right beside it. With no panel open the base
+   chromeFill still applies, because nothing frosted sits underneath. */
+.app-shell:has(.work-panel)>.window-controls{background-color:transparent!important;box-shadow:inset 0 -1px 0 color-mix(in oklab,var(--ds-text-primary) 8%,transparent)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
 /* Popups get the stronger fill but NOT the stronger blur.
 

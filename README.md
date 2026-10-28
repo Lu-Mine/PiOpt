@@ -107,9 +107,11 @@ data/local.piopt/downloads/<id>-<version>.piplug
 1. `.app-shell::before` 铺背景层：有背景图时就是那张图，没有时是一层柔光场。宿主界面底色是一整块纯色，半透明表面盖上去只能看到同一个颜色，`backdrop-filter` 也没有东西可模糊。`z-index:-1` 让它落在 `.app-shell` 自己背景之上、内容之下，不改动任何层级。
 2. 侧栏（`.sidebar-surface` / `.sidebar-rail`）、右侧工作面板（`.work-panel`，玻璃画在它的 `::before` 上，原因见下）都用半透明底色加模糊：它们各自铺的是宿主的 `--ds-bg-under` / `--ds-bg-dock`，换成同色但带 alpha 的混色后，背后的图或光场就透出来了。侧栏额外复用宿主写给 macOS 的两支 sheen 变量（`--ds-sidebar-glass-sheen-top` / `-bottom`）做顶部高光。
 
-   横幅材质由变量 `chromeFill` 统一下发，窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角装最小化 / 最大化 / 关闭的 `.window-controls`、工作面板表头 `.work-panel-header` 拼进**同一个选择器**——不是四份拷贝，拷贝就是它们跑偏的方式。`.window-controls` 要归进来，是因为宿主给它的是 `position: fixed` 的实色块（`background: var(--ds-bg-primary)`），并且在**打开工作面板时会换成 `--ds-bg-dock-raised`**——于是那个角上永远是一块和旁边标题栏不同的材质。
+   横幅材质由变量 `chromeFill` 统一下发，窗口标题栏 `.main-titlebar`、会话顶部条 `.conversation-topbar`、右上角装最小化 / 最大化 / 关闭的 `.window-controls` 拼进**同一个选择器**——不是三份拷贝，拷贝就是它们跑偏的方式。`.window-controls` 要归进来，是因为宿主给它的是 `position: fixed` 的实色块（`background: var(--ds-bg-primary)`），并且在**打开工作面板时会换成 `--ds-bg-dock-raised`**——于是那个角上永远是一块和旁边标题栏不同的材质。
 
-   工作面板表头能和另外三块渲染成一样，前提是 **`.work-panel` 本身不带 `backdrop-filter`**。带了 `backdrop-filter` 的元素是 Backdrop Root：它后代的 `backdrop-filter` 只能取样到这个祖先内部已经画出的内容，看不到更底下的背景图。以前模糊加在 `.work-panel` 上，表头的模糊取样到的是面板那层空的盒子，`chromeFill` 等于叠在"什么都没有"上——实测在纯色 `#2060c0` 背景下，表头是 `rgb(27,30,34)` 的死灰，而右边的 `.window-controls`（它是面板的兄弟而不是后代）是 `rgb(22,36,56)`。之前"表头不画底色"的绕法只是让面板自己的玻璃露出来，密度仍和旁边横幅不同。现在面板的底色和模糊都移到 `.work-panel::before`（`z-index:-1`，`.work-panel` 本身已是层叠上下文），伪元素在绘制顺序上是表头的兄弟，不再拦截表头的取样：表头、窗口按钮、会话顶部条实测都是 `rgb(22,36,57)`，换回真实壁纸也一致。
+   工作面板表头 `.work-panel-header` **不画自己的材质**：它坐在面板自己的玻璃上，同一段 46px 里再叠一层半透明底色，就成了比旁边标题栏更浑的"双层"条带（实测亮色主题下叠加处 `238,246,255`，而面板主体是 `210,226,251`，接缝一眼可见）。现在表头只留一道分隔线，底色和模糊全部由 `.work-panel::before` 这一层提供；打开面板时右上角 `.window-controls` 同样让位（`.app-shell:has(.work-panel)>` 限定只在有面板时生效），于是整列从上到下是**同一层**磨砂玻璃：既没有叠色，也不缺磨砂。面板关闭时 `chromeFill` 照旧作用，因为那底下没有别的玻璃可透。
+
+   这一层画在 `.work-panel::before` 而不是 `.work-panel` 上：带了 `backdrop-filter` 的元素是 Backdrop Root，它后代的 `backdrop-filter` 只能取样到这个祖先内部，看不到更底下的背景图。伪元素在绘制顺序上与内容是兄弟关系，不会拦截取样。
 
    材质层还必须**独立于动效开关**抑制宿主的 `.work-panel` 进出场动画。宿主的 `work-panel-in` 使用 `both` 且关键帧含 `opacity`；即使动画被压到 1ms，保留的 opacity 效果仍会让 `.work-panel` 成为 Backdrop Root，导致色差在静止时也一直存在。这正是动效总开关关闭或完全禁用后问题复发的原因：此前只有开启动效时的覆盖规则顺带挡住了它。现在材质层始终写入 `animation: none` 和不透明度不变的 `work-panel-out-glass` 退场保护；开启动效时再由动效层的 `pm-panel-right-in` 接管滑入。
 
