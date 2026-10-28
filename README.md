@@ -93,6 +93,8 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
    工作面板表头能和另外三块渲染成一样，前提是 **`.work-panel` 本身不带 `backdrop-filter`**。带了 `backdrop-filter` 的元素是 Backdrop Root：它后代的 `backdrop-filter` 只能取样到这个祖先内部已经画出的内容，看不到更底下的背景图。以前模糊加在 `.work-panel` 上，表头的模糊取样到的是面板那层空的盒子，`chromeFill` 等于叠在"什么都没有"上——实测在纯色 `#2060c0` 背景下，表头是 `rgb(27,30,34)` 的死灰，而右边的 `.window-controls`（它是面板的兄弟而不是后代）是 `rgb(22,36,56)`。之前"表头不画底色"的绕法只是让面板自己的玻璃露出来，密度仍和旁边横幅不同。现在面板的底色和模糊都移到 `.work-panel::before`（`z-index:-1`，`.work-panel` 本身已是层叠上下文），伪元素在绘制顺序上是表头的兄弟，不再拦截表头的取样：表头、窗口按钮、会话顶部条实测都是 `rgb(22,36,57)`，换回真实壁纸也一致。
 
+   材质层还必须**独立于动效开关**抑制宿主的 `.work-panel` 进出场动画。宿主的 `work-panel-in` 使用 `both` 且关键帧含 `opacity`；即使动画被压到 1ms，保留的 opacity 效果仍会让 `.work-panel` 成为 Backdrop Root，导致色差在静止时也一直存在。这正是动效总开关关闭或完全禁用后问题复发的原因：此前只有开启动效时的覆盖规则顺带挡住了它。现在材质层始终写入 `animation: none` 和不透明度不变的 `work-panel-out-glass` 退场保护；开启动效时再由动效层的 `pm-panel-right-in` 接管滑入。
+
 
    模糊只加在这几个"界面家具"上：宿主的所有浮层（右键菜单、二级菜单、通知、用量气泡等）都 portal 到 `document.body`，不是它们的后代，所以 `backdrop-filter` 不会把那些弹层重新锚定。
 3. 内容区（`.main-pane`）只改底色不透明度，不加滤镜——它里面有 composer 等固定层，加 `backdrop-filter` 会改变它们的包含块。没有背景图时这一项是 100%，等于不改。

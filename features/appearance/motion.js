@@ -107,18 +107,31 @@ function tokenDeclarations(tokens) {
   ].join(";");
 }
 
+const HOST_CHROME_EXIT_CSS = `
+/* Glass must not depend on the motion switch. When motion is off, the host's
+   own work-panel-in uses both and retains an opacity effect after it finishes.
+   That effect is a Backdrop Root, so the header and panel blur lose the photo
+   permanently, not just while an animation is running. Glass suppresses the
+   entry here; an enabled motion layer replaces it with its own slide below.
+   The exit keeps the work-panel-out prefix for the host's onAnimationEnd. */
+.work-panel{animation:none!important}
+.work-panel.is-exiting{animation:work-panel-out-glass 1ms linear both!important;overflow:hidden}
+@keyframes work-panel-out-glass{from{flex-basis:var(--work-panel-width);width:var(--work-panel-width)}to{flex-basis:0;width:0}}
+`;
+
 const DISABLED_CSS = `/* PiOpt motion: disabled. Every transition and animation is flattened to 1ms
    rather than "none": the host unmounts entering nodes on animationend, and
    "none" would mean those events never fire. */
 *,*::before,*::after{animation-duration:1ms!important;animation-delay:0ms!important;animation-iteration-count:1!important;transition-duration:1ms!important;transition-delay:0ms!important;scroll-behavior:auto!important}
-`;
+${HOST_CHROME_EXIT_CSS}`;
 
+// Even with motion override off, glass needs these two host-animation guards.
 function buildThemeCss(input = {}, base = "dark") {
   const config = normalizeConfig(input);
   // 完全禁用优先于总开关：这是用户对「还要不要动效」的直接回答。
   if (config.disabled) return DISABLED_CSS;
-  // 总开关关掉时一行都不写，宿主保持原样。
-  if (!config.override) return "";
+  // 总开关关掉时不写动效，只保留材质所必需的宿主进出场保护。
+  if (!config.override) return HOST_CHROME_EXIT_CSS;
   const tokens = motionTokens(config);
   const spinRule = tokens.continuous
     ? ".spinner,[data-loading=true] .loading-spinner{animation:pm-spin 900ms linear infinite}"

@@ -123,6 +123,18 @@ test("no ancestor of a frosted surface animates opacity", () => {
   assert.doesNotMatch(css, /\.work-panel[^{}]*\{[^}]*pm-fade-in/);
 });
 
+test("motion switches never re-enable the host's opacity-filled panel animation", () => {
+  for (const config of [
+    { ...DEFAULT_CONFIG, override: false },
+    { ...DEFAULT_CONFIG, disabled: true },
+  ]) {
+    const css = buildThemeCss(config, "dark");
+    assert.match(css, /\.work-panel\{animation:none!important\}/);
+    assert.match(css, /\.work-panel\.is-exiting\{animation:work-panel-out-glass /);
+    assert.doesNotMatch(css, /@keyframes work-panel-in\b/);
+  }
+});
+
 
 test("resolves automatic base from host appearance", () => {
   assert.equal(resolveBase("light", { base: "dark" }), "light");

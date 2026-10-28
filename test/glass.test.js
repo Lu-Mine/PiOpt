@@ -147,7 +147,15 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   // header's blur would sample the panel's empty box instead of the photo.
   assert.match(css, /\.work-panel::before\{[^}]*background-color:color-mix\(in oklab,var\(--ds-bg-dock\)[^}]*backdrop-filter:blur/);
   assert.doesNotMatch(css, /\.work-panel\{[^}]*backdrop-filter/);
-  assert.match(css, /\.work-panel\{background-color:transparent!important\}/);
+  assert.match(css, /\.work-panel\{background-color:transparent!important;animation:none!important\}/);
+  // This guard must survive motion being disabled. The host's work-panel-in
+  // uses both and retains its opacity effect after finishing, which otherwise
+  // becomes a permanent Backdrop Root and brings the header colour mismatch
+  // back. The exit name must keep the host's work-panel-out prefix.
+  assert.match(css, /\.work-panel\.is-exiting\{animation:work-panel-out-glass /);
+  const exit = css.match(/@keyframes work-panel-out-glass\{(?:[^{}]*\{[^{}]*\})+\}/);
+  assert.ok(exit);
+  assert.doesNotMatch(exit[0], /opacity/);
   assert.match(css, /backdrop-filter:blur\(var\(--pg-blur\)\)/);
   assert.match(css, /@supports not \(\(backdrop-filter/);
 });

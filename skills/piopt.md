@@ -125,6 +125,11 @@ about the calls, only about the prefix.
    sidebar and work panel keyframes (including the `sidebar-in-pm` /
    `work-panel-out-pm` overrides for the host's own enter/exit rules) slide and
    resize without touching `opacity`.
+   This protection must also exist when motion is off. Otherwise the host's
+   `work-panel-in ... both` retains an opacity effect after its 1ms run and
+   becomes a permanent Backdrop Root, bringing the colour mismatch back even
+   at rest. Glass therefore disables that entry and supplies an opacity-free
+   `work-panel-out-glass` exit independently of the motion switches.
    Blur is safe on all of them because the host portals every popup (context
    Never put a blur filter on a menu. The host nests its context submenu inside
    the parent menu (`sidebar-submenu` lives inside `sidebar-floating-menu`) and

@@ -329,7 +329,10 @@ function buildGlassCss(input = {}, options = {}) {
    stack and come out identical — rgb(22,36,57) for both, same as the top bar.
    .work-panel is already a stacking context (position: relative + z-index 20),
    so z-index:-1 keeps the layer above the panel's box and below its content. */
-.work-panel{background-color:transparent!important}
+.work-panel{background-color:transparent!important;animation:none!important}
+.work-panel.is-exiting{animation:work-panel-out-glass 1ms linear both!important;overflow:hidden}
+/* No transform here: it would re-anchor the host's fixed popups. */
+@keyframes work-panel-out-glass{from{flex-basis:var(--work-panel-width);width:var(--work-panel-width)}to{flex-basis:0;width:0}}
 .work-panel::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-color:color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent);${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
 /* Popups get the stronger fill but NOT the stronger blur.
