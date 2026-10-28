@@ -126,21 +126,27 @@ about the calls, only about the prefix.
    selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
    The surfaces it covers are the left sidebar, the right work panel body and
-   the chrome bars. Three chrome surfaces share one recipe via the `chromeFill`
+   the chrome bars. Four chrome surfaces share one recipe via the `chromeFill`
    string, emitted into a single selector rule: `.main-titlebar`,
-   `.conversation-topbar` and `.window-controls`. Not copies — a copy is how
-   they drift apart.
+   `.conversation-topbar`, `.window-controls` and `.work-panel-header`. Not
+   copies — a copy is how they drift apart.
    `.window-controls` is the minimise / maximise / close strip: the host gives
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
    that corner used to read as a different material from the bar beside it.
-   `.work-panel-header` is NOT in that list: it sits on the panel's own glass,
-   and a second translucent fill in the same 46px made a doubled, muddier strip
-   (light theme: rgb(238,246,255) stacked against rgb(210,226,251) for the panel
-   body, with the seam plainly visible). The header now paints only the hairline
-   and lets the panel's single frosted layer show through; while a panel is open
-   `.window-controls` steps aside the same way, so the whole right column is one
-   continuous glass. With no panel open the base chromeFill still applies.
+   chromeFill is only half of the material; what it sits ON is the other half.
+   The top bar is a child of the main pane, so its blur samples the photo
+   through the pane's canvas tint. The panel's `.work-panel::before` therefore
+   paints a two-stop gradient — the canvas tint for the top
+   `--ds-toolbar-height`, the panel's dock glass below it — so the header's
+   blur sees the same underlay and the two bands match (measured
+   rgb(235,243,255) header against rgb(234,242,254) top bar). Giving the band
+   the dock colour instead stacked a second layer there and read as a doubled,
+   muddier strip; giving it nothing made the header look transparent, because
+   its blur fell straight onto the raw photo.
+   That layer lives on the pseudo element, never on `.work-panel` itself: an
+   element with a backdrop-filter is a Backdrop Root, so a descendant's blur
+   would see only what is painted inside it instead of the photo.
    That layer lives on `.work-panel::before`, never on `.work-panel`: an element
    with a backdrop-filter is a Backdrop Root, so a descendant's blur would see
    only what is painted inside it instead of the photo.
