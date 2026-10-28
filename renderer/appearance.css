@@ -372,54 +372,6 @@ label.glass-row {
   gap: 8px;
 }
 
-.button,
-.glass-button {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: var(--ds-control-size);
-  padding: 0 11px;
-  border: 1px solid var(--ds-border-default);
-  border-radius: var(--radius-2xs);
-  background: var(--ds-tile);
-  color: var(--ds-text-primary);
-  font-size: var(--text-sm-plus);
-  font-weight: var(--font-weight-medium);
-  white-space: nowrap;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-out),
-    border-color var(--motion-duration-fast) var(--motion-ease-out),
-    color var(--motion-duration-fast) var(--motion-ease-out),
-    opacity var(--motion-duration-fast) var(--motion-ease-out);
-}
-
-.button:hover:not(:disabled),
-.glass-button:hover:not(:disabled) {
-  background: var(--ds-bg-hover);
-  border-color: var(--ds-border-strong);
-}
-
-.button:disabled,
-.glass-button:disabled {
-  opacity: 0.44;
-  cursor: default;
-}
-
-.button.quiet,
-.glass-button.quiet {
-  background: transparent;
-  border-color: var(--ds-border-subtle);
-  color: var(--ds-text-secondary);
-}
-
-.button.quiet:hover:not(:disabled),
-.glass-button.quiet:hover:not(:disabled) {
-  background: var(--ds-bg-hover);
-  border-color: var(--ds-border-default);
-  color: var(--ds-text-primary);
-}
-
 /* Floating status toast */
 .toast {
   position: fixed;
@@ -477,9 +429,7 @@ label.glass-row {
   .switch,
   .switch span,
   .glass-switch-track,
-  .glass-switch-track span,
-  .button,
-  .glass-button {
+  .glass-switch-track span {
     transition-duration: 0.01ms;
   }
 }
