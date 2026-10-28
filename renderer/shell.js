@@ -2,9 +2,10 @@
  * PiOpt shell: switches between feature views, syncs the host theme onto :root,
  * and boots each feature once on first reveal so inactive views stay quiet.
  *
- * Three views, one of them two sections: motion and the window material are one
- * feature (`appearance`), so they share a tab and the commands name a section
- * inside it instead of a view of their own.
+ * Four views: motion and the window material are one feature (`appearance`), so
+ * they share a tab and the commands name a section inside it instead of a view
+ * of their own. `behavior` is a row with no controls yet — it still gets a view
+ * so the rail reads 外观 / 行为 / AI 网关 / 插件市场 in that order.
  */
 (function () {
   "use strict";
@@ -16,12 +17,13 @@
 
   const tabs = Array.from(document.querySelectorAll("[data-feature]"));
   const views = {
-    market: document.getElementById("view-market"),
     appearance: document.getElementById("view-appearance"),
+    behavior: document.getElementById("view-behavior"),
     gateway: document.getElementById("view-gateway"),
+    market: document.getElementById("view-market"),
   };
-  const booted = { market: false, appearance: false, gateway: false };
-  const KNOWN = ["market", "appearance", "gateway"];
+  const booted = { appearance: false, behavior: false, gateway: false, market: false };
+  const KNOWN = ["appearance", "behavior", "gateway", "market"];
   // Sections inside the appearance view, each with the id it scrolls to.
   const SECTIONS = ["motion", "glass"];
   let current = "market";
@@ -114,7 +116,12 @@
   function start(feature) {
     if (booted[feature]) return;
     booted[feature] = true;
-    const api = { market: window.PiOptMarket, appearance: window.PiOptAppearance, gateway: window.PiOptGateway }[feature];
+    const api = {
+      appearance: window.PiOptAppearance,
+      behavior: window.PiOptBehavior,
+      gateway: window.PiOptGateway,
+      market: window.PiOptMarket,
+    }[feature];
     const tab = tabs.find((item) => item.dataset.feature === feature);
     if (!api || typeof api.boot !== "function") {
       if (tab) tab.title = "该功能未能加载";
@@ -247,9 +254,9 @@
 
   document.addEventListener("keydown", (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
-    if (!["1", "2", "3"].includes(event.key)) return;
+    if (!["1", "2", "3", "4"].includes(event.key)) return;
     event.preventDefault();
-    show({ 1: "market", 2: "appearance", 3: "gateway" }[event.key], true);
+    show({ 1: "appearance", 2: "behavior", 3: "gateway", 4: "market" }[event.key], true);
   });
 
   let stored = null;

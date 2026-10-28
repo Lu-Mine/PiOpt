@@ -5,19 +5,23 @@ description: The user asks to update, reinstall or download a PI-Desktop plugin,
 
 # PiOpt
 
-PiOpt bundles three features in one plugin:
+PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 / AI 网关 /
+插件市场 (rail rows, `Alt+1` to `Alt+4`). 行为 has no controls yet — say so
+plainly, there is nothing to configure there and no Agent tool for it.
 
-- **插件市场 (market)** — the download-and-verify half of a plugin update.
-  Installing stays a user action in the Plugins page.
 - **外观 (appearance)** — how the window looks, in one view with two sections:
   **界面动效** (a master switch, a kill-all-animations switch, and strength /
   speed sliders) and **窗口材质** (an optional frosted-glass layer, a wallpaper
   with a recent list). They are one feature because they write one runtime
   theme; the view is one page, the sections are not separate panels. Each
   section has a 重置 button with a confirm step.
+- **行为 (behavior)** — a reserved, empty view. Nothing to set, nothing to
+  apply; do not invent options for it.
 - **AI 网关 (gateway)** — one page in three sections (连接 / 上游 / 用量) under a
   pinned status bar: what both local panels expose and how to reach them, which
   accounts and credentials feed them, and how much has actually been used.
+- **插件市场 (market)** — the download-and-verify half of a plugin update.
+  Installing stays a user action in the Plugins page.
 
 ## Gateway: what the page does, and what it refuses to fake
 
@@ -75,7 +79,7 @@ PiOpt bundles three features in one plugin:
 
 ## Appearance: where the two sections live
 
-The view is **PiOpt → 外观** (one rail row, `Alt+2`). Two commands open it on a
+The view is **PiOpt → 外观** (the first rail row, `Alt+1`). Two commands open it on a
 section: `PiOpt: 打开外观` lands on 界面动效, `PiOpt: 打开窗口材质` scrolls to
 窗口材质. Panel channels are `appearance.motion.*` and `appearance.glass.*`; the
 older `motion.*` / `glass.*` names still answer, so an older guide is not wrong
@@ -113,7 +117,7 @@ about the calls, only about the prefix.
 
 1. There is no Agent tool for glass. Direct the user to the panel
    (**PiOpt → 外观 → 窗口材质**) or the command `PiOpt: 打开窗口材质` (it
-   scrolls to that section), or `Alt+2` then scroll.
+   scrolls to that section), or `Alt+1` then scroll.
 2. Never promise that the window shows the desktop. PI-Desktop builds its main
    window opaque on Windows 11 — `transparent: false` is what buys it native
    rounded corners, and `transparent` is a BrowserWindow construction flag that

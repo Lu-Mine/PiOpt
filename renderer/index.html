@@ -25,19 +25,21 @@
         <span class="rail-label">展开菜单</span>
       </button>
       <div class="rail-tabs" role="tablist" aria-label="PiOpt 功能">
-        <button type="button" role="tab" id="tab-market" data-feature="market" aria-selected="true" aria-controls="view-market" title="插件市场" aria-label="插件市场">
-          <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M2.6 5.6h10.8l-.75 7.6a1 1 0 0 1-1 .9H4.35a1 1 0 0 1-1-.9z" />
-            <path d="M5.9 5.6V4.1a2.1 2.1 0 0 1 4.2 0v1.5" />
-          </svg>
-          <span class="rail-label">插件市场</span>
-        </button>
         <button type="button" role="tab" id="tab-appearance" data-feature="appearance" aria-selected="false" aria-controls="view-appearance" title="外观" aria-label="外观">
           <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="8" cy="8" r="5.6" />
             <path d="M8 2.4a5.6 5.6 0 0 1 0 11.2z" fill="currentColor" fill-opacity=".22" stroke="none" />
           </svg>
           <span class="rail-label">外观</span>
+        </button>
+        <button type="button" role="tab" id="tab-behavior" data-feature="behavior" aria-selected="false" aria-controls="view-behavior" title="行为" aria-label="行为">
+          <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2.6 5.4h10.8" />
+            <circle cx="10.2" cy="5.4" r="1.7" fill="currentColor" fill-opacity=".22" />
+            <path d="M2.6 10.6h10.8" />
+            <circle cx="5.8" cy="10.6" r="1.7" fill="currentColor" fill-opacity=".22" />
+          </svg>
+          <span class="rail-label">行为</span>
         </button>
         <button type="button" role="tab" id="tab-gateway" data-feature="gateway" aria-selected="false" aria-controls="view-gateway" title="AI 网关" aria-label="AI 网关">
           <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -46,6 +48,13 @@
             <path d="M3.4 3.4l1.5 1.5M11.1 11.1l1.5 1.5M12.6 3.4l-1.5 1.5M4.9 11.1l-1.5 1.5" opacity=".55" />
           </svg>
           <span class="rail-label">AI 网关</span>
+        </button>
+        <button type="button" role="tab" id="tab-market" data-feature="market" aria-selected="true" aria-controls="view-market" title="插件市场" aria-label="插件市场">
+          <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2.6 5.6h10.8l-.75 7.6a1 1 0 0 1-1 .9H4.35a1 1 0 0 1-1-.9z" />
+            <path d="M5.9 5.6V4.1a2.1 2.1 0 0 1 4.2 0v1.5" />
+          </svg>
+          <span class="rail-label">插件市场</span>
         </button>
       </div>
     </nav>
@@ -245,11 +254,14 @@
       </div>
     </section>
 
+    <section id="view-behavior" class="opt-view" role="tabpanel" aria-labelledby="tab-behavior" hidden></section>
+
     <section id="view-gateway" class="opt-view" role="tabpanel" aria-labelledby="tab-gateway" hidden>
     </section>
 
     <script src="./market.js"></script>
     <script src="./appearance.js"></script>
+    <script src="./behavior.js"></script>
     <script src="./gateway.js"></script>
     <script src="./shell.js"></script>
   </body>

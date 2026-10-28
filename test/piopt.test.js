@@ -59,6 +59,8 @@ test("host routes panel channels to the owning feature", () => {
   const entry = require("../main.js");
   assert.equal(entry._featureFor("market.snapshot"), entry._features.market);
   assert.equal(entry._featureFor("gateway.status"), entry._features.gateway);
+  // The empty row still owns its prefix, so a future channel has one owner.
+  assert.equal(entry._featureFor("behavior.snapshot"), entry._features.behavior);
   // Motion and the material are one feature: one owner for both halves, under
   // the merged prefix and under the names they had before the merge.
   for (const channel of ["appearance.motion.apply", "appearance.glass.apply", "motion.apply", "glass.getState"]) {
@@ -70,7 +72,7 @@ test("host routes panel channels to the owning feature", () => {
 
 test("every feature is composed by the host entry", () => {
   const entry = require("../main.js");
-  for (const name of ["market", "appearance", "gateway"]) {
+  for (const name of ["market", "appearance", "behavior", "gateway"]) {
     assert.ok(entry._features[name], name);
   }
   // Motion and the material are one feature, so there is nothing left to wire
@@ -93,6 +95,7 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
     "./appearance.css",
     "./market.js",
     "./appearance.js",
+    "./behavior.js",
     "./shell.js",
   ]) {
     assert.ok(html.includes(asset), asset);
@@ -100,6 +103,8 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
   assert.equal(/<script>/.test(html), false, "inline scripts would share one global scope");
   assert.match(html, /id="view-market"/);
   assert.match(html, /id="view-appearance"/);
+  // The empty behaviour row is a real view, not a missing script.
+  assert.match(html, /id="view-behavior"[^>]*><\/section>/);
   // One view, two sections: motion and the material are not separate panels.
   assert.match(html, /id="section-motion"/);
   assert.match(html, /id="section-glass"/);
@@ -145,9 +150,15 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   const tabsStart = html.indexOf('class="rail-tabs" role="tablist"');
   const toggleStart = html.indexOf('id="railToggle"');
   assert.ok(toggleStart > navStart && tabsStart > toggleStart);
-  for (const name of ["插件市场", "外观", "AI 网关"]) {
+  for (const name of ["外观", "行为", "AI 网关", "插件市场"]) {
     assert.ok(html.includes(`<span class="rail-label">${name}</span>`), name);
   }
+  // The rows are read top to bottom in this order, and the shortcut numbers
+  // follow it, so the markup is the one place the order is written down.
+  assert.deepEqual(
+    [...html.matchAll(/data-feature="([a-z]+)"/g)].map((match) => match[1]),
+    ["appearance", "behavior", "gateway", "market"]
+  );
 
   const css = read("renderer/base.css");
   assert.match(css, /body\[data-rail="expanded"\] \.opt-rail \{ width: 176px/);
@@ -175,14 +186,14 @@ test("the rail opens and closes from a toggle above the tabs", () => {
 
 test("every rail row has a keyboard shortcut and a shell view", () => {
   const shell = read("renderer/shell.js");
-  // Alt+1..3 must cover exactly the three views the shell knows about.
-  assert.match(shell, /if \(!\["1", "2", "3"\]\.includes\(event\.key\)\) return;/);
-  for (const feature of ["market", "appearance", "gateway"]) {
+  // Alt+1..4 must cover exactly the four views the shell knows about, in the
+  // same order the rail shows them.
+  assert.match(shell, /if \(!\["1", "2", "3", "4"\]\.includes\(event\.key\)\) return;/);
+  assert.match(shell, /show\(\{ 1: "appearance", 2: "behavior", 3: "gateway", 4: "market" \}\[event\.key\], true\);/);
+  for (const feature of ["market", "appearance", "behavior", "gateway"]) {
     assert.match(shell, new RegExp(`${feature}: document\\.getElementById\\("view-${feature}"\\)`));
   }
-  assert.match(shell, /const KNOWN = \["market", "appearance", "gateway"\];/);
-  // The merged appearance view is two sections, and a command can name one.
-  assert.match(shell, /const SECTIONS = \["motion", "glass"\];/);
+  assert.match(shell, /const KNOWN = \[\"appearance\", \"behavior\", \"gateway\", \"market\"\];/);
   assert.match(shell, /scrollToSection/);
 });
 

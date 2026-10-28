@@ -7,18 +7,22 @@
  * and panel channels; this file only composes them and routes panel traffic by
  * channel prefix, so no feature calls another directly. Interface motion and the
  * window material are one feature (`appearance`) because they are one theme.
+ * `behavior` is a row with nothing behind it yet: it owns its prefix and its
+ * lifecycle so the next piece of work has somewhere to land.
  */
 
 const market = require("./features/market/index.js");
 const appearance = require("./features/appearance/index.js");
+const behavior = require("./features/behavior/index.js");
 const gateway = require("./features/gateway/index.js");
 
-const FEATURES = { market, appearance, gateway };
+const FEATURES = { market, appearance, behavior, gateway };
 const PANEL_COMMAND = "piopt.open";
 
 function featureFor(channel) {
   if (typeof channel !== "string") return null;
   if (channel.startsWith("market.")) return FEATURES.market;
+  if (channel.startsWith("behavior.")) return FEATURES.behavior;
   if (channel.startsWith("gateway.")) return FEATURES.gateway;
   // `motion.*` and `glass.*` are the pre-merge names of the two halves; the
   // feature answers them so a panel window that outlived the reload still works.
@@ -54,9 +58,10 @@ async function onRendererCall(method, args = {}) {
 }
 
 async function onLoad() {
-  await market.onLoad();
   await appearance.onLoad();
+  await behavior.onLoad();
   await gateway.onLoad();
+  await market.onLoad();
   await pi.commands.register({
     id: PANEL_COMMAND,
     title: "PiOpt: 打开控制台",
@@ -82,6 +87,7 @@ async function onUnload() {
   } catch {
     /* already gone */
   }
+  await behavior.onUnload();
   await appearance.onUnload();
   await gateway.onUnload();
   await market.onUnload();
