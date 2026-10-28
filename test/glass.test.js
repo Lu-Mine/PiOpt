@@ -135,28 +135,26 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /--pg-sidebar-alpha:82%/);
   assert.match(css, /\.app-shell::before\{/);
   assert.match(css, /:is\(\.sidebar-surface,\.sidebar-rail\)\{/);
-  // The window title bar, the conversation top bar and the window controls
-  // share the one selector rule, so they cannot drift apart into merely-similar
-  // values. The work panel header is NOT among them: it sits on the panel's own
-  // glass, and a second translucent layer in the same 46px read as a doubled,
-  // muddier strip against the title bar beside it.
+  // Every chrome surface shares the one selector rule, and the work panel
+  // header is one of them: it has to carry the same fill AND the same underlay
+  // as the conversation top bar, or it reads as a thinner, differently tinted
+  // strip. A copy is how those drift apart.
   assert.match(
     css,
-    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
+    /\.main-titlebar,:is\(\.conversation-topbar,\[data-slot=topbar\]\),\.window-controls,\.work-panel-header\{background-color:color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-chrome-alpha\)/
   );
-  // The header paints nothing of its own and keeps only the hairline, so the
-  // band shows exactly one frosted layer: the panel's.
-  assert.match(css, /\.work-panel-header\{background-color:transparent!important;box-shadow:inset 0 -1px 0 /);
-  assert.doesNotMatch(css, /\.work-panel-header[^{}]*\{[^}]*chrome-alpha/);
-  // The window controls share that band while a panel is open, so they must not
-  // paint over it either — otherwise that 120px corner turns into a different
-  // material from the header right beside it.
-  assert.match(css, /\.app-shell:has\(\.work-panel\)>\.window-controls\{background-color:transparent!important/);
-  // The work panel's glass rides on its ::before, covering the whole panel
-  // including the header band. A backdrop-filter on .work-panel itself would
-  // make it the Backdrop Root of the header, so the layer lives on the pseudo
-  // element and the top strip stays part of one continuous frosted column.
-  assert.match(css, /\.work-panel::before\{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-color:color-mix\(in oklab,var\(--ds-bg-dock\)[^}]*backdrop-filter:blur/);
+  // The underlay is half the material: the top bar sits on .main-pane at
+  // --pg-canvas-alpha, so the panel paints that same band over its own top
+  // --ds-toolbar-height and keeps the denser dock colour below it.
+  assert.match(
+    css,
+    /\.work-panel::before\{[^}]*linear-gradient\(to bottom,color-mix\(in oklab,var\(--ds-bg-primary\) var\(--pg-canvas-alpha\),transparent\) 0 var\(--ds-toolbar-height\),color-mix\(in oklab,var\(--ds-bg-dock\) var\(--pg-sidebar-alpha\),transparent\) var\(--ds-toolbar-height\)\)/
+  );
+  assert.match(css, /\.work-panel::before\{[^}]*backdrop-filter:blur/);
+  // A backdrop-filter on .work-panel itself would make it the Backdrop Root of
+  // the header, so the layer lives on the pseudo element, which is a sibling of
+  // the header in paint order and does not cut its blur off from the photo.
+  assert.doesNotMatch(css, /\.work-panel\{[^}]*backdrop-filter/);
   assert.doesNotMatch(css, /\.work-panel\{[^}]*backdrop-filter/);
   assert.match(css, /\.work-panel\{background-color:transparent!important;animation:none!important\}/);
   // This guard must survive motion being disabled. The host's work-panel-in
