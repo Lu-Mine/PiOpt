@@ -6,7 +6,7 @@ PI-Desktop 的控制台插件：一个插件，三个功能。
 |---|---|
 | **插件市场** | 读取已装插件与官方 catalog，经 jsDelivr / raw / GitHub Blobs API 下载更新包，按 `sizeBytes` 与 `sha256` 逐位校验后再交给你在 Plugins 页安装。 |
 | **外观** | 一处调窗口长什么样：界面动效（总开关 + 完全禁用 + 强度与速度两把滑杆，改完即时生效）与窗口材质（磨砂玻璃开关、模糊强度、背景图与最近使用的壁纸）。 |
-| **AI 网关** | 查看、重启本地 AI 网关，读它的日志。 |
+| **AI 网关** | 一页三段：连接（两个本机面板、四种客户端协议、API Key 增删备注、模型列表）、上游（CLIProxyAPI 凭证与 wb2api 号池的增删刷新与启用开关）、用量（Antigravity 三组剩余量与 wb2api 号池积分条，加真实请求看板）。状态条置顶常驻。 |
 
 三者都在同一个面板里，通过左侧菜单的「插件市场 / 外观 / AI 网关」切换；命令也可以直接打开某个视图，或直接落在外观的某一节。
 
@@ -27,6 +27,24 @@ data/local.piopt/downloads/<id>-<version>.piplug
 ```
 
 失败码：`SERVER_HTML`、`LINK_RESET`、`MIRROR_404`、`RATE_LIMIT`、`TIMEOUT`、`DNS`、`HTTP_ERROR`、`INTEGRITY`、`TOO_LARGE`、`CANCELLED`、`NO_SOURCE`、`WRITE_FAILED`。
+
+## AI 网关
+
+一页三段，顶上是一条常驻（sticky）的运行状态条：网关是否在跑、守护进程 PID 与已运行时长、刷新与重启网关。它滚动时不动，其余内容在下面滚。
+
+| 区块 | 内容 |
+|---|---|
+| **一、连接** | CLIProxyAPI（`:8317/management.html`）与 wb2api（`:8318`）各有账号/密码输入与「打开面板」按钮（交给系统默认浏览器，插件不内嵌它们的界面）；四种客户端协议地址（`/v1`、`/v1/messages`、`/v1/responses`、`/v1beta/models`）可一键复制；CLIProxyAPI 的 API Key 可添加、生成、复制、改备注名、删除；下面是两家支持的模型清单，每个模型带自己的品牌图标。 |
+| **二、上游** | CLIProxyAPI 凭证：逐个刷新、全部刷新、OAuth 添加、删除。wb2api 账号池：OAuth 授权（国际版/国内版）、全部签到、刷新所有积分统计、刷新所有凭证、删除；每行左侧是账号名与可用状态，中间是余额/总额与当日 Token，最右侧是启用开关。表头每一列都能点一下切换升序/降序。 |
+| **三、用量** | Antigravity 三个分类的剩余百分比（Gemini / Claude·GPT / Argon 4）；wb2api 号池条按「剩余 / 总额」画，另一半染成「已使用」。看板按今日 / 近 3 日 / 本周 / 本月 / 近 30 天 / 近一年取数：总 Token、请求与成功率、生成速度与首字、缓存命中、积分与等价花费，Token 时序图（可切 Token / 请求数 / 吞吐量）、最近请求、按模型 / 账号 / API Key 的用量明细。 |
+
+几条实现上的边界：
+
+- **密钥不落页面**：CLIProxyAPI 的管理密钥从插件设置读，缺省时读本机 `config.yaml` 的 `management.secret-key`；两者都没有就如实显示 `missing management key`。密码框留空表示「保持已存的值」，不会把已有口令清掉。
+- **备注名存本地**：API Key 的备注按密钥 sha256 前 16 位索引，存在插件设置里，不写回 CLIProxyAPI 配置；增删是直接 PUT 整个 `access.api-keys` 数组。
+- **取不到就说取不到**：Antigravity 配额来自 `retrieveUserQuotaSummary`，网络不通时显示「暂无配额数据」，不会画成 0%。
+- **只读看板**：用量全部来自 wb2api 的 `/usage/analytics`、`/usage/timeseries`、`/usage/recent`，图表是原生 SVG，没有图表库。
+- 已删除的旧能力不再保留入口：Clash 出海通道、积分自动化触发、独立模型页、面板内嵌日志都已从界面与代码里移除；`gateway_status` / `gateway_restart` / `gateway_logs` 三个 agent 工具照旧可用。
 
 ## 界面动效（外观 · 第一节）
 
@@ -190,7 +208,7 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 
 ## 权限与边界
 
-声明：`ui.panel`、`renderer.extension`、`ui.theme`、`clipboard.write`、`net.fetch`、`agent.tool.register`、`agent.prompt.inject`。
+声明：`ui.panel`、`renderer.extension`、`ui.theme`、`clipboard.write`、`net.fetch`、`shell.openExternal`、`agent.tool.register`、`agent.prompt.inject`。
 
 | `Pimarket: 准备全部可用更新` | 打开面板并串行准备所有可用更新 |
 
@@ -212,7 +230,7 @@ PI-Desktop 一次只能选择一个主题，外观层不能叠加在另一个第
 
 ```text
 PiOpt/
-├─ manifest.json            统一清单：6 条命令、5 个 agent 工具、7 项权限
+├─ manifest.json            统一清单：6 条命令、5 个 agent 工具、8 项权限
 ├─ main.js                  组装三个功能，按通道前缀路由面板 RPC
 ├─ features/
 │  ├─ market/               市场功能
@@ -224,8 +242,10 @@ PiOpt/
 │  │  ├─ index.js           生命周期、两条命令、面板 RPC、唯一的主题注册
 │  │  ├─ motion.js          动效 token、主题 CSS 生成器（含「完全禁用」）
 │  │  └─ glass.js           玻璃 token、最近使用与玻璃 CSS 生成器
-│  └─ gateway/              AI 网关控制
-│     └─ index.js           进程探测、重启、日志、面板 RPC
+│  └─ gateway/              AI 网关：进程守护 + 三段页面的数据通道
+│     ├─ index.js           进程探测/重启/日志、面板 RPC、浏览器打开放行
+│     ├─ services.js        CLIProxyAPI v8 管理接口、wb2api 面板会话、用量与配额
+│     └─ data.js            账号/凭证/模型归一化、号池合计、三组配额聚合
 ├─ renderer/
 │  ├─ index.html            外壳 + 三个功能视图
 │  ├─ tokens.css            共享设计 token
@@ -236,6 +256,7 @@ PiOpt/
 │  ├─ market.js             市场视图逻辑
 │  ├─ appearance.js         外观视图逻辑（动效 + 材质两节）
 │  ├─ gateway.js            网关视图逻辑
+│  ├─ model-logos/         模型品牌图标（lobe-icons，MIT，随包内置不上网）
 │  ├─ shell.js              视图切换与按需启动（Alt+1…3）
 │  └─ entry.mjs             宿主窗口侧边栏的入口按钮（renderer.extension）
 ├─ skills/piopt.md          Agent 使用规则

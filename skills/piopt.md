@@ -15,7 +15,31 @@ PiOpt bundles three features in one plugin:
   with a recent list). They are one feature because they write one runtime
   theme; the view is one page, the sections are not separate panels. Each
   section has a 重置 button with a confirm step.
-- **AI 网关 (gateway)** — status, restart and logs for the local AI gateway.
+- **AI 网关 (gateway)** — one page in three sections (连接 / 上游 / 用量) under a
+  pinned status bar: what both local panels expose and how to reach them, which
+  accounts and credentials feed them, and how much has actually been used.
+
+## Gateway: what the page does, and what it refuses to fake
+
+- 连接: CLIProxyAPI (`:8317/management.html`) and wb2api (`:8318`) each get an
+  "打开面板" button that hands the loopback URL to `shell.openExternal`; the
+  plugin never embeds either UI, so their own logins keep working. Saved
+  credentials live in this plugin's settings, and a blank password field means
+  "keep the stored one", never "clear it".
+- CLIProxyAPI 鉴权按优先级取：面板保存的管理密钥 → 本机 `config.yaml` 的
+  `management.secret-key`。密钥从不写入页面、日志或截图；缺密钥时如实显示
+  `missing management key`，不伪造成功。
+- API Key 的备注名只存在本插件设置里（按密钥 sha256 前 16 位索引），不写回
+  CLIProxyAPI 配置；添加与删除是直接 PUT 整个 `access.api-keys` 数组。
+- 用量: Antigravity 的三个分类（Gemini / Claude·GPT / Argon 4）来自
+  `retrieveUserQuotaSummary`，取不到就显示「暂无配额数据」，绝不以 0% 冒充；
+  wb2api 号池条把「剩余 / 总额」与「已使用」分色画在同一条上。
+- 看板只读 wb2api 的 `/usage/*`：今日 / 近 3 日 / 本周 / 本月 / 近 30 天 /
+  近一年。图表是原生 SVG，不引入图表库。
+- 状态条常驻页面顶端（sticky），刷新与重启网关都在那里；网关进程、日志工具
+  与重启语义保持不变。
+- Clash 出海通道、积分自动化触发、独立模型页已从界面与代码中删除，不要给
+  用户"其实还能用"的印象。
 
 ## Market: when to use
 

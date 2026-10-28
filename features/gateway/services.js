@@ -1,0 +1,410 @@
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const data = require("./data.js");
+
+const GATEWAY_DIR = "C:/Users/Avencess/ai-gateway";
+const AUTH_DIR = path.join(GATEWAY_DIR, "auth");
+const CP_BASE = "http://127.0.0.1:8317";
+const WB_BASE = "http://127.0.0.1:8318";
+const MGMT = "/v8/management";
+const CP_PROVIDERS = ["antigravity", "claude", "codex", "gemini"];
+const WB_PROVIDERS = ["intl", "cn"];
+const quotaCache = new Map();
+let wbSession = null;
+
+async function readSettings() {
+  try {
+    const settings = await pi.plugin.getSettings();
+    return settings && typeof settings === "object" ? settings : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveConnection(kind, values) {
+  const settings = await readSettings();
+  const current = settings.gatewayConnections && typeof settings.gatewayConnections === "object"
+    ? settings.gatewayConnections
+    : {};
+  const previous = current[kind] && typeof current[kind] === "object" ? current[kind] : {};
+  const next = { ...current, [kind]: { ...previous } };
+  for (const field of ["username", "password"]) {
+    if (typeof values[field] === "string") next[kind][field] = values[field];
+  }
+  if (kind === "cp" && typeof values.managementKey === "string") {
+    next[kind].managementKey = values.managementKey;
+  }
+  await pi.plugin.setSettings({ gatewayConnections: next });
+  return next[kind];
+}
+
+function localManagementKey() {
+  try {
+    const yaml = fs.readFileSync(path.join(GATEWAY_DIR, "cliproxy", "config.yaml"), "utf8");
+    const block = yaml.match(/^management:\s*\n((?:[ \t]+.*\n?)*)/m);
+    const match = block && block[1].match(/^[ \t]+secret-key:[ \t]*["']?([^\s"']+)/m);
+    return match ? match[1] : "";
+  } catch {
+    return "";
+  }
+}
+async function cpAuth() {
+  const saved = await readSettings();
+  const configured = saved.gatewayConnections && saved.gatewayConnections.cp;
+  return {
+    username: configured && configured.username || "",
+    password: configured && configured.password || "",
+    managementKey: configured && configured.managementKey || localManagementKey(),
+  };
+}
+
+
+async function cpRequest(pathname, options = {}) {
+  const auth = await cpAuth();
+  const headers = { Accept: "application/json", ...(options.headers || {}) };
+  if (auth.managementKey) headers.Authorization = `Bearer ${auth.managementKey}`;
+  if (auth.username || auth.password) {
+    headers.Authorization = `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString("base64")}`;
+  }
+  const body = options.body === undefined ? undefined : JSON.stringify(options.body);
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const response = await fetch(CP_BASE + MGMT + pathname, {
+    method: options.method || "GET",
+    headers,
+    body,
+    signal: AbortSignal.timeout(options.timeout || 10000),
+  });
+  if (response.status === 204) return { ok: true };
+  const text = await response.text();
+  let result = {};
+  try { result = text ? JSON.parse(text) : {}; } catch { result = { error: text }; }
+  if (!response.ok) {
+    const message = result.error && (result.error.message || result.error) || result.message || `HTTP ${response.status}`;
+    const error = new Error(`CLIProxyAPI: ${message}`);
+    error.status = response.status;
+    throw error;
+  }
+  return result;
+}
+
+async function clientKeys() {
+  const keys = await cpRequest("/config/access/api-keys");
+  return Array.isArray(keys) ? keys.map(String) : [];
+}
+
+async function keyOverview() {
+  const [keys, settings] = await Promise.all([clientKeys(), readSettings()]);
+  const labels = settings.gatewayKeyLabels && typeof settings.gatewayKeyLabels === "object"
+    ? settings.gatewayKeyLabels
+    : {};
+  return keys.map(key => ({
+    id: data.keyId(key),
+    key,
+    mask: data.maskKey(key),
+    label: String(labels[data.keyId(key)] || ""),
+  }));
+}
+
+async function saveKeyLabel(id, label) {
+  if (!/^[a-f0-9]{16}$/.test(String(id))) throw new Error("密钥标识无效");
+  const settings = await readSettings();
+  const current = settings.gatewayKeyLabels && typeof settings.gatewayKeyLabels === "object"
+    ? settings.gatewayKeyLabels
+    : {};
+  const next = { ...current };
+  if (String(label || "").trim()) next[id] = String(label).trim().slice(0, 60);
+  else delete next[id];
+  await pi.plugin.setSettings({ gatewayKeyLabels: next });
+}
+
+async function keyAction(payload) {
+  const action = String(payload.action || "");
+  if (action === "label") {
+    const keys = await clientKeys();
+    if (!keys.some(key => data.keyId(key) === payload.id)) throw new Error("密钥已不存在");
+    await saveKeyLabel(payload.id, payload.label);
+    return { ok: true };
+  }
+  if (action === "add") {
+    const value = String(payload.key || "").trim();
+    if (!/^[\x21-\x7e]{12,256}$/.test(value)) throw new Error("API Key 需为 12–256 位可见 ASCII 字符");
+    const keys = await clientKeys();
+    if (keys.includes(value)) throw new Error("这个 API Key 已存在");
+    await cpRequest("/config/access/api-keys", { method: "PUT", body: [...keys, value] });
+    await saveKeyLabel(data.keyId(value), payload.label);
+    return { ok: true, id: data.keyId(value) };
+  }
+  if (action === "delete") {
+    const keys = await clientKeys();
+    const next = keys.filter(key => data.keyId(key) !== payload.id);
+    if (next.length === keys.length) throw new Error("密钥已不存在");
+    await cpRequest("/config/access/api-keys", { method: "PUT", body: next });
+    await saveKeyLabel(payload.id, "");
+    return { ok: true };
+  }
+  throw new Error("不支持的 API Key 操作");
+}
+
+async function cpModels() {
+  const keys = await clientKeys();
+  const response = await fetch(CP_BASE + "/v1/models", {
+    headers: keys[0] ? { Authorization: `Bearer ${keys[0]}` } : {},
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`模型列表 HTTP ${response.status}`);
+  return data.modelRows(await response.json());
+}
+
+function readAuthFiles() {
+  let names = [];
+  try { names = fs.readdirSync(AUTH_DIR).filter(name => name.endsWith(".json")); } catch { return []; }
+  return names.map(name => {
+    try {
+      const doc = JSON.parse(fs.readFileSync(path.join(AUTH_DIR, name), "utf8"));
+      return {
+        name,
+        email: String(doc.email || name.replace(/\.json$/, "")),
+        accessToken: String(doc.access_token || ""),
+      };
+    } catch { return null; }
+  }).filter(Boolean);
+}
+
+async function antigravityQuota(force = false) {
+  const now = Date.now();
+  return Promise.all(readAuthFiles().map(async account => {
+    const cached = quotaCache.get(account.email);
+    if (!force && cached && now - cached.at < 60000) return { email: account.email, summary: cached.summary };
+    let summary = cached ? cached.summary : null;
+    if (account.accessToken) {
+      try {
+        const response = await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${account.accessToken}`,
+            "Content-Type": "application/json",
+            "User-Agent": "antigravity/hub/2.23.0 darwin/arm64",
+          },
+          body: "{}",
+          signal: AbortSignal.timeout(ANTIGRAVITY_TIMEOUT),
+        });
+        if (response.ok) summary = await response.json();
+      } catch { /* 保留上一份成功快照 */ }
+    }
+    quotaCache.set(account.email, { at: now, summary });
+    return { email: account.email, summary };
+  }));
+}
+
+async function wbAuth(login = false) {
+  const settings = await readSettings();
+  const saved = settings.gatewayConnections && settings.gatewayConnections.wb || {};
+  if (wbSession && !login) return wbSession;
+  const password = String(saved.password || "admin");
+  const response = await fetch(WB_BASE + "/panel/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+    signal: AbortSignal.timeout(10000),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.token) {
+    const error = new Error(result.error && result.error.message || "wb2api 面板密码错误或服务未就绪");
+    error.status = response.status;
+    throw error;
+  }
+  wbSession = result.token;
+  return wbSession;
+}
+
+async function wbRequest(pathname, options = {}, retry = true) {
+  const token = await wbAuth();
+  const headers = { Accept: "application/json", "X-Panel-Token": token, ...(options.headers || {}) };
+  const body = options.body === undefined ? undefined : JSON.stringify(options.body);
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const response = await fetch(WB_BASE + pathname, {
+    method: options.method || "GET",
+    headers,
+    body,
+    signal: AbortSignal.timeout(options.timeout || 15000),
+  });
+  if (response.status === 401 && retry) {
+    wbSession = null;
+    return wbRequest(pathname, options, false);
+  }
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(`wb2api: ${result.error && result.error.message || result.message || `HTTP ${response.status}`}`);
+    error.status = response.status;
+    throw error;
+  }
+  return result;
+}
+
+function wbConnection(saved) {
+  return {
+    configured: Boolean(saved && saved.password),
+    username: saved && saved.username || "",
+    passwordSet: Boolean(saved && saved.password),
+    defaultPassword: !(saved && saved.password),
+  };
+}
+
+async function cpConnection() {
+  const saved = await cpAuth();
+  return {
+    configured: Boolean(saved.managementKey || saved.username || saved.password),
+    username: saved.username,
+    passwordSet: Boolean(saved.password),
+    managementKeySet: Boolean(saved.managementKey),
+    usingLocalConfig: !saved.managementKey,
+  };
+}
+
+function publicError(error) {
+  return error && error.message ? error.message : String(error);
+}
+
+async function overview() {
+  const settings = await readSettings();
+  const wbSaved = settings.gatewayConnections && settings.gatewayConnections.wb || {};
+  const out = {
+    ok: true,
+    generatedAt: Date.now(),
+    baseUrl: CP_BASE,
+    panels: {
+      cp: { name: "CLIProxyAPI", url: CP_BASE + "/management.html", connection: await cpConnection() },
+      wb: { name: "wb2api", url: WB_BASE + "/", connection: wbConnection(wbSaved) },
+    },
+    protocols: [
+      { id: "openai", label: "OpenAI", url: CP_BASE + "/v1" },
+      { id: "claude", label: "Claude", url: CP_BASE + "/v1/messages" },
+      { id: "codex", label: "Codex", url: CP_BASE + "/v1/responses" },
+      { id: "gemini", label: "Gemini", url: CP_BASE + "/v1beta/models" },
+    ],
+    providers: { cp: CP_PROVIDERS, wb: WB_PROVIDERS },
+    errors: {},
+  };
+  const jobs = {
+    keys: keyOverview(),
+    models: cpModels(),
+    credentials: cpRequest("/credentials"),
+    accounts: wbRequest("/accounts?realm=all"),
+    wbModels: wbRequest("/v1/models"),
+  };
+  await Promise.all(Object.entries(jobs).map(async ([key, job]) => {
+    try { out[key] = await job; } catch (error) { out.errors[key] = publicError(error); }
+  }));
+  out.credentials = data.credentialRows(out.credentials);
+  out.accounts = data.accountRows(out.accounts);
+  out.wbModels = data.modelRows(out.wbModels);
+  out.pool = data.poolSummary(out.accounts || []);
+  return out;
+}
+
+// Antigravity 的配额接口要走 Google 域，慢且常不可达；单独一条通道，页面先出结构。
+async function antigravity() {
+  try {
+    return { ok: true, groups: data.aggregateAntigravity(readAuthFiles(), await antigravityQuota()) };
+  } catch (error) {
+    return { ok: false, groups: [], error: publicError(error) };
+  }
+}
+
+const ANTIGRAVITY_TIMEOUT = 5000;
+
+function rangeQuery(range) {
+  const now = Math.floor(Date.now() / 1000);
+  if (range === "d3") return `range=custom&since=${now - 3 * 86400}&until=${now}`;
+  if (range === "d30") return `range=custom&since=${now - 30 * 86400}&until=${now}`;
+  if (range === "all") return `range=custom&since=${now - 365 * 86400}&until=${now}`;
+  return `range=${range}`;
+}
+
+async function usage(range) {
+  const allowed = new Set(["today", "d3", "week", "month", "d30", "all"]);
+  const selected = allowed.has(range) ? range : "today";
+  const query = rangeQuery(selected);
+  const [analytics, series, recent] = await Promise.all([
+    wbRequest(`/usage/analytics?realm=all&${query}`),
+    wbRequest(`/usage/timeseries?realm=all&${query}`),
+    wbRequest("/usage/recent?limit=12"),
+  ]);
+  return { range: selected, analytics, series, recent };
+}
+
+async function cpAction(payload) {
+  const action = String(payload.action || "");
+  if (action === "refresh") {
+    const body = payload.all ? { all: true } : { name: String(payload.name || ""), auth_index: String(payload.authIndex || "") };
+    if (!body.all && !body.name) throw new Error("缺少凭证名称");
+    return cpRequest("/credentials/refresh", { method: "POST", body, timeout: payload.all ? 310000 : 60000 });
+  }
+  if (action === "delete") {
+    if (!payload.name) throw new Error("缺少凭证名称");
+    return cpRequest("/credentials", { method: "DELETE", body: { names: [String(payload.name)] } });
+  }
+  if (action === "oauthStart") {
+    const provider = String(payload.provider || "");
+    if (!CP_PROVIDERS.includes(provider)) throw new Error("不支持的 OAuth 提供方");
+    return cpRequest(`/oauth/auth-url?provider=${encodeURIComponent(provider)}&is_webui=true`);
+  }
+  if (action === "oauthPoll") {
+    return cpRequest(`/oauth/status?state=${encodeURIComponent(String(payload.state || ""))}`);
+  }
+  if (action === "oauthCallback") {
+    const provider = String(payload.provider || "");
+    if (!CP_PROVIDERS.includes(provider)) throw new Error("不支持的 OAuth 提供方");
+    return cpRequest("/oauth/callback", { method: "POST", body: { provider, redirect_url: String(payload.url || "") } });
+  }
+  if (action === "oauthCancel") {
+    return cpRequest(`/oauth/session?state=${encodeURIComponent(String(payload.state || ""))}`, { method: "DELETE" });
+  }
+  throw new Error("不支持的凭证操作");
+}
+
+async function wbAction(payload) {
+  const action = String(payload.action || "");
+  const routes = {
+    checkin: "/accounts/checkin",
+    credits: "/accounts/credits/fetch",
+    refresh: "/accounts/refresh",
+    delete: "/accounts/delete",
+  };
+  if (action === "oauthStart") {
+    const realm = String(payload.realm || "");
+    if (!WB_PROVIDERS.includes(realm)) throw new Error("请选择国际版或国内版");
+    return wbRequest("/accounts/login/start", { method: "POST", body: { platform: "CLI", realm }, timeout: 30000 });
+  }
+  if (action === "oauthPoll") {
+    return wbRequest(`/accounts/login/poll?state=${encodeURIComponent(String(payload.state || ""))}`);
+  }
+  if (action === "oauthCancel") {
+    return wbRequest("/accounts/login/cancel", { method: "POST", body: { state: String(payload.state || "") } });
+  }
+  if (action === "toggle") {
+    if (!payload.uid) throw new Error("缺少账号标识");
+    return wbRequest("/accounts/set", { method: "POST", body: { uid: payload.uid, enabled: Boolean(payload.enabled) } });
+  }
+  if (!routes[action]) throw new Error("不支持的账号操作");
+  if (action === "delete" && !payload.uid) throw new Error("缺少账号标识");
+  const body = payload.uid ? { uid: payload.uid } : {};
+  return wbRequest(routes[action], { method: "POST", body, timeout: action === "refresh" || action === "credits" ? 310000 : 120000 });
+}
+
+module.exports = {
+  CP_BASE,
+  WB_BASE,
+  readSettings,
+  saveConnection,
+  overview,
+  usage,
+  keyAction,
+  cpAction,
+  wbAction,
+  antigravity,
+  cpRequest,
+  wbRequest,
+};

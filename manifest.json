@@ -37,6 +37,7 @@
     "ui.theme",
     "clipboard.write",
     "net.fetch",
+    "shell.openExternal",
     "agent.tool.register",
     "agent.prompt.inject"
   ],
