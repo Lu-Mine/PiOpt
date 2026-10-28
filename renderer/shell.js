@@ -1,6 +1,6 @@
 /*
- * PiOpt shell: switches between feature views and boots each feature once,
- * on first reveal, so the market does not poll while you are tuning appearance.
+ * PiOpt shell: switches between feature views, syncs the host theme onto :root,
+ * and boots each feature once on first reveal so inactive views stay quiet.
  *
  * Three views, one of them two sections: motion and the window material are one
  * feature (`appearance`), so they share a tab and the commands name a section
@@ -11,6 +11,8 @@
 
   const bridge = window.pluginBridge;
   const STORAGE_KEY = "piopt.feature";
+  const HOST_THEME_STYLE_ID = "opt-host-theme";
+  const OWN_THEME_PREFIX = "plugin:local.piopt:";
 
   const tabs = Array.from(document.querySelectorAll("[data-feature]"));
   const views = {
@@ -23,6 +25,78 @@
   // Sections inside the appearance view, each with the id it scrolls to.
   const SECTIONS = ["motion", "glass"];
   let current = "market";
+
+  // -------------------------------------------------------------- host theme
+  // Extracts root-level custom properties (--ds-*, --gray-*, --accent-*, --color-*)
+  // from a host plugin theme stylesheet so PiOpt inherits custom themes without
+  // importing host-window layout selectors or background assets into the panel.
+  function extractThemeVariables(cssText) {
+    if (typeof cssText !== "string" || !cssText.trim()) return "";
+    const stripped = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+    const declarations = [];
+    const blockPattern = /([^{}]+)\{([^{}]*)\}/g;
+    let match;
+    while ((match = blockPattern.exec(stripped)) !== null) {
+      const selector = match[1].trim();
+      if (!/(^|,)\s*(:root|html|body)\b/.test(selector)) continue;
+      const body = match[2];
+      const propPattern = /(--(?:ds|gray|accent|color)-[a-z0-9-]+)\s*:\s*([^;{}]+)/gi;
+      let prop;
+      while ((prop = propPattern.exec(body)) !== null) {
+        const name = prop[1].trim();
+        const value = prop[2].trim();
+        if (!value || /url\s*\(|@import|expression\s*\(/i.test(value)) continue;
+        declarations.push(`  ${name}: ${value};`);
+      }
+    }
+    return declarations.length ? `:root {\n${declarations.join("\n")}\n}` : "";
+  }
+
+  function syncHostTheme(appearance) {
+    const rawBase = appearance && appearance.base;
+    const base = rawBase === "light" || rawBase === "dark"
+      ? rawBase
+      : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    const root = document.documentElement;
+    root.dataset.base = base;
+    root.dataset.theme = base;
+    if (appearance && typeof appearance.locale === "string" && appearance.locale) {
+      root.lang = appearance.locale;
+    }
+
+    const pluginTheme = appearance && appearance.pluginTheme;
+    const themeId = typeof pluginTheme === "string"
+      ? pluginTheme
+      : (pluginTheme && typeof pluginTheme.id === "string" ? pluginTheme.id : "");
+    const themeCss = pluginTheme && typeof pluginTheme === "object" && !themeId.startsWith(OWN_THEME_PREFIX)
+      ? extractThemeVariables(pluginTheme.css)
+      : "";
+
+    let styleEl = document.getElementById(HOST_THEME_STYLE_ID);
+    if (!themeCss) {
+      if (styleEl) styleEl.remove();
+      return;
+    }
+    if (!styleEl) {
+      styleEl = document.createElement("style");
+      styleEl.id = HOST_THEME_STYLE_ID;
+      document.head.append(styleEl);
+    }
+    if (styleEl.textContent !== themeCss) styleEl.textContent = themeCss;
+  }
+
+  if (bridge && typeof bridge.on === "function") {
+    bridge.on("appearance:changed", syncHostTheme);
+  }
+  if (bridge && typeof bridge.invoke === "function") {
+    bridge.invoke("app.getAppearance").then(syncHostTheme).catch(() => syncHostTheme(null));
+  } else {
+    syncHostTheme(null);
+  }
+
+  window.PiOptTheme = { extractThemeVariables, syncHostTheme };
+
+  // ------------------------------------------------------------------ views
 
   function reportFailure(feature, detail) {
     const view = views[feature];

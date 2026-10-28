@@ -358,7 +358,7 @@ test("the material section's stylesheet targets the classes its own markup uses"
     // border and its row separation.
     assert.match(
       css,
-      new RegExp(`\\.${name}\\s*(?:,[^{}]*)?\\{`),
+      new RegExp(`\.${name}(?![\w-])[^{}]*\{`),
       `renderer/appearance.css must style .${name}`
     );
   }

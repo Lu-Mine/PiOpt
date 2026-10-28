@@ -7,6 +7,7 @@
     <title>PiOpt</title>
     <link rel="stylesheet" href="./tokens.css" />
     <link rel="stylesheet" href="./base.css" />
+    <link rel="stylesheet" href="./components.css" />
     <link rel="stylesheet" href="./market.css" />
     <link rel="stylesheet" href="./appearance.css" />
     <link rel="stylesheet" href="./gateway.css" />
@@ -52,7 +53,7 @@
     <section id="view-market" class="opt-view" role="tabpanel" aria-labelledby="tab-market">
     <header class="topbar">
       <div class="brand">Pimarket <small id="hostVersion"></small></div>
-      <span class="chip" id="catalogChip"><span class="dot"></span><span>catalog</span></span>
+      <span class="chip" id="catalogChip"><span class="dot"></span><span>目录</span></span>
       <span class="chip" id="updateChip"></span>
       <div class="spacer"></div>
       <button class="btn" id="btnRefresh"></button>
@@ -81,7 +82,6 @@
     </section>
 
     <section id="view-appearance" class="opt-view" role="tabpanel" aria-labelledby="tab-appearance" hidden>
-    <div class="app-shell">
       <main class="workspace">
         <section class="appearance-section" id="section-motion" aria-labelledby="appearance-motion-title">
           <header class="appearance-heading">
@@ -89,69 +89,76 @@
               <h1 id="appearance-motion-title">界面动效</h1>
               <p id="preset-summary">平衡的响应速度与空间感</p>
             </div>
-            <span class="sync-dot" id="sync-dot" data-state="ready" title="设置已实时应用"></span>
+            <span class="sync-dot" id="sync-dot" data-state="ready" title="已实时应用"></span>
           </header>
 
-          <div class="panels">
-            <section class="panel">
-              <div class="segmented preset-options" role="group" aria-label="动画预设">
-                <button type="button" data-preset="agile">敏捷</button>
-                <button type="button" data-preset="balanced">平衡</button>
-                <button type="button" data-preset="gentle">柔和</button>
-                <button type="button" data-preset="reduced">减弱</button>
+          <div class="settings-group">
+            <div class="settings-row">
+              <div class="settings-row-copy">
+                <div class="settings-row-title">动画预设</div>
+                <div class="settings-row-detail">整体过渡节奏与运动幅度</div>
               </div>
-
-              <div class="range-stack">
-                <label class="range-control" for="intensity">
-                  <span><strong>运动强度</strong><output id="intensity-value">100%</output></span>
-                  <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
-                  <span class="range-ends" aria-hidden="true"><small>克制</small><small>清晰</small></span>
-                </label>
-
-                <label class="range-control" for="speed">
-                  <span><strong>响应速度</strong><output id="speed-value">1.00×</output></span>
-                  <input id="speed" type="range" min="60" max="160" step="5" value="100" />
-                  <span class="range-ends" aria-hidden="true"><small>舒缓</small><small>迅速</small></span>
-                </label>
-              </div>
-            </section>
-
-            <section class="panel">
-              <div>
-                <div class="field-label">外观基底</div>
-                <div class="segmented mode-options" role="group" aria-label="外观基底">
-                  <button type="button" data-mode="auto" title="跟随系统外观">自动</button>
-                  <button type="button" data-mode="light" title="固定浅色基底">浅色</button>
-                  <button type="button" data-mode="dark" title="固定深色基底">深色</button>
+              <div class="settings-row-control">
+                <div class="segmented preset-options" role="group" aria-label="动画预设">
+                  <button type="button" data-preset="agile">敏捷</button>
+                  <button type="button" data-preset="balanced">平衡</button>
+                  <button type="button" data-preset="gentle">柔和</button>
+                  <button type="button" data-preset="reduced">减弱</button>
                 </div>
               </div>
+            </div>
 
-              <label class="switch-row">
-                <span>
-                  <strong>跟随系统减弱动态</strong>
-                  <small>系统请求减少运动时自动收敛</small>
-                </span>
+            <label class="settings-row" for="intensity">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">运动强度</span>
+                <span class="settings-row-detail">元素进入与反馈的幅度</span>
+              </span>
+              <span class="settings-row-control range-inline">
+                <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
+                <output id="intensity-value">100%</output>
+              </span>
+            </label>
+
+            <label class="settings-row" for="speed">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">响应速度</span>
+                <span class="settings-row-detail">过渡与动画的播放倍率</span>
+              </span>
+              <span class="settings-row-control range-inline">
+                <input id="speed" type="range" min="60" max="160" step="5" value="100" />
+                <output id="speed-value">1.00×</output>
+              </span>
+            </label>
+
+            <div class="settings-row">
+              <div class="settings-row-copy">
+                <div class="settings-row-title">外观基底</div>
+                <div class="settings-row-detail">跟随系统或固定深浅色</div>
+              </div>
+              <div class="settings-row-control">
+                <div class="segmented mode-options" role="group" aria-label="外观基底">
+                  <button type="button" data-mode="auto">自动</button>
+                  <button type="button" data-mode="light">浅色</button>
+                  <button type="button" data-mode="dark">深色</button>
+                </div>
+              </div>
+            </div>
+
+            <label class="settings-row switch-row" for="follow-reduced">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">跟随系统减弱动态</span>
+                <span class="settings-row-detail">系统开启减少动态时自动收敛</span>
+              </span>
+              <span class="settings-row-control">
                 <input id="follow-reduced" type="checkbox" checked />
                 <span class="switch" aria-hidden="true"><span></span></span>
-              </label>
-
-              <div class="metrics" aria-label="当前动画参数">
-                <div class="field-label">Motion tokens</div>
-                <dl>
-                  <div><dt>按压</dt><dd id="token-instant">80 ms</dd></div>
-                  <div><dt>控件</dt><dd id="token-fast">130 ms</dd></div>
-                  <div><dt>内容</dt><dd id="token-base">190 ms</dd></div>
-                  <div><dt>弹层</dt><dd id="token-slow">260 ms</dd></div>
-                  <div><dt>位移</dt><dd id="token-distance">7 px</dd></div>
-                  <div><dt>缩放</dt><dd id="token-scale">0.985</dd></div>
-                </dl>
-              </div>
-            </section>
+              </span>
+            </label>
           </div>
 
           <div class="control-actions">
-            <button type="button" class="button secondary" id="reset-button">恢复平衡</button>
             <button type="button" class="button quiet" id="stop-button">停止全部动画</button>
+            <button type="button" class="button" id="reset-button">恢复平衡</button>
           </div>
         </section>
 
@@ -159,88 +166,74 @@
           <header class="appearance-heading">
             <div>
               <h1 id="appearance-glass-title">窗口材质</h1>
-              <p id="glass-summary">在窗口内绘制磨砂玻璃分层</p>
+              <p id="glass-summary">磨砂玻璃与窗口背景</p>
             </div>
-            <span class="glass-dot" id="glass-status" data-state="ready" title="设置已实时应用"></span>
+            <span class="glass-dot" id="glass-status" data-state="ready" title="已实时应用"></span>
           </header>
 
-          <div class="glass-panels" id="glass-view" data-enabled="false">
-            <section class="glass-panel">
-              <label class="glass-switch">
-                <span>
-                  <strong>启用玻璃</strong>
-                  <small>侧栏、标题栏与弹层改用半透明底色并模糊其后内容</small>
-                </span>
+          <div class="glass-group" id="glass-view" data-enabled="false">
+            <label class="glass-row glass-switch" for="glass-toggle">
+              <span class="glass-row-copy">
+                <span class="glass-row-title">启用磨砂玻璃</span>
+                <span class="glass-row-detail">侧栏、标题栏与弹层使用半透明模糊材质</span>
+              </span>
+              <span class="glass-row-control">
                 <input id="glass-toggle" type="checkbox" />
                 <span class="glass-switch-track" aria-hidden="true"><span></span></span>
-              </label>
+              </span>
+            </label>
 
-              <div>
-                <div class="glass-field-label">质感</div>
+            <div class="glass-row">
+              <div class="glass-row-copy">
+                <div class="glass-row-title">玻璃质感</div>
+                <div class="glass-row-detail">调整模糊程度与底色厚度</div>
+              </div>
+              <div class="glass-row-control">
                 <div class="glass-segmented" role="group" aria-label="玻璃质感">
                   <button type="button" data-glass-preset="light">轻薄</button>
                   <button type="button" data-glass-preset="standard">标准</button>
                   <button type="button" data-glass-preset="deep">厚重</button>
                 </div>
               </div>
+            </div>
 
-              <label class="glass-range">
-                <span><strong>强度</strong><output id="glass-intensity-value">100%</output></span>
+            <label class="glass-row" for="glass-intensity">
+              <span class="glass-row-copy">
+                <span class="glass-row-title">模糊强度</span>
+              </span>
+              <span class="glass-row-control glass-range">
                 <input id="glass-intensity" type="range" min="60" max="160" step="5" value="100" />
-                <span class="glass-range-ends" aria-hidden="true"><small>淡</small><small>浓</small></span>
-              </label>
-            </section>
+                <output id="glass-intensity-value">100%</output>
+              </span>
+            </label>
 
-            <section class="glass-panel">
-              <div>
-                <div class="glass-field-label">背景图</div>
-                <p class="glass-wallpaper-name" id="glass-wallpaper-name">未选择：玻璃背后是柔光场</p>
+            <div class="glass-row">
+              <div class="glass-row-copy">
+                <div class="glass-row-title">背景图</div>
+                <div class="glass-row-detail glass-wallpaper-name" id="glass-wallpaper-name">未选择图片</div>
               </div>
-
-              <div class="glass-wallpaper-actions">
-                <button type="button" class="glass-button" id="glass-wallpaper-pick">选择图片…</button>
+              <div class="glass-row-control glass-wallpaper-actions">
                 <button type="button" class="glass-button quiet" id="glass-wallpaper-clear">清除</button>
+                <button type="button" class="glass-button" id="glass-wallpaper-pick">选择图片…</button>
               </div>
               <input type="file" id="glass-wallpaper-file" accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/*" hidden />
+            </div>
 
-              <div>
-                <div class="glass-field-label">填充</div>
+            <div class="glass-row">
+              <div class="glass-row-copy">
+                <div class="glass-row-title">填充方式</div>
+                <div class="glass-row-detail glass-fit-hint" id="glass-fit-hint">拉伸铺满整个窗口</div>
+              </div>
+              <div class="glass-row-control">
                 <div class="glass-segmented glass-segmented-fit" role="group" aria-label="背景图填充">
-                  <button type="button" data-glass-fit="fill">拉伸填满</button>
-                  <button type="button" data-glass-fit="contain">等比适应</button>
-                  <button type="button" data-glass-fit="cover">等比铺满</button>
-                  <button type="button" data-glass-fit="none">原始尺寸</button>
-                  <button type="button" data-glass-fit="scale-down">等比不放大</button>
+                  <button type="button" data-glass-fit="fill">拉伸</button>
+                  <button type="button" data-glass-fit="contain">适应</button>
+                  <button type="button" data-glass-fit="cover">铺满</button>
+                  <button type="button" data-glass-fit="none">原始</button>
+                  <button type="button" data-glass-fit="scale-down">不放大</button>
                 </div>
-                <div class="glass-fit-hint"><small id="glass-fit-hint">拉伸铺满整个窗口，比例会变形</small></div>
               </div>
-
-              <p class="glass-note">
-                背景图是一层独立的底：关掉玻璃它照样显示，只是表面不再模糊。图片按绝对路径引用，
-                宿主在注册主题时把它重写成自己的图片资源地址，单张上限 4 MB。
-              </p>
-            </section>
-
-            <section class="glass-panel glass-panel-wide">
-              <div>
-                <div class="glass-field-label">实时读数</div>
-                <dl class="glass-metrics">
-                  <div><dt>模糊半径</dt><dd id="glass-token-blur">28 px</dd></div>
-                  <div><dt>弹层模糊</dt><dd id="glass-token-strong">38 px</dd></div>
-                  <div><dt>侧栏底色</dt><dd id="glass-token-sidebar">44%</dd></div>
-                  <div><dt>标题栏底色</dt><dd id="glass-token-chrome">66%</dd></div>
-                  <div><dt>弹层底色</dt><dd id="glass-token-overlay">82%</dd></div>
-                  <div><dt>光场强度</dt><dd id="glass-token-glow">22%</dd></div>
-                  <div><dt>内容区底色</dt><dd id="glass-token-canvas">100%</dd></div>
-                </dl>
-              </div>
-
-              <p class="glass-note">
-                磨砂层与动效规则写在同一个 <strong>PiOpt Appearance</strong> 主题里下发，这是插件改造
-                宿主窗口的唯一通道，因此需要 PI-Desktop 选中该主题。宿主在 Windows 11 上以不透明窗口
-                运行，插件无法让它透出桌面，所以这里做的是窗口内的磨砂分层。
-              </p>
-            </section>
+            </div>
           </div>
 
           <div class="glass-actions">
@@ -250,7 +243,6 @@
       </main>
 
       <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    </div>
     </section>
 
     <section id="view-gateway" class="opt-view" role="tabpanel" aria-labelledby="tab-gateway" hidden>

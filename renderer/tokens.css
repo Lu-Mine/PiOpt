@@ -1,19 +1,30 @@
 /*
- * PI-Desktop design tokens, copied from the host's own stylesheet so the panel
- * reads as part of the app: gray-0…gray-1000, --ds-bg-*, --ds-border-*,
- * --ds-text-*, --ds-accent and the host's 14px / 28px / 6px scale.
+ * PiOpt design tokens — bridged from PI-Desktop's own --ds-* contract.
+ *
+ * Only base anchors carry fallback values for standalone preview; every surface
+ * wash, border tier, text hierarchy and interactive state is derived with
+ * color-mix() from --ds-text-primary, --ds-bg-primary and --ds-accent. When the
+ * host switches light/dark or applies a custom theme (synced into :root by
+ * shell.js), the entire palette adapts automatically without hardcoded colors.
  */
 
-:root {
+:root,
+:root[data-base="dark"],
+:root[data-theme="dark"] {
   color-scheme: dark;
-  --gray-0: #fff;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", "SF Mono",
+    Menlo, Consolas, monospace;
+
+  /* Base theme anchors (overridden automatically when a host theme provides them) */
+  --gray-0: #ffffff;
   --gray-50: #f9f9f9;
   --gray-75: #f3f3f3;
   --gray-100: #ededed;
   --gray-300: #afafaf;
   --gray-500: #5d5d5d;
-  --gray-550: #4f4f4f;
-  --gray-600: #414141;
   --gray-700: #303030;
   --gray-750: #282828;
   --gray-800: #212121;
@@ -24,63 +35,137 @@
   --ds-bg-secondary: var(--gray-800);
   --ds-bg-tertiary: var(--gray-750);
   --ds-bg-inset: var(--gray-1000);
-  --ds-bg-under: #000;
+  --ds-bg-under: #000000;
   --ds-bg-raised: var(--gray-750);
-  --ds-bg-hover: color-mix(in oklab, var(--gray-0) 6%, transparent);
-  --ds-bg-active: color-mix(in oklab, var(--gray-0) 10%, transparent);
-  --ds-bg-chip: color-mix(in oklab, var(--gray-0) 6%, transparent);
-
-  --ds-border-subtle: color-mix(in oklab, var(--gray-0) 5%, transparent);
-  --ds-border-default: color-mix(in oklab, var(--gray-0) 8%, transparent);
-  --ds-border-strong: color-mix(in oklab, var(--gray-0) 14%, transparent);
+  --ds-raised: var(--ds-bg-raised);
+  --ds-bg-elevated: color-mix(in oklab, var(--ds-bg-secondary) 96%, transparent);
+  --ds-bg-elevated-opaque: var(--ds-bg-raised);
 
   --ds-text-primary: var(--gray-0);
-  --ds-text-secondary: color-mix(in oklab, var(--gray-0) 70%, transparent);
-  --ds-text-muted: color-mix(in oklab, var(--gray-0) 52%, transparent);
-  --ds-text-faint: color-mix(in oklab, var(--gray-0) 38%, transparent);
+  --ds-accent: var(--ds-text-primary);
+  --ds-accent-hover: color-mix(in oklab, var(--ds-accent) 88%, var(--ds-bg-primary));
+  --ds-accent-ink: var(--ds-bg-primary);
+  --ds-focus: var(--ds-accent);
 
-  --ds-accent: var(--gray-0);
-  --ds-accent-hover: var(--gray-100);
-  --ds-accent-ink: var(--gray-900);
-  --ds-error: #ff6764;
   --ds-success: #40c977;
   --ds-warning: #ff8549;
-  --ds-info: var(--gray-300);
+  --ds-error: #ff6764;
+  --ds-info: color-mix(in oklab, var(--ds-text-primary) 68%, var(--ds-bg-primary));
 
+  /* Derived surfaces, borders & text hierarchy — pure functions of the anchors */
+  --ds-bg-hover: color-mix(in oklab, var(--ds-text-primary) 6%, transparent);
+  --ds-bg-active: color-mix(in oklab, var(--ds-text-primary) 10%, transparent);
+  --ds-bg-chip: color-mix(in oklab, var(--ds-text-primary) 6%, transparent);
+  --ds-tile: color-mix(in oklab, var(--ds-text-primary) 3.5%, transparent);
+  --ds-tile-hover: color-mix(in oklab, var(--ds-text-primary) 6%, transparent);
+  --ds-tile-deep: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+  --ds-field-inset-bg: color-mix(in oklab, var(--ds-text-primary) 5%, transparent);
+
+  --ds-border-subtle: color-mix(in oklab, var(--ds-text-primary) 5.5%, transparent);
+  --ds-border-default: color-mix(in oklab, var(--ds-text-primary) 8.5%, transparent);
+  --ds-border-strong: color-mix(in oklab, var(--ds-text-primary) 14%, transparent);
+
+  --ds-text-secondary: color-mix(in oklab, var(--ds-text-primary) 72%, transparent);
+  --ds-text-muted: color-mix(in oklab, var(--ds-text-primary) 52%, transparent);
+  --ds-text-faint: color-mix(in oklab, var(--ds-text-primary) 38%, transparent);
+
+  --ds-switch-track-off: color-mix(in oklab, var(--ds-text-primary) 12%, transparent);
+  --ds-switch-track-off-hover: color-mix(in oklab, var(--ds-text-primary) 18%, transparent);
+  --ds-switch-knob-off: color-mix(in oklab, var(--ds-text-primary) 78%, var(--ds-bg-primary));
+  --ds-switch-knob-on: var(--ds-accent-ink);
+
+  --ds-scrim: color-mix(in oklab, var(--ds-bg-under) 52%, transparent);
+  --ds-raised-shadow: 0 1px 2px color-mix(in oklab, #000000 32%, transparent);
+  --ds-shadow-dialog: 0 16px 44px color-mix(in oklab, #000000 46%, transparent),
+    0 0 0 1px var(--ds-border-default);
+
+  /* Shared scale — matches PI-Desktop settings & work panel */
   --ds-control-size: 28px;
+  --ds-control-sm: 24px;
+  --ds-field-height: 32px;
+
+  --radius-3xs: 4px;
   --radius-2xs: 6px;
   --radius-xs: 8px;
+  --radius-sm: 10px;
   --radius-md: 12px;
-  --text-base: 14px;
-  --text-sm-plus: 12.5px;
-  --text-sm: 12px;
+  --radius-md-plus: 14px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
   --text-xs: 11px;
+  --text-xs-plus: 11.5px;
+  --text-sm: 12px;
+  --text-sm-plus: 12.5px;
+  --text-md: 13px;
+  --text-md-plus: 13.5px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-lg-plus: 18px;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-strong: 560;
+  --font-weight-semibold: 600;
+
+  --leading-compact: 1.3;
   --leading-body: 1.45;
+  --leading-relaxed: 1.55;
+
+  --motion-duration-fast: 140ms;
+  --motion-duration-normal: 180ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-:root[data-base="light"] {
+:root[data-base="light"],
+:root[data-theme="light"] {
   color-scheme: light;
-  --ds-bg-primary: #fff;
+
+  --ds-bg-primary: #ffffff;
   --ds-bg-secondary: var(--gray-50);
   --ds-bg-tertiary: var(--gray-75);
   --ds-bg-inset: var(--gray-100);
   --ds-bg-under: var(--gray-50);
-  --ds-bg-raised: #fff;
-  --ds-bg-hover: color-mix(in oklab, #1a1c1f 5%, transparent);
-  --ds-bg-active: color-mix(in oklab, #1a1c1f 8%, transparent);
-  --ds-bg-chip: color-mix(in oklab, #1a1c1f 4%, transparent);
-  --ds-border-subtle: color-mix(in oklab, #1a1c1f 5%, transparent);
-  --ds-border-default: color-mix(in oklab, #1a1c1f 8%, transparent);
-  --ds-border-strong: color-mix(in oklab, #1a1c1f 12%, transparent);
+  --ds-bg-raised: #ffffff;
+  --ds-raised: var(--ds-bg-raised);
+  --ds-bg-elevated: color-mix(in oklab, var(--ds-bg-raised) 88%, transparent);
+  --ds-bg-elevated-opaque: var(--ds-bg-raised);
+
   --ds-text-primary: #1a1c1f;
-  --ds-text-secondary: color-mix(in oklab, #1a1c1f 74%, transparent);
-  --ds-text-muted: var(--gray-500);
-  --ds-text-faint: var(--gray-300);
-  --ds-accent: #1a1c1f;
-  --ds-accent-hover: var(--gray-700);
-  --ds-accent-ink: #fff;
-  --ds-error: #e02e2a;
+  --ds-accent: var(--ds-text-primary);
+  --ds-accent-hover: color-mix(in oklab, var(--ds-accent) 84%, var(--ds-bg-primary));
+  --ds-accent-ink: var(--ds-bg-primary);
+  --ds-focus: var(--ds-accent);
+
   --ds-success: #00a240;
   --ds-warning: #e25507;
-  --ds-info: var(--gray-500);
+  --ds-error: #e02e2a;
+  --ds-info: color-mix(in oklab, var(--ds-text-primary) 62%, var(--ds-bg-primary));
+
+  --ds-bg-hover: color-mix(in oklab, var(--ds-text-primary) 5%, transparent);
+  --ds-bg-active: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+  --ds-bg-chip: color-mix(in oklab, var(--ds-text-primary) 4.5%, transparent);
+  --ds-tile: color-mix(in oklab, var(--ds-text-primary) 3.5%, transparent);
+  --ds-tile-hover: color-mix(in oklab, var(--ds-text-primary) 6%, transparent);
+  --ds-tile-deep: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+  --ds-field-inset-bg: color-mix(in oklab, var(--ds-text-primary) 4.5%, transparent);
+
+  --ds-border-subtle: color-mix(in oklab, var(--ds-text-primary) 5.5%, transparent);
+  --ds-border-default: color-mix(in oklab, var(--ds-text-primary) 8.5%, transparent);
+  --ds-border-strong: color-mix(in oklab, var(--ds-text-primary) 13%, transparent);
+
+  --ds-text-secondary: color-mix(in oklab, var(--ds-text-primary) 74%, transparent);
+  --ds-text-muted: color-mix(in oklab, var(--ds-text-primary) 56%, transparent);
+  --ds-text-faint: color-mix(in oklab, var(--ds-text-primary) 40%, transparent);
+
+  --ds-switch-track-off: color-mix(in oklab, var(--ds-text-primary) 12%, transparent);
+  --ds-switch-track-off-hover: color-mix(in oklab, var(--ds-text-primary) 18%, transparent);
+  --ds-switch-knob-off: #ffffff;
+  --ds-switch-knob-on: var(--ds-accent-ink);
+
+  --ds-scrim: color-mix(in oklab, var(--ds-text-primary) 28%, transparent);
+  --ds-raised-shadow: 0 1px 2px color-mix(in oklab, #000000 10%, transparent),
+    0 0 0 0.5px color-mix(in oklab, #000000 5%, transparent);
+  --ds-shadow-dialog: 0 16px 44px color-mix(in oklab, #000000 14%, transparent),
+    0 0 0 1px var(--ds-border-default);
 }

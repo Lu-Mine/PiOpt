@@ -306,7 +306,7 @@ const WALLPAPER_ERRORS = {
   unreadable: "图片内容读不出来，换一张试试。",
   unsupported: `只支持 ${glass.WALLPAPER_EXTENSIONS.join(" / ")} 图片。`,
   missing: "找不到这个文件，或者它不是普通文件。",
-  "too-large": `图片超过 ${Math.round(glass.WALLPAPER_MAX_BYTES / 1024 / 1024)} MB，宿主会拒绝这个主题资源。`,
+  "too-large": `图片不能超过 ${Math.round(glass.WALLPAPER_MAX_BYTES / 1024 / 1024)} MB。`,
 };
 
 async function notify(message) {

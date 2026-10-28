@@ -202,5 +202,5 @@ test("the host's window controls follow the panel's own light/dark tokens", () =
   const tokens = read("renderer/tokens.css");
   const light = tokens.slice(tokens.indexOf(':root[data-base="light"]'));
   assert.match(light, /--ds-text-primary: #1a1c1f;/);
-  assert.match(light, /--ds-bg-primary: #fff;/);
+  assert.match(light, /--ds-bg-primary: #fff(?:fff)?;/);
 });

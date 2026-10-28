@@ -1,0 +1,138 @@
+/*
+ * Shared PiOpt UI primitives — aligned with PI-Desktop's settings & panel language.
+ *
+ * Every color references --ds-* tokens from tokens.css (and any host custom
+ * theme synced at runtime). Feature stylesheets compose these primitives and
+ * add only view-specific layout.
+ */
+
+.opt-view {
+  color: var(--ds-text-primary);
+  background: var(--ds-bg-primary);
+}
+
+.opt-view :is(button, input, select) {
+  font: inherit;
+  color: inherit;
+}
+
+.opt-view button {
+  cursor: pointer;
+}
+
+.opt-view :is(button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* Status indicator dot */
+.ui-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--ds-text-faint);
+}
+
+.ui-dot[data-state="ok"],
+.ui-dot[data-state="ready"],
+.ui-dot[data-live="true"] {
+  background: var(--ds-success);
+}
+
+.ui-dot[data-state="warn"],
+.ui-dot[data-state="pending"],
+.ui-dot[data-state="idle"] {
+  background: var(--ds-warning);
+}
+
+.ui-dot[data-state="bad"],
+.ui-dot[data-state="error"] {
+  background: var(--ds-error);
+}
+
+/* Buttons */
+.ui-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--ds-control-size);
+  padding: 0 11px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-2xs);
+  background: var(--ds-tile);
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm-plus);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out),
+    opacity var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.ui-btn:hover:not(:disabled) {
+  background: var(--ds-bg-hover);
+  border-color: var(--ds-border-strong);
+}
+
+.ui-btn:disabled {
+  opacity: 0.44;
+  cursor: default;
+}
+
+.ui-btn-primary {
+  background: var(--ds-accent);
+  border-color: var(--ds-accent);
+  color: var(--ds-accent-ink);
+}
+
+.ui-btn-primary:hover:not(:disabled) {
+  background: var(--ds-accent-hover);
+  border-color: var(--ds-accent-hover);
+  color: var(--ds-accent-ink);
+}
+
+.ui-btn-quiet {
+  background: transparent;
+  border-color: var(--ds-border-subtle);
+  color: var(--ds-text-secondary);
+}
+
+.ui-btn-quiet:hover:not(:disabled) {
+  background: var(--ds-bg-hover);
+  border-color: var(--ds-border-default);
+  color: var(--ds-text-primary);
+}
+
+.ui-btn-sm {
+  height: var(--ds-control-sm);
+  padding: 0 8px;
+  font-size: var(--text-sm);
+}
+
+.ui-btn-danger:hover:not(:disabled) {
+  color: var(--ds-error);
+  border-color: color-mix(in oklab, var(--ds-error) 42%, transparent);
+  background: color-mix(in oklab, var(--ds-error) 8%, transparent);
+}
+
+/* Pill / count chip */
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs-plus);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
