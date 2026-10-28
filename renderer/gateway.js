@@ -175,6 +175,10 @@
     return box;
   }
 
+  function groupHead(title) {
+    return el("h2", "gw-group-head", title);
+  }
+
   function metricRow(pairs) {
     const wrap = el("div", "gw-metrics");
     for (const [k, v, tone] of pairs) {
@@ -198,17 +202,15 @@
     bar.append(dot, el("b", "", live ? T.running : T.stopped));
     const meta = el("span", "gw-bar-meta");
     const bits = [];
-    if (st && st.supervisor) bits.push(`${T.pid} ${st.supervisor.pid}`);
     if (st && st.supervisor) bits.push(`${T.uptime} ${fmtUptime(st.supervisor.uptimeSeconds)}`);
-    if (st) bits.push(st.manager ? T.self : T.other);
     meta.textContent = bits.join(" · ");
     bar.append(meta);
 
     const actions = el("div", "gw-bar-actions");
-    const rf = el("button", "gw-btn", T.refresh);
+    const rf = el("button", "ui-btn", T.refresh);
     rf.type = "button";
     rf.addEventListener("click", () => load(true));
-    const rs = el("button", "gw-btn", T.restart);
+    const rs = el("button", "ui-btn", T.restart);
     rs.type = "button";
     rs.addEventListener("click", restart);
     actions.append(rf, rs);
@@ -222,7 +224,6 @@
     for (const p of (state.data && state.data.protocols) || []) {
       const row = el("div", "gw-proto");
       row.append(el("span", "gw-proto-name", p.label));
-      row.append(el("code", "gw-proto-path", p.path));
       row.append(el("span", "gw-proto-note", p.note));
       list.append(row);
     }
@@ -282,7 +283,7 @@
     for (const [owner, ids] of Object.entries(modelGroups)) pairs.push([owner, ids.length]);
     pairs.push([T.accounts, (d.upstreams || []).filter(u => u.kind === "oauth").length]);
     box.append(metricRow(pairs));
-    box.append(el("p", "gw-hint", q.hint || "余额快照尚未生成，插件启动约 20 秒后可用。"));
+    box.append(el("p", "gw-hint", q.hint || "额度数据尚未生成,稍后自动刷新。"));
     return box;
   }
 
@@ -410,7 +411,7 @@
       if (ev.key === "Enter" && !state.egressSubBusy) applySubscription(subInput.value);
     });
 
-    const subApply = el("button", "gw-btn gw-btn-primary", state.egressSubBusy ? "拉取中…" : "应用订阅");
+    const subApply = el("button", "ui-btn ui-btn-primary", state.egressSubBusy ? "拉取中…" : "应用订阅");
     subApply.type = "button";
     subApply.disabled = Boolean(state.egressSubBusy);
     subApply.addEventListener("click", () => applySubscription(subInput.value));
@@ -419,14 +420,14 @@
     box.append(subRow);
 
     if (e.subscriptionSet) {
-      box.append(el("p", "gw-hint", `当前订阅 ${e.subscriptionUrl}（拖下来的节点已缓存，断网也能沿用）`));
+      box.append(el("p", "gw-hint", `当前订阅：${e.subscriptionUrl}`));
     } else {
-      box.append(el("p", "gw-hint", "填订阅地址后点「应用订阅」，节点会列到下面的线路列表里。"));
+      box.append(el("p", "gw-hint", "填写订阅地址后点「应用订阅」。"));
     }
 
     // ── 线路：订阅或 Clash 配置里解析出来的组与节点 ──
     if (!e.profile) {
-      box.append(el("p", "gw-hint", nodes.length ? "" : "还没有节点来源：先填订阅地址，或在本机装一个 Clash 客户端。"));
+      box.append(el("p", "gw-hint", nodes.length ? "" : "还没有节点：请先填写订阅地址。"));
       return box;
     }
 
@@ -464,12 +465,12 @@
     addGroup("订阅里的组", groups);
     addGroup(`可用节点（${nodes.length}）`, nodes);
 
-    const apply = el("button", "gw-btn gw-btn-primary", state.egressBusy ? "切换中…" : "应用");
+    const apply = el("button", "ui-btn ui-btn-primary", state.egressBusy ? "切换中…" : "应用");
     apply.type = "button";
     apply.disabled = Boolean(state.egressBusy);
     apply.addEventListener("click", () => pickEgress(sel.value));
 
-    const recheck = el("button", "gw-btn", state.egressHealthBusy ? "检测中…" : "重测节点");
+    const recheck = el("button", "ui-btn", state.egressHealthBusy ? "检测中…" : "重测节点");
     recheck.type = "button";
     recheck.disabled = Boolean(state.egressHealthBusy);
     recheck.addEventListener("click", () => refreshHealth());
@@ -485,15 +486,13 @@
       const parts = [`可用 ${h.usable} / 共 ${h.tested}`, `已隐藏 ${h.dead} 个连不通的节点`, `${hhmm} 检测`];
       box.append(el("p", "gw-hint", parts.join(" · ")));
     } else {
-      box.append(el("p", "gw-hint", "还没测过节点可用性：点「重测节点」筛掉连不通的，再选线路。"));
+      box.append(el("p", "gw-hint", "尚未检测节点：点「重测节点」后再选线路。"));
     }
 
-    box.append(el("p", "gw-hint", `节点来源 ${e.subscriptionSource === "subscription" ? "订阅缓存" : "Clash 配置"}：${e.profile}`));
-    if (e.binPath) box.append(el("p", "gw-hint", `内核 ${e.binPath}`));
 
     const st = e.status || {};
     if (st.ok) {
-      box.append(el("p", "gw-hint", `运行中：线路「${st.dialer}」，本地端口 ${st.port}，仅 Google/AI 域名走它。`));
+      box.append(el("p", "gw-hint", `已启用：线路「${st.dialer}」，仅 Google / AI 域名使用。`));
     } else if (st.reason) {
       box.append(el("p", "gw-hint", `未启用：${st.reason}`));
     }
@@ -550,13 +549,13 @@
       list.append(row);
     }
     box.append(list);
-    box.append(el("p", "gw-hint", "客户端用这些密钥访问 /v1/*，可在管理面板新增或禁用。"));
+    box.append(el("p", "gw-hint", "客户端使用这些密钥访问网关。"));
     return box;
   }
 
   function creditsCard() {
     const c = (state.data && state.data.credits) || { ok: false };
-    const btn = el("button", "gw-btn gw-btn-primary", state.runningCredits ? T.running2 : T.runCredits);
+    const btn = el("button", "ui-btn ui-btn-primary", state.runningCredits ? T.running2 : T.runCredits);
     btn.type = "button";
     btn.disabled = state.runningCredits;
     btn.addEventListener("click", runCredits);
@@ -589,7 +588,7 @@
       acts.append(ul);
     }
     box.append(acts);
-    box.append(el("p", "gw-hint", "定时 09:00 / 21:00 自动执行；按钮会插队跑一轮。"));
+    box.append(el("p", "gw-hint", "每天 09:00、21:00 自动执行。"));
     return box;
   }
 
@@ -623,16 +622,10 @@
 
     body.append(statusBar());
 
-    const top = el("div", "gw-top");
-    top.append(protocolCard(), quotaCard());
-    body.append(top);
-    body.append(upstreamCard());
-
-    body.append(egressCard());
-    body.append(antigravityCard());
-    body.append(apiKeyCard());
-    body.append(creditsCard());
-    body.append(modelsCard());
+    body.append(groupHead("连接"), protocolCard(), apiKeyCard());
+    body.append(groupHead("上游"), upstreamCard(), egressCard());
+    body.append(groupHead("用量"), quotaCard(), antigravityCard(), creditsCard());
+    body.append(groupHead("模型"), modelsCard());
 
     host.append(body);
   }
@@ -667,7 +660,7 @@
     render();
     try {
       await invoke("gateway.restart");
-      state.flash = "重启已下发，正在等待端口就绪…";
+      state.flash = "正在重启网关…";
     } catch (error) {
       state.error = `重启失败：${(error && error.message) || error}`;
     } finally {
@@ -685,7 +678,7 @@
     try {
       const res = await invoke("gateway.runCredits");
       if (!res || !res.ok) throw new Error((res && res.error) || "触发失败");
-      state.flash = "已排队，最多 20 秒后完成；下面会自动刷新结果。";
+      state.flash = "已开始执行,完成后自动刷新。";
       state.error = "";
     } catch (error) {
       state.error = `触发积分失败：${(error && error.message) || error}`;

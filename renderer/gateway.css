@@ -12,8 +12,11 @@
 .gw-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px 24px;
+  gap: 4px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 20px 32px;
   overflow: auto;
   min-height: 0;
 }
@@ -61,52 +64,6 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-success) 22%, transparent);
 }
 
-/* ------------------------------------------------------------------- buttons */
-
-.gw-btn {
-  appearance: none;
-  border: 1px solid var(--ds-border-default);
-  background: var(--ds-bg-secondary);
-  color: var(--ds-text-secondary);
-  font: inherit;
-  font-size: var(--text-sm);
-  padding: 5px 13px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.gw-btn:hover:not(:disabled) {
-  background: var(--ds-bg-hover);
-  color: var(--ds-text-primary);
-  border-color: var(--ds-border-strong);
-}
-
-.gw-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-/*
- * 主按钮的文字色要比 --ds-accent-ink 更稳，并且要用 #view-gateway 前缀
- * 提高权重：面板公共样式里的 `.opt-view :is(button, input, select)` 会
- * 把按钮的 color 一律设成 inherit，权重高过单个类名，主按钮就会变成
- * 一块和底色同色、看不见字的实心块。accent 本身永远是「与底色相反的
- * 前景色」，所以底色就是它的文字色。
- */
-#view-gateway .gw-btn-primary {
-  background: var(--ds-accent);
-  border-color: transparent;
-  color: var(--ds-bg-primary);
-  font-weight: 600;
-  margin-left: auto;
-}
-
-#view-gateway .gw-btn-primary:hover:not(:disabled) {
-  background: var(--ds-accent-hover);
-  color: var(--ds-bg-primary);
-}
-
 /* --------------------------------------------------------------------- cards */
 
 .gw-top {
@@ -120,10 +77,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--ds-bg-secondary);
-  padding: 13px 15px;
+  padding: 12px 0;
+  border-top: 1px solid var(--ds-border-subtle);
   min-width: 0;
 }
 
@@ -647,7 +602,7 @@
   margin: 4px 0 2px;
 }
 
-.gw-eg-sub .gw-btn-primary {
+.gw-eg-sub .ui-btn-primary {
   margin-left: 0;
   white-space: nowrap;
 }
@@ -800,5 +755,13 @@
 
 .gw-toast-x:hover {
   background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
+/* Group heading: one per section (连接 / 上游 / 用量 / 模型) */
+.gw-group-head {
+  margin: 20px 0 4px;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
   color: var(--ds-text-primary);
 }
