@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="./market.css" />
     <link rel="stylesheet" href="./appearance.css" />
     <link rel="stylesheet" href="./gateway.css" />
+    <link rel="stylesheet" href="./behavior.css" />
   </head>
   <body>
     <header class="opt-dragbar">
@@ -267,7 +268,33 @@
       </div>
     </section>
 
-    <section id="view-behavior" class="opt-view" role="tabpanel" aria-labelledby="tab-behavior" hidden></section>
+    <section id="view-behavior" class="opt-view" role="tabpanel" aria-labelledby="tab-behavior" hidden>
+      <main class="workspace">
+        <section class="behavior-section" aria-labelledby="behavior-model-title">
+          <header class="behavior-heading">
+            <h1 id="behavior-model-title">模型选择器</h1>
+            <p>聊天框里模型浮窗的展开与排列。</p>
+          </header>
+
+          <div class="settings-group">
+            <div class="settings-row">
+              <div class="settings-row-copy">
+                <div class="settings-row-title">排列方式</div>
+                <div class="settings-row-detail">浮窗总是列出全部模型，这里只决定它们怎么排</div>
+              </div>
+              <div class="settings-row-control">
+                <div class="segmented" role="group" aria-label="排列方式">
+                  <button type="button" data-model-grouping="provider" aria-pressed="true">按供应商</button>
+                  <button type="button" data-model-grouping="name" aria-pressed="false">按名称</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="behavior-status" id="behavior-status" role="status" aria-live="polite" hidden></p>
+        </section>
+      </main>
+    </section>
 
     <section id="view-gateway" class="opt-view" role="tabpanel" aria-labelledby="tab-gateway" hidden>
     </section>

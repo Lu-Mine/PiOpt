@@ -1,11 +1,11 @@
 # PiOpt
 
-PI-Desktop 的控制台插件：一个插件，四个功能（「行为」目前是一行空视图，留给后续的行为设置）。
+PI-Desktop 的控制台插件：一个插件，四个功能。
 
 | 功能 | 做什么 |
 |---|---|
 | **外观** | 一处调窗口长什么样：界面动效（动画优化，强度与速度两把滑杆挂在它下面）与窗口材质（磨砂玻璃开关带模糊强度、背景图带填充方式与最近使用的缩略图网格）。依赖某个开关的选项是那个开关的二级内容，开关关掉就收起。 |
-| **行为** | 预留的一节，暂时没有任何控件；它先占用菜单里的第二行，后续行为设置写在这里，不挤进外观。 |
+| **行为** | 聊天框里的模型浮窗：总是列出全部模型（限高仍是宿主的），排列方式可选按供应商分组或按名称平铺排序。 |
 | **AI 网关** | 一页三段：连接（两个本机面板、四种客户端协议、API Key 增删备注、模型列表）、上游（CLIProxyAPI 凭证与 wb2api 号池的增删刷新与启用开关）、用量（Antigravity 三组剩余量与 wb2api 号池积分条，加真实请求看板）。状态条置顶常驻。 |
 | **插件市场** | 读取已装插件与官方 catalog，经 jsDelivr / raw / GitHub Blobs API 下载更新包，按 `sizeBytes` 与 `sha256` 逐位校验后再交给你在 Plugins 页安装。 |
 
@@ -185,6 +185,22 @@ const css = `${motion.buildThemeCss(motionLayer, base)}${glassLayer}`;
 
 侧栏、标题栏、`.work-panel::before` 上的模糊是安全的：它们的 `position: fixed` 后代不会是宿主浮层，浮层虽嵌在父菜单里，但父菜单本身不带模糊。
 
+## 行为：模型选择器
+
+聊天框里的模型浮窗默认只列最近使用的三个模型，其余收在「其他模型」后面。行为这一屏把它改成：
+
+- **总是列出全部模型**：打开浮窗时替宿主点一次「其他模型」，随后把入口藏掉，用户不能再把它收回去。浮窗的限高仍由宿主自己决定（`.composer-model-menu` 的 `max-height`、`.composer-model-list` 的 280px 滚动），这一层没有动过任何一个高度。
+- **排列方式**：`按供应商` 是宿主自己的分组（最近使用 + 各供应商），`按名称` 把全部模型平铺成一份按显示名排序的列表。
+
+设置存在插件 settings 的 `modelPicker` 键里，宿主窗口的 `renderer/model-picker.mjs` 每次打开浮窗都经 `plugin.call` 读一次，改完不用重启。
+
+实现只做两件事，都不碰宿主的 React 节点：
+
+1. 点一次宿主自己的折叠入口。`display:none` 的按钮仍然可以被 `.click()` 触发，所以入口一出现就点开、随后由样式藏起来。
+2. 按名称时把原生分组用 CSS 让位，再 `cloneNode(true)` 出原生按钮，按名称排好后铺进 `.composer-model-list` 里的平铺容器；点克隆行只是转交给对应的原生按钮，选中模型仍走宿主自己的逻辑。
+
+不搬动原生节点是有原因的：宿主在搜索、方向键高亮、模型异步加载时都会重渲染这棵子树，被搬走的节点会让它下一次 `insertBefore` 找不到参照。搜索框一有输入，平铺列表整体让位，显示宿主自己筛出来的结果。
+
 ## 侧边栏入口
 
 PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）之后：
@@ -251,8 +267,9 @@ PiOpt/
 │  │  ├─ index.js           生命周期、两条命令、面板 RPC、唯一的主题注册
 │  │  ├─ motion.js          动效 token、主题 CSS 生成器（含「完全禁用」）
 │  │  └─ glass.js           玻璃 token、最近使用与玻璃 CSS 生成器
-│  ├─ behavior/             行为：暂无控件，只有生命周期与通道前缀
-│  │  └─ index.js           空的 onLoad/onUnload，未实现的面板通道一律拒绝
+│  ├─ behavior/             行为：聊天框模型浮窗始终展开与排列方式
+│  │  ├─ index.js           设置的唯一所有者、面板 RPC、宿主窗口的读取入口
+│  │  └─ model-picker.js    `provider` / `name` 两种排列方式的形状与默认值
 │  └─ gateway/              AI 网关：进程守护 + 三段页面的数据通道
 │     ├─ index.js           进程探测/重启/日志、面板 RPC、浏览器打开放行
 │     ├─ services.js        CLIProxyAPI v8 管理接口、wb2api 面板会话、用量与配额
@@ -263,16 +280,18 @@ PiOpt/
 │  ├─ base.css              外壳布局与产品栏
 │  ├─ market.css            市场视图样式（@scope 隔离）
 │  ├─ appearance.css        外观视图样式（@scope 隔离，两节共用一套控件）
+│  ├─ behavior.css          行为视图样式（@scope 隔离）
 │  ├─ gateway.css           网关视图样式（@scope 隔离）
 │  ├─ market.js             市场视图逻辑
 │  ├─ appearance.js         外观视图逻辑（动效 + 材质两节）
+│  ├─ behavior.js           行为视图逻辑（模型浮窗的排列方式）
 │  ├─ gateway.js            网关视图逻辑
-│  ├─ behavior.js           行为视图的 boot（暂无控件）
 │  ├─ model-logos/         模型品牌图标（lobe-icons，MIT，随包内置不上网）
 │  ├─ shell.js              视图切换与按需启动（Alt+1…4）
-│  └─ entry.mjs             宿主窗口侧边栏的入口按钮（renderer.extension）
+│  ├─ entry.mjs             宿主窗口的入口按钮与模型浮窗改写（renderer.extension）
+│  └─ model-picker.mjs      模型浮窗：始终展开，克隆出按名称排序的平铺列表
 ├─ skills/piopt.md          Agent 使用规则
-└─ test/                    结构、动效模型与玻璃层测试
+└─ test/                    结构、面板、动效与玻璃层、模型浮窗的测试
 ```
 
 四个功能互不调用：面板通道按 `appearance.` / `behavior.` / `market.` / `gateway.` 前缀分发，各自的设置、状态与失败处理相互独立。外观内部的两半共用一份样式表，所以它们被合成了一个功能而不是互相调用；面板里仍分 `appearance.motion.*` 与 `appearance.glass.*` 两组通道，旧的 `motion.*` / `glass.*` 名字也照样受理（重载前打开的面板窗口不会失效）。

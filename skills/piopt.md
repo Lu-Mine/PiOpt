@@ -6,8 +6,8 @@ description: The user asks to update, reinstall or download a PI-Desktop plugin,
 # PiOpt
 
 PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 / AI 网关 /
-插件市场 (rail rows, `Alt+1` to `Alt+4`). 行为 has no controls yet — say so
-plainly, there is nothing to configure there and no Agent tool for it.
+插件市场 (rail rows, `Alt+1` to `Alt+4`). There is no Agent tool for any of
+them: they are panel settings.
 
 - **外观 (appearance)** — how the window looks, in one view with two sections:
   **界面动效** (a master switch, a kill-all-animations switch, and strength /
@@ -15,8 +15,11 @@ plainly, there is nothing to configure there and no Agent tool for it.
   with a recent list). They are one feature because they write one runtime
   theme; the view is one page, the sections are not separate panels. Each
   section has a 重置 button with a confirm step.
-- **行为 (behavior)** — a reserved, empty view. Nothing to set, nothing to
-  apply; do not invent options for it.
+- **行为 (behavior)** — one setting: the chat composer's model popup. It always
+  lists every model (the host's height limits are untouched) and can be grouped
+  by provider or sorted flat by model name. The write happens in the host
+  window (`renderer/model-picker.mjs`), the setting lives in the plugin's
+  `modelPicker` key; it applies the next time the popup opens.
 - **AI 网关 (gateway)** — one page in three sections (连接 / 上游 / 用量) under a
   pinned status bar: what both local panels expose and how to reach them, which
   accounts and credentials feed them, and how much has actually been used.

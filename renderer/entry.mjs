@@ -8,6 +8,12 @@
 // The button wears the host's own `.footer-action` geometry so it lines up with
 // the four it sits between. The click goes through `plugin.call`, so the main
 // process decides how the panel opens; nothing here reaches the panel directly.
+//
+// The same module also owns the chat composer's model popup rewrite
+// (renderer/model-picker.mjs): both are "the host window's own DOM", so they
+// travel together and share one injected stylesheet.
+
+import { MODEL_PICKER_CSS, mountModelPicker, unmountModelPicker } from "./model-picker.mjs";
 
 const ENTRY_ATTR = "data-piopt-entry";
 const ENTRY_CLASS = "piopt-entry";
@@ -33,6 +39,7 @@ const STYLE = [
   `[${ENTRY_ATTR}] .piopt-mark i:nth-child(3){height:9px;opacity:.75}`,
   `[${ENTRY_ATTR}] svg{display:block}`,
   `[${ENTRY_ATTR}][${BUSY_ATTR}="true"]{opacity:.55}`,
+  MODEL_PICKER_CSS,
 ].join("\n");
 
 let host = null;
@@ -135,6 +142,9 @@ export async function onLoad(pi) {
   // The footer only exists while a project shell is mounted, so a scan when the
   // window wakes up covers the case where it was built while the tab was hidden.
   document.addEventListener("visibilitychange", scheduleScan);
+
+  // The popup rewrite rides along: same window, same lifecycle.
+  await mountModelPicker(pi);
 }
 
 export async function onUnload() {
@@ -147,6 +157,7 @@ export async function onUnload() {
     scanTimer = null;
   }
   document.removeEventListener("visibilitychange", scheduleScan);
+  unmountModelPicker();
 
   for (const element of document.querySelectorAll(`[${ENTRY_ATTR}]`)) element.remove();
   if (styleDisposer) {

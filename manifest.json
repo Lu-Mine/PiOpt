@@ -3,7 +3,7 @@
   "id": "local.piopt",
   "name": "PiOpt",
   "version": "1.0.0",
-  "description": "PiOpt 是 PI-Desktop 的控制台插件：外观（界面动效的克制预设与实时预览、减弱动态保护，以及可即时开关的窗口磨砂材质与背景图）、行为（预留的空视图，暂无控件）、AI 网关（本机网关状态与用量）与插件市场（读取官方目录，经镜像下载并按 sha256 校验），并在侧边栏左下角第二个按钮后提供一个控制台入口。",
+  "description": "PiOpt 是 PI-Desktop 的控制台插件：外观（界面动效的克制预设与实时预览、减弱动态保护，以及可即时开关的窗口磨砂材质与背景图）、行为（聊天框的模型浮窗始终列出全部模型，可按供应商分组或按名称排序）、AI 网关（本机网关状态与用量）与插件市场（读取官方目录，经镜像下载并按 sha256 校验），并在侧边栏左下角第二个按钮后提供一个控制台入口。",
   "author": "local",
   "license": "MIT",
   "categories": [
@@ -29,7 +29,9 @@
     "plugin.call"
   ],
   "rendererCallMethods": [
-    "openConsole"
+    "openConsole",
+    "modelPickerState",
+    "setModelPickerGrouping"
   ],
   "permissions": [
     "ui.panel",
@@ -235,17 +237,17 @@
       }
     ]
   },
-  "safetyNotes": "PiOpt bundles three features that each stay inside their own boundary. The market feature reads the plugin registry and market catalog with Node fs inside the plugin process, writes only its own data folder, and downloads .piplug files over https from four hard-coded hosts, verifying sizeBytes and sha256 before a package is kept; it never installs and never edits registry.json. The appearance feature registers one runtime theme whose CSS carries motion rules and an optional glass layer made only of background fills, gradients and backdrop filters: no color tokens of its own, no remote resources, no file or network access outside its own data folder, where an uploaded wallpaper is written. The gateway feature only reads and restarts a local process. Each feature keeps its state in the plugin's own settings. ui.theme is used only for that one PiOpt Appearance runtime theme. agent.prompt.inject only indexes skills/piopt.md for on-demand loading. renderer.extension is used for one module that mounts a single entry button into the host window's sidebar footer, right after the second button, and removes it on unload; the click goes through plugin.call back to the plugin process, and the module reads no files, sends no network requests and touches no other plugin's UI.",
+  "safetyNotes": "PiOpt bundles three features that each stay inside their own boundary. The market feature reads the plugin registry and market catalog with Node fs inside the plugin process, writes only its own data folder, and downloads .piplug files over https from four hard-coded hosts, verifying sizeBytes and sha256 before a package is kept; it never installs and never edits registry.json. The appearance feature registers one runtime theme whose CSS carries motion rules and an optional glass layer made only of background fills, gradients and backdrop filters: no color tokens of its own, no remote resources, no file or network access outside its own data folder, where an uploaded wallpaper is written. The gateway feature only reads and restarts a local process. Each feature keeps its state in the plugin's own settings. ui.theme is used only for that one PiOpt Appearance runtime theme. agent.prompt.inject only indexes skills/piopt.md for on-demand loading. renderer.extension is used for one module that mounts a single entry button into the host window's sidebar footer, right after the second button, and removes it on unload; the same module also rewrites the chat composer's model popup in that window — expanding it, and building a name-sorted flat list out of cloned buttons when that grouping is chosen — with both actions going through plugin.call back to the plugin process. The module reads no files, sends no network requests and touches no other plugin's UI.",
   "i18n": {
     "en": {
       "name": "PiOpt",
-      "description": "PiOpt is the PI-Desktop control console: appearance (restrained motion presets applied live with reduced-motion protection, plus an instantly switchable frosted window material with an optional wallpaper), behavior (a reserved view with no controls yet), the AI gateway (local process status and usage), and a plugin market and update preparer (official catalog, mirrored downloads verified by sha256), plus a console entry in the sidebar footer, right after the second of the host's buttons.",
-      "safetyNotes": "The market feature reads the plugin registry and catalog with Node fs inside the plugin process, writes only its own data folder, and downloads packages over https from four hard-coded hosts, verifying sizeBytes and sha256; it never installs. The appearance feature registers one runtime theme containing motion CSS and an optional glass layer built only from background fills, gradients and backdrop filters, with no color tokens, network or file access outside its own data folder. ui.theme is used only for that one runtime theme, and agent.prompt.inject only indexes skills/piopt.md for on-demand loading. renderer.extension is used for one module that mounts a single entry button into the host window's sidebar footer and removes it on unload; the click goes through plugin.call back to the plugin process, and the module reads no files, sends no network requests and touches no other plugin's UI."
+      "description": "PiOpt is the PI-Desktop control console: appearance (restrained motion presets applied live with reduced-motion protection, plus an instantly switchable frosted window material with an optional wallpaper), behavior (the chat composer's model popup always lists every model, grouped by provider or sorted by name), the AI gateway (local process status and usage), and a plugin market and update preparer (official catalog, mirrored downloads verified by sha256), plus a console entry in the sidebar footer, right after the second of the host's buttons.",
+      "safetyNotes": "The market feature reads the plugin registry and catalog with Node fs inside the plugin process, writes only its own data folder, and downloads packages over https from four hard-coded hosts, verifying sizeBytes and sha256; it never installs. The appearance feature registers one runtime theme containing motion CSS and an optional glass layer built only from background fills, gradients and backdrop filters, with no color tokens, network or file access outside its own data folder. ui.theme is used only for that one runtime theme, and agent.prompt.inject only indexes skills/piopt.md for on-demand loading. renderer.extension is used for one module that mounts a single entry button into the host window's sidebar footer and removes it on unload; the same module also rewrites the chat composer's model popup in that window — expanding it, and building a name-sorted flat list out of cloned buttons when that grouping is chosen — with both actions going through plugin.call back to the plugin process. The module reads no files, sends no network requests and touches no other plugin's UI."
     },
     "zh-CN": {
       "name": "PiOpt 控制台",
-      "description": "PiOpt 是 PI-Desktop 的控制台插件：外观（界面动效调校与窗口磨砂材质，改完即时生效）、行为（预留的空视图，暂无控件）、AI 网关（本机网关状态与用量）与插件市场（官方目录、镜像下载并按 sha256 校验），并在侧边栏左下角第二个按钮后提供一个控制台入口。",
-      "safetyNotes": "市场功能在插件进程内用 Node fs 读取插件注册表与官方目录，只写自己的数据目录；.piplug 只从四个硬编码域名走 https 下载，且只有 sizeBytes 与 sha256 校验通过才会保留，从不安装、不改 registry.json。外观功能只注册一个运行时主题，其中只有动效规则与可选的玻璃层（背景填充、渐变、backdrop-filter），不含颜色 token，除自己的数据目录（存放用户选的背景图）外不访问文件或网络。每个功能的状态都存放在插件自己的 settings 中。ui.theme 仅用于这一个外观主题，agent.prompt.inject 仅用于收录 skills/piopt.md。renderer.extension 只用于一个渲染模块：它在宿主窗口侧边栏左下角的按钮栏里挂一个入口按钮，卸载时移除；点击经 plugin.call 交回插件进程打开面板，模块不读文件、不访问网络、不触碰其他插件的界面。"
+      "description": "PiOpt 是 PI-Desktop 的控制台插件：外观（界面动效调校与窗口磨砂材质，改完即时生效）、行为（聊天框的模型浮窗始终列出全部模型，可按供应商分组或按名称排序）、AI 网关（本机网关状态与用量）与插件市场（官方目录、镜像下载并按 sha256 校验），并在侧边栏左下角第二个按钮后提供一个控制台入口。",
+      "safetyNotes": "市场功能在插件进程内用 Node fs 读取插件注册表与官方目录，只写自己的数据目录；.piplug 只从四个硬编码域名走 https 下载，且只有 sizeBytes 与 sha256 校验通过才会保留，从不安装、不改 registry.json。外观功能只注册一个运行时主题，其中只有动效规则与可选的玻璃层（背景填充、渐变、backdrop-filter），不含颜色 token，除自己的数据目录（存放用户选的背景图）外不访问文件或网络。每个功能的状态都存放在插件自己的 settings 中。ui.theme 仅用于这一个外观主题，agent.prompt.inject 仅用于收录 skills/piopt.md。renderer.extension 只用于一个渲染模块：它在宿主窗口侧边栏左下角的按钮栏里挂一个入口按钮，卸载时移除；同一个模块也在这个窗口里改写聊天框的模型浮窗——展开全部模型，并在选中按名称时用克隆出来的按钮排一份排序好的平铺列表——两件事都经 plugin.call 交回插件进程。模块不读文件、不访问网络、不触碰其他插件的界面。"
     }
   },
   "activationEvents": [

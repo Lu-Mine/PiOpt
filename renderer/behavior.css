@@ -1,0 +1,166 @@
+/*
+ * PiOpt 行为：只画这一屏用到的版式。
+ *
+ * 外观那一屏的版式（workspace / settings-group / settings-row / segmented）是
+ * 用 @scope 锁在 #view-appearance 里的，这里按同一套语言重画自己用到的几行，
+ * 两屏因此不会互相污染，也不必为两行样式引第二套令牌。
+ */
+
+@scope (#view-behavior) {
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ 版面 */
+
+.workspace {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px clamp(16px, 4vw, 40px) 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  background: var(--ds-bg-primary);
+  scrollbar-gutter: stable;
+}
+
+.behavior-section {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.behavior-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 2px;
+}
+
+h1 {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.015em;
+  line-height: var(--leading-compact);
+}
+
+.behavior-heading p {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+/* ------------------------------------------------------------- 分组与行 */
+
+.settings-group {
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-xs);
+  background: var(--ds-bg-secondary);
+  overflow: hidden;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 54px;
+  padding: 12px 16px;
+}
+
+.settings-row-copy {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row-title {
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-compact);
+}
+
+.settings-row-detail {
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.settings-row-control {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------- 分段控件 */
+
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-2xs);
+  background: var(--ds-bg-inset);
+}
+
+.segmented button {
+  appearance: none;
+  min-width: 0;
+  height: var(--ds-control-sm);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-3xs);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+.segmented button:hover { color: var(--ds-text-primary); }
+.segmented button[aria-pressed="true"] {
+  background: var(--ds-raised);
+  color: var(--ds-text-primary);
+  box-shadow: var(--ds-raised-shadow), 0 0 0 1px var(--ds-border-subtle);
+}
+
+/* 保存失败时这一行才出现；平时它不占位置。 */
+.behavior-status {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--ds-error);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-body);
+}
+
+@media (max-width: 720px) {
+  .settings-row { align-items: flex-start; }
+  .settings-row-control { flex-direction: column; align-items: flex-end; }
+}
+}

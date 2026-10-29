@@ -4,8 +4,8 @@
  *
  * Four views: motion and the window material are one feature (`appearance`), so
  * they share a tab and the commands name a section inside it instead of a view
- * of their own. `behavior` is a row with no controls yet — it still gets a view
- * so the rail reads 外观 / 行为 / AI 网关 / 插件市场 in that order.
+ * of their own. `behavior` holds the chat composer's model popup: always fully
+ * expanded, grouped by provider or sorted by name.
  */
 (function () {
   "use strict";

@@ -6,9 +6,9 @@
  * Each feature under features/ keeps its own lifecycle, commands, agent tools
  * and panel channels; this file only composes them and routes panel traffic by
  * channel prefix, so no feature calls another directly. Interface motion and the
- * window material are one feature (`appearance`) because they are one theme.
- * `behavior` is a row with nothing behind it yet: it owns its prefix and its
- * lifecycle so the next piece of work has somewhere to land.
+ * window material are one feature (`appearance`) because they are one theme;
+ * `behavior` owns the chat composer's model popup — its setting here, the DOM
+ * rewrite in the host window (renderer/model-picker.mjs).
  */
 
 const market = require("./features/market/index.js");
@@ -48,7 +48,14 @@ async function openConsole() {
   return { opened: true };
 }
 
-const RENDERER_METHODS = Object.freeze({ openConsole });
+// The host window asks two questions about the model popup: what the grouping is
+// (once per open) and what the user just picked there. Both are answered by the
+// behavior feature so the setting has a single owner.
+const RENDERER_METHODS = Object.freeze({
+  openConsole,
+  modelPickerState: () => FEATURES.behavior.getState(),
+  setModelPickerGrouping: (args = {}) => FEATURES.behavior.setGrouping(args.grouping),
+});
 
 async function onRendererCall(method, args = {}) {
   if (!Object.prototype.hasOwnProperty.call(RENDERER_METHODS, method)) {

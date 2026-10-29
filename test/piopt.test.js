@@ -59,8 +59,8 @@ test("host routes panel channels to the owning feature", () => {
   const entry = require("../main.js");
   assert.equal(entry._featureFor("market.snapshot"), entry._features.market);
   assert.equal(entry._featureFor("gateway.status"), entry._features.gateway);
-  // The empty row still owns its prefix, so a future channel has one owner.
-  assert.equal(entry._featureFor("behavior.snapshot"), entry._features.behavior);
+  // 行为那一层只有一个通道组：模型浮窗的排列方式。
+  assert.equal(entry._featureFor("behavior.modelPicker.getState"), entry._features.behavior);
   // Motion and the material are one feature: one owner for both halves, under
   // the merged prefix and under the names they had before the merge.
   for (const channel of ["appearance.motion.apply", "appearance.glass.apply", "motion.apply", "glass.getState"]) {
@@ -93,6 +93,7 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
     "./base.css",
     "./market.css",
     "./appearance.css",
+    "./behavior.css",
     "./market.js",
     "./appearance.js",
     "./behavior.js",
@@ -103,8 +104,10 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
   assert.equal(/<script>/.test(html), false, "inline scripts would share one global scope");
   assert.match(html, /id="view-market"/);
   assert.match(html, /id="view-appearance"/);
-  // The empty behaviour row is a real view, not a missing script.
-  assert.match(html, /id="view-behavior"[^>]*><\/section>/);
+  // 行为那一屏有自己的控件：模型浮窗的排列方式。
+  assert.match(html, /id="view-behavior"[^>]*>\s*<main class="workspace">/);
+  assert.match(html, /data-model-grouping="provider"/);
+  assert.match(html, /data-model-grouping="name"/);
   // One view, two sections: motion and the material are not separate panels.
   assert.match(html, /id="section-motion"/);
   assert.match(html, /id="section-glass"/);
@@ -149,7 +152,13 @@ test("panel text is chrome, not a document: only copied values stay selectable",
 test("feature styles are scoped so the views cannot collide", () => {
   assert.match(read("renderer/market.css"), /@scope \(#view-market\)/);
   assert.match(read("renderer/appearance.css"), /@scope \(#view-appearance\)/);
-  for (const file of ["renderer/market.css", "renderer/appearance.css", "renderer/gateway.css"]) {
+  assert.match(read("renderer/behavior.css"), /@scope \(#view-behavior\)/);
+  for (const file of [
+    "renderer/market.css",
+    "renderer/appearance.css",
+    "renderer/behavior.css",
+    "renderer/gateway.css",
+  ]) {
     const css = read(file);
     assert.equal(!/(^|\n)\s*:root\s*\{/.test(css), true, `${file} must not redefine host root tokens`);
   }

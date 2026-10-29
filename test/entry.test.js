@@ -192,7 +192,13 @@ test("manifest declares the renderer entry and keeps the whitelists exact", () =
   assert.ok(fs.existsSync(path.join(root, manifest.renderer)));
   assert.ok(manifest.permissions.includes("renderer.extension"));
   assert.deepEqual(manifest.rendererActions, ["plugin.call"]);
-  assert.deepEqual(manifest.rendererCallMethods, ["openConsole"]);
+  // The host window asks the plugin two more things: the popup's grouping, and
+  // the value the user just picked in the console.
+  assert.deepEqual(manifest.rendererCallMethods, [
+    "openConsole",
+    "modelPickerState",
+    "setModelPickerGrouping",
+  ]);
 });
 
 test("the entry mounts right after the host's plugin button and leaves on unload", async () => {
@@ -225,6 +231,11 @@ test("the entry mounts right after the host's plugin button and leaves on unload
     assert.equal(button.innerHTML.includes("<svg"), false);
     // One style element, mounted next to the host's own styles.
     assert.equal(doc.head.querySelectorAll("[data-piopt-entry-style]").length, 1);
+    // The mount itself asks the plugin for the popup grouping; only the click
+    // below is the entry's own call.
+    assert.ok(calls.some((call) => call.payload.method === "modelPickerState"));
+    assert.equal(doc.head.querySelector("[data-piopt-entry-style]").textContent.includes("piopt-mp-flat"), true);
+    calls.length = 0;
 
     const event = { preventDefault() {}, stopPropagation() {} };
     button.emit("click", event);
