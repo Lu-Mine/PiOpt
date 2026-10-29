@@ -130,44 +130,41 @@ label.settings-row { cursor: pointer; }
 /* --------------------------------------------------------- 二级内容 */
 
 /*
- * 依赖某个父选项的项收进父行下方：缩进 + 一条引导线，父项关掉就折叠。
- * 折叠用 grid-template-rows 0fr/1fr 做高度过渡，不写死 max-height；折叠时
- * opacity 归零并把整块设成 inert（由脚本同步），键盘与读屏都不会落进去。
+ * 依赖某个父选项的项收进父行下方：整块缩进成一枚浅槽，缩进由槽的边界自己
+ * 表达，不画引导线。折叠用 grid-template-rows 0fr/1fr 做高度过渡，不写死
+ * max-height；折叠时 opacity 归零并把整块设成 inert（由脚本同步），键盘与
+ * 读屏都不会落进去。
  */
 .settings-sub {
   display: grid;
   grid-template-rows: 1fr;
+  padding: 0 14px 12px;
   opacity: 1;
   transition:
     grid-template-rows var(--motion-duration-normal) var(--motion-ease-out),
+    padding-bottom var(--motion-duration-normal) var(--motion-ease-out),
     opacity var(--motion-duration-normal) var(--motion-ease-out);
 }
 .settings-sub[data-collapsed="true"] {
   grid-template-rows: 0fr;
+  padding-bottom: 0;
   opacity: 0;
 }
 
+/*
+ * 槽比卡片再退一格：--ds-bg-inset 在明暗两种基底里都是「凹」的方向，与卡片
+ * 底色混合后不会在某一主题下反过来发亮，所以两侧都用它而不另配颜色。
+ */
 .settings-sub-body {
-  position: relative;
   min-height: 0;
-  padding-left: 32px;
   overflow: hidden;
-}
-/* 引导线从父行下方垂下来，读出「这些行属于上面那一项」。 */
-.settings-sub-body::before {
-  content: "";
-  position: absolute;
-  left: 19px;
-  top: 0;
-  bottom: 12px;
-  width: 1px;
-  border-radius: var(--radius-full);
-  background: var(--ds-border-strong);
+  border-radius: var(--radius-2xs);
+  background: color-mix(in oklab, var(--ds-bg-inset) 45%, var(--ds-bg-secondary));
 }
 
 .settings-sub .settings-row {
-  min-height: 48px;
-  padding: 9px 16px 9px 0;
+  min-height: 46px;
+  padding: 9px 14px;
 }
 .settings-sub .settings-row-title {
   color: var(--ds-text-secondary);
@@ -439,8 +436,8 @@ label.settings-row { cursor: pointer; }
   .settings-row { align-items: flex-start; }
   .settings-row-control { flex-direction: column; align-items: flex-end; }
   .range-inline input[type="range"] { width: 120px; }
-  .settings-sub-body { padding-left: 20px; }
-  .settings-sub-body::before { left: 9px; }
+  .settings-sub { padding: 0 8px 10px; }
+  .settings-sub .settings-row { padding: 9px 12px; }
   .settings-sub .range-inline input[type="range"] { width: 104px; }
 }
 
