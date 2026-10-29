@@ -2,8 +2,8 @@
 //
 // PI-Desktop's popup lists the three most recent models first and folds every
 // other model behind an 「其他模型」 toggle. This module changes exactly that:
-// 全部模型始终展开（限高仍是宿主自己的 max-height，这里不碰），排列方式在搜索
-// 框右侧的按钮上一键切换 —— 点一下按供应商分组，再点一下按名称排序。
+// 全部模型始终展开（限高仍是宿主自己的 max-height，这里不碰），搜索框下面一条
+// 「供应商 / 厂商 / 名称」切换排列方式，分组与组内顺序都按 A–Z。
 //
 // 做法：
 //   1. 点一次宿主自己的「其他模型」入口把其余分组放出来，随后把入口藏掉；
@@ -31,7 +31,9 @@ const SEARCH_INPUT_SELECTOR = ".composer-model-search input";
 const EMPTY_SELECTOR = ".composer-model-empty";
 const COLLAPSE_CLASS = "composer-menu-entry";
 const VIEW_CLASS = "piopt-mp-view";
-const SWITCH_CLASS = "piopt-mp-switch";
+const MODES_CLASS = "piopt-mp-modes";
+const MODE_CLASS = "piopt-mp-mode";
+const MODE_ATTR = "data-piopt-mp-mode";
 const SEARCH_ATTR = "data-piopt-mp-searching";
 const EXPANDED_ATTR = "data-piopt-mp-expanded";
 const LAYOUT_ATTR = "data-piopt-mp-layout";
@@ -39,17 +41,17 @@ const PROVIDER_ATTR = "data-piopt-mp-provider";
 const ITEM_ATTR = "data-piopt-mp-item";
 const PROBING_ATTR = "data-piopt-mp-probing";
 const CAPS_STORAGE_KEY = "piopt.modelPicker.capabilities.v1";
-const GROUPINGS = ["provider", "name"];
 const DEFAULT_GROUPING = "provider";
-const SYNC_DELAY_MS = 40;
+const GROUPINGS = ["provider", "vendor", "name"];
 // 探测一次「最近使用」模型的能力要一次搜索 + 一次渲染；最多等这么久，超时就放弃。
 const PROBE_TIMEOUT_MS = 400;
 const CAPS_LIMIT = 200;
+const SYNC_DELAY_MS = 40;
 
-// 切换按钮上的两个字：宿主界面跟随 locale，这里也跟随。
+// 三种排列方式的名字：宿主界面跟随 locale，这里也跟随。
 const COPY = {
-  zh: { provider: "供应商", name: "名称", toName: "点击改为按名称排序", toProvider: "点击改为按供应商分组" },
-  en: { provider: "Provider", name: "Name", toName: "Switch to sorting by name", toProvider: "Switch to grouping by provider" },
+  zh: { modes: "排列方式", provider: "供应商", vendor: "厂商", name: "名称" },
+  en: { modes: "Arrange by", provider: "Provider", vendor: "Vendor", name: "Name" },
 };
 
 // Injected with the entry stylesheet. Every rule is scoped to a menu this module
@@ -64,11 +66,14 @@ export const MODEL_PICKER_CSS = [
   `.composer-model-menu[${EXPANDED_ATTR}][${SEARCH_ATTR}="true"] .${VIEW_CLASS}{display:none}`,
   /* 供应商名称不再压一块底色：滚动到上面时就是普通的一行小标题。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-group-label{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}`,
-  /* 搜索框把右侧让给切换按钮。 */
+  /* 搜索框下面单独一条：三种排列方式，点哪个是哪个。 */
+  `.composer-model-menu[${EXPANDED_ATTR}] .${MODES_CLASS}{display:flex;gap:2px;margin:0 3px 5px;padding:2px;border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 6%,transparent)}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}{flex:1 1 0;min-width:0;height:20px;padding:0 6px;border:0;border-radius:var(--radius-full);background:transparent;color:var(--ds-text-muted);font:inherit;font-size:var(--text-xs);line-height:1;white-space:nowrap;cursor:pointer;transition:color var(--motion-duration-fast) var(--motion-ease-out),background var(--motion-duration-fast) var(--motion-ease-out)}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}:hover{color:var(--ds-text-primary);background:color-mix(in oklab,var(--ds-text-primary) 8%,transparent)}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}[aria-pressed="true"]{background:color-mix(in oklab,var(--ds-text-primary) 15%,transparent);color:var(--ds-text-primary)}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}:focus-visible{outline:2px solid color-mix(in oklab,var(--ds-focus) 55%,transparent);outline-offset:1px}`,
+  /* 搜索框仍要能让输入框收缩。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-search input{flex:1 1 auto;min-width:0}`,
-  `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}{flex:none;height:20px;margin-left:auto;padding:0 7px;border:1px solid var(--ds-border-subtle);border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 7%,transparent);color:var(--ds-text-muted);font:inherit;font-size:var(--text-xs);line-height:1;cursor:pointer;transition:color var(--motion-duration-fast) var(--motion-ease-out),background var(--motion-duration-fast) var(--motion-ease-out)}`,
-  `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}:hover{background:color-mix(in oklab,var(--ds-text-primary) 13%,transparent);color:var(--ds-text-primary)}`,
-  `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}:focus-visible{outline:2px solid color-mix(in oklab,var(--ds-focus) 55%,transparent);outline-offset:1px}`,
   /* 图标与名称贴在一起；认不出品牌时用供应商首字母色块补位。 */
   `.${VIEW_CLASS} .composer-model-option-main{align-items:center}`,
   `.piopt-mp-lead{display:flex;align-items:center;gap:6px;min-width:0}`,
@@ -129,7 +134,7 @@ function isOurs(record) {
   if (!nodes.length) return false;
   return nodes.every((node) => isElement(node)
     && node.classList
-    && (node.classList.contains(VIEW_CLASS) || node.classList.contains(SWITCH_CLASS)));
+    && (node.classList.contains(VIEW_CLASS) || node.classList.contains(MODES_CLASS)));
 }
 
 /**
@@ -150,13 +155,25 @@ function identityOf(option, groupLabel) {
   return { provider, modelId, recent, key: `${provider}\u001f${modelId.toLowerCase()}` };
 }
 
+/**
+ * A–Z（含数字感知）比较两个名字：分组名与模型名都用它。
+ *
+ * 拉丁字母在前、中文在后：模型名几乎都是英文，供应商里则可能混着「腾讯混元」这种
+ * 中文名，混在一起按拼音排会让人找不到 A–Z 的起点。中文之间仍按平台的语言排序。
+ */
+function compareNames(left, right) {
+  const a = String(left ?? "");
+  const b = String(right ?? "");
+  const aCjk = /[\u3400-\u9fff]/.test(a);
+  const bCjk = /[\u3400-\u9fff]/.test(b);
+  if (aCjk !== bCjk) return aCjk ? 1 : -1;
+  if (collator) return collator.compare(a, b);
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function compareRows(left, right) {
-  if (collator) {
-    const byLabel = collator.compare(left.label, right.label);
-    if (byLabel !== 0) return byLabel;
-  } else if (left.label !== right.label) {
-    return left.label < right.label ? -1 : 1;
-  }
+  const byLabel = compareNames(left.label, right.label);
+  if (byLabel !== 0) return byLabel;
   return left.key < right.key ? -1 : left.key > right.key ? 1 : 0;
 }
 
@@ -184,24 +201,6 @@ function readRows(list) {
   return rows;
 }
 
-/** 原生分组的顺序（最近使用那一组不算供应商）。 */
-function providerOrder(list) {
-  const order = [];
-  for (const group of list.querySelectorAll(GROUP_SELECTOR)) {
-    const option = group.querySelector(OPTION_SELECTOR);
-    if (!option) continue;
-    if (String(option.getAttribute("title") || "").indexOf(" · ") > 0) continue;
-    const label = textOf(group.querySelector(GROUP_LABEL_SELECTOR));
-    if (label && !order.includes(label)) order.push(label);
-  }
-  return order;
-}
-
-function insertSorted(bucket, row) {
-  const at = bucket.findIndex((existing) => compareRows(row, existing) < 0);
-  if (at === -1) bucket.push(row);
-  else bucket.splice(at, 0, row);
-}
 
 // ------------------------------------------------------------------- rendering
 
@@ -217,45 +216,61 @@ function insertSorted(bucket, row) {
 const FAMILIES = [
   // Claude 用自家那朵菊花：名字里带 claude / sonnet / opus / haiku 的都先吃它，
   // Anthropic 的 A 标只在「供应商是 Anthropic、模型名又完全认不出」时兜底。
-  { icon: "claude", test: /claude|sonnet|opus|haiku|克劳德/i },
-  { icon: "anthropic", test: /anthropic/i },
-  { icon: "openai", test: /openai|chatgpt|\bgpt\b|gpt-\d|codex|davinci|(?:^|[^a-z])o[1-9](?:[^0-9]|$)/i },
-  { icon: "gemini", test: /gemini|gemma|bard|palm|google|谷歌/i },
-  { icon: "xai", test: /grok|xai/i },
-  { icon: "deepseek", test: /deepseek|深度求索/i },
-  { icon: "zhipu", test: /glm|zhipu|chatglm|bigmodel|智谱|清言/i },
-  { icon: "qwen", test: /qwen|qwq|tongyi|dashscope|alibaba|通义|千问|阿里/i },
-  { icon: "kimi", test: /kimi|moonshot|月之暗面/i },
-  { icon: "minimax", test: /minimax|abab|hailuo|海螺/i },
-  { icon: "mistral", test: /mistral|mixtral|codestral|pixtral|magistral|devstral/i },
-  { icon: "meta", test: /llama|\bmeta\b/i },
-  { icon: "cohere", test: /cohere|command-r/i },
-  { icon: "openrouter", test: /openrouter/i },
-  { icon: "together", test: /together/i },
-  { icon: "perplexity", test: /perplexity|sonar/i },
-  { icon: "doubao", test: /doubao|bytedance|seedream|seed-?edit|豆包|字节/i },
-  { icon: "baidu", test: /ernie|wenxin|baidu|文心|千帆|百度/i },
+  { icon: "claude", label: "Anthropic", test: /claude|sonnet|opus|haiku|克劳德/i },
+  { icon: "anthropic", label: "Anthropic", test: /anthropic/i },
+  { icon: "openai", label: "OpenAI", test: /openai|chatgpt|\bgpt\b|gpt-\d|codex|davinci|(?:^|[^a-z])o[1-9](?:[^0-9]|$)/i },
+  { icon: "gemini", label: "Google", test: /gemini|gemma|bard|palm|google|谷歌/i },
+  { icon: "xai", label: "xAI", test: /grok|xai/i },
+  { icon: "deepseek", label: "DeepSeek", test: /deepseek|深度求索/i },
+  { icon: "zhipu", label: "Zhipu AI", test: /glm|zhipu|chatglm|bigmodel|智谱|清言/i },
+  { icon: "qwen", label: "Alibaba", test: /qwen|qwq|tongyi|dashscope|alibaba|通义|千问|阿里/i },
+  { icon: "kimi", label: "Moonshot AI", test: /kimi|moonshot|月之暗面/i },
+  { icon: "minimax", label: "MiniMax", test: /minimax|abab|hailuo|海螺/i },
+  { icon: "mistral", label: "Mistral", test: /mistral|mixtral|codestral|pixtral|magistral|devstral/i },
+  { icon: "meta", label: "Meta", test: /llama|\bmeta\b/i },
+  { icon: "cohere", label: "Cohere", test: /cohere|command-r/i },
+  { icon: "openrouter", label: "OpenRouter", test: /openrouter/i },
+  { icon: "together", label: "Together AI", test: /together/i },
+  { icon: "perplexity", label: "Perplexity", test: /perplexity|sonar/i },
+  { icon: "doubao", label: "ByteDance", test: /doubao|bytedance|seedream|seed-?edit|豆包|字节/i },
+  { icon: "baidu", label: "Baidu", test: /ernie|wenxin|baidu|文心|千帆|百度/i },
   // 混元是那颗蓝球；中文供应商名（腾讯混元）也要能认出来。
-  { icon: "hunyuan", test: /hunyuan|tencent|混元|腾讯/i },
-  { icon: "stepfun", test: /stepfun|step-\d|阶跃/i },
-  { icon: "huggingface", test: /huggingface|hf\.co/i },
-  { icon: "nvidia", test: /nvidia|nemotron|英伟达/i },
-  { icon: "yi", test: /(?:^|[^a-z])yi(?:-|\b)|01\.ai|lingyi|零一/i },
-  { icon: "cerebras", test: /cerebras/i },
-  { icon: "azure", test: /azure/i },
-  { icon: "aws", test: /bedrock|\baws\b/i },
-  { icon: "ollama", test: /ollama/i },
+  { icon: "hunyuan", label: "Tencent", test: /hunyuan|tencent|混元|腾讯/i },
+  { icon: "stepfun", label: "StepFun", test: /stepfun|step-\d|阶跃/i },
+  { icon: "huggingface", label: "Hugging Face", test: /huggingface|hf\.co/i },
+  { icon: "nvidia", label: "NVIDIA", test: /nvidia|nemotron|英伟达/i },
+  { icon: "yi", label: "01.AI", test: /(?:^|[^a-z])yi(?:-|\b)|01\.ai|lingyi|零一/i },
+  { icon: "cerebras", label: "Cerebras", test: /cerebras/i },
+  { icon: "azure", label: "Azure", test: /azure/i },
+  { icon: "aws", label: "AWS", test: /bedrock|\baws\b/i },
+  { icon: "ollama", label: "Ollama", test: /ollama/i },
 ];
 
 // 认不出来的服务用首字母色块，颜色从这一组里按名字取，明暗两种主题下都够醒目。
 const LETTER_COLORS = ["#5B8DEF", "#D97757", "#10A37F", "#A855F7", "#F59E0B", "#EC4899", "#14B8A6", "#8B5CF6"];
 
-function iconIdFor(row) {
+/**
+ * 这个模型属于哪一家厂商。
+ *
+ * 先看模型名与 id（OpenRouter 上的 claude 也算 Anthropic），再看供应商名；都认不
+ * 出来就把它算在供应商名下 —— 自建服务也有一个能排序的分组。
+ */
+function familyOf(row) {
   const model = `${row.label} ${row.modelId}`.toLowerCase();
   const provider = String(row.provider || "").toLowerCase();
-  for (const family of FAMILIES) if (family.test.test(model)) return family.icon;
-  for (const family of FAMILIES) if (family.test.test(provider)) return family.icon;
-  return "";
+  for (const family of FAMILIES) if (family.test.test(model)) return family;
+  for (const family of FAMILIES) if (family.test.test(provider)) return family;
+  return null;
+}
+
+function iconIdFor(row) {
+  const family = familyOf(row);
+  return family ? family.icon : "";
+}
+
+function vendorOf(row) {
+  const family = familyOf(row);
+  return family ? family.label : (row.provider || row.label);
 }
 
 function letterColor(text) {
@@ -381,8 +396,31 @@ function metaHtmlFor(list, key) {
   return "";
 }
 
-function wait(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+/**
+ * 等宿主的下一帧渲染：DOM 一变就回来，最多等 ms。用 MutationObserver 而不是固定
+ * 的 setTimeout —— 后台窗口会把定时器压到 1s，浮窗这时会白着。
+ */
+function nextRender(target, ms = 80) {
+  return new Promise((resolve) => {
+    let timer = null;
+    let observer = null;
+    const finish = () => {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      resolve();
+    };
+    if (typeof MutationObserver === "function") {
+      observer = new MutationObserver(finish);
+      observer.observe(target, { childList: true, subtree: true });
+    }
+    timer = window.setTimeout(finish, ms);
+  });
 }
 
 /**
@@ -405,9 +443,9 @@ async function probeCaps(list) {
       owned = row.modelId;
       setQuery(input, owned);
       const deadline = Date.now() + PROBE_TIMEOUT_MS;
-      let html = "";
+      let html = metaHtmlFor(list, row.key);
       while (!html && Date.now() < deadline) {
-        await wait(16);
+        await nextRender(list);
         html = metaHtmlFor(list, row.key);
       }
       if (!html) {
@@ -419,7 +457,7 @@ async function probeCaps(list) {
     }
     saveCaps();
     if (input.value === owned) setQuery(input, "");
-    await wait(32);
+    await nextRender(list);
   } finally {
     probeRunning = false;
     if (menu) menu.removeAttribute(PROBING_ATTR);
@@ -489,23 +527,22 @@ function buildGroup(label, rows, showSource) {
 }
 
 /**
- * 按供应商：每个供应商一组，顺序沿用宿主；最近使用过的模型按名称插回它所属的
- * 那一组（分组不存在时补一个同名分组）。
+ * 分组视图（按供应商 / 按厂商共用）：分组名与组内模型都按 A–Z 排。
+ *
+ * 宿主原来按自己的顺序排分组、组内也按它自己的顺序；这里统一成字典序，最近使用
+ * 过的模型因为已经在 rows 里，跟着落到各自的分组里，不再单独排序插入。
  */
-function groupedView(rows, order) {
+function groupedView(rows, keyOf) {
   const buckets = new Map();
-  for (const label of order) buckets.set(label, []);
-  const bucketFor = (provider) => {
-    if (!buckets.has(provider)) buckets.set(provider, []);
-    return buckets.get(provider);
-  };
-  for (const row of rows) if (!row.recent) bucketFor(row.provider).push(row);
-  for (const row of rows) if (row.recent) insertSorted(bucketFor(row.provider), row);
-
+  for (const row of rows) {
+    const key = keyOf(row);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(row);
+  }
   const groups = [];
-  for (const [label, bucket] of buckets) {
+  for (const [label, bucket] of [...buckets.entries()].sort((left, right) => compareNames(left[0], right[0]))) {
     if (!bucket.length) continue;
-    groups.push(buildGroup(label, bucket, false));
+    groups.push(buildGroup(label, bucket.slice().sort(compareRows), false));
   }
   return groups;
 }
@@ -531,8 +568,10 @@ function renderView(list) {
   } else if (grouping === "name") {
     rows.sort(compareRows);
     for (const row of rows) view.append(buildRow(row, true));
+  } else if (grouping === "vendor") {
+    for (const group of groupedView(rows, vendorOf)) view.append(group);
   } else {
-    for (const group of groupedView(rows, providerOrder(list))) view.append(group);
+    for (const group of groupedView(rows, (row) => row.provider || row.label)) view.append(group);
   }
 
   list.append(view);
@@ -551,39 +590,54 @@ function copyOf() {
 }
 
 /**
- * 搜索框右侧的切换按钮：点一下换一种排列。
+ * 搜索框下面那条「排列方式」：供应商 / 厂商 / 名称，点哪个是哪个。
  *
- * 按钮挂在宿主那枚 `<label class="composer-model-search">` 里。React 只管它自己
- * 的三个子节点（图标、读屏文案、输入框），多出来的一颗按钮不会被它收走。
+ * 它挂在宿主的 `.composer-menu-root` 里、紧跟搜索框之后 —— 在搜索框外面，输入框
+ * 拿回整行宽度。React 只管它自己的子节点（搜索框、列表、思考滑杆），多出来的一条
+ * 不会被它收走。
  */
-function syncSwitch(menuElement) {
+function syncModes(menuElement) {
+  const root = menuElement.querySelector(".composer-menu-root");
   const search = menuElement.querySelector(SEARCH_SELECTOR);
-  if (!search) return null;
-  let button = childByClass(search, SWITCH_CLASS);
-  if (!button) {
-    button = document.createElement("button");
-    button.type = "button";
-    button.className = SWITCH_CLASS;
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      void setGrouping(grouping === "provider" ? "name" : "provider");
-    });
-    search.append(button);
+  if (!root) return null;
+  let bar = childByClass(root, MODES_CLASS);
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.className = MODES_CLASS;
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", copyOf().modes);
+    // 紧跟在搜索框后面：在搜索框外面，输入框能拿回整行宽度。
+    if (search && search.parentElement === root) search.after(bar);
+    else root.prepend(bar);
   }
   const copy = copyOf();
-  button.textContent = copy[grouping];
-  const hint = grouping === "provider" ? copy.toName : copy.toProvider;
-  button.title = hint;
-  button.setAttribute("aria-label", `${copy[grouping]} · ${hint}`);
-  return button;
+  for (const mode of GROUPINGS) {
+    let button = bar.querySelector(`[${MODE_ATTR}="${mode}"]`);
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = MODE_CLASS;
+      button.setAttribute(MODE_ATTR, mode);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void setGrouping(mode);
+      });
+      bar.append(button);
+    }
+    const label = copy[mode] || mode;
+    button.textContent = label;
+    button.title = label;
+    button.setAttribute("aria-pressed", String(grouping === mode));
+  }
+  return bar;
 }
 
 async function setGrouping(next) {
   if (!GROUPINGS.includes(next) || next === grouping) return grouping;
   grouping = next;
   if (menu) {
-    syncSwitch(menu);
+    syncModes(menu);
     sync();
   }
   if (host && typeof host.dispatch === "function") {
@@ -608,7 +662,7 @@ function sync() {
   if (!list) return;
 
   target.setAttribute(EXPANDED_ATTR, "true");
-  syncSwitch(target);
+  syncModes(target);
 
   // 宿主的折叠入口：点一次把它全部展开，然后它在 CSS 里被藏掉，用户不能再收起。
   // 点击是异步生效的，这一轮先让原生列表照常显示，展开后的下一轮再建视图，免得
@@ -671,9 +725,9 @@ function unbindMenu() {
     const list = menu.querySelector(LIST_SELECTOR);
     const view = list ? childByClass(list, VIEW_CLASS) : null;
     if (view) view.remove();
-    const search = menu.querySelector(SEARCH_SELECTOR);
-    const button = search ? childByClass(search, SWITCH_CLASS) : null;
-    if (button) button.remove();
+    const root = menu.querySelector(".composer-menu-root");
+    const bar = root ? childByClass(root, MODES_CLASS) : null;
+    if (bar) bar.remove();
     menu.removeAttribute(SEARCH_ATTR);
     menu.removeAttribute(EXPANDED_ATTR);
   }
@@ -728,7 +782,7 @@ async function refreshGrouping() {
     if (GROUPINGS.includes(next) && next !== grouping) {
       grouping = next;
       if (menu) {
-        syncSwitch(menu);
+        syncModes(menu);
         sync();
       }
     }
@@ -792,7 +846,9 @@ export const __internals = {
   MENU_SELECTOR,
   LIST_SELECTOR,
   VIEW_CLASS,
-  SWITCH_CLASS,
+  MODES_CLASS,
+  MODE_CLASS,
+  MODE_ATTR,
   SEARCH_ATTR,
   EXPANDED_ATTR,
   LAYOUT_ATTR,

@@ -11,9 +11,10 @@
 
 const SETTINGS_KEY = "modelPicker";
 
-// `provider` 保留宿主自己的分组（供应商标题 + 模型列表），`name` 把全部模型
-// 平铺成一份按显示名称排序的列表。
-const GROUPINGS = Object.freeze(["provider", "name"]);
+// `provider` 按供应商分组（宿主里的服务），`vendor` 按模型厂商分组（Anthropic、
+// OpenAI、智谱…），`name` 把全部模型平铺成一份按显示名称排序的列表。三种模式的
+// 分组与组内顺序都按 A–Z。
+const GROUPINGS = Object.freeze(["provider", "vendor", "name"]);
 const DEFAULT_CONFIG = Object.freeze({ grouping: "provider" });
 
 function normalizeGrouping(value) {

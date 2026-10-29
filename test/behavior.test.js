@@ -50,7 +50,7 @@ function loadFeature(fake) {
 // ---------------------------------------------------------------------- shape
 
 test("the grouping has one default and one accepted pair", () => {
-  assert.deepEqual(modelPicker.GROUPINGS, ["provider", "name"]);
+  assert.deepEqual(modelPicker.GROUPINGS, ["provider", "vendor", "name"]);
   assert.equal(modelPicker.SETTINGS_KEY, "modelPicker");
   assert.deepEqual(modelPicker.normalizeConfig(undefined), { grouping: "provider" });
   assert.deepEqual(modelPicker.normalizeConfig({ grouping: "name" }), { grouping: "name" });
@@ -68,7 +68,7 @@ test("the panel reads and writes the grouping through the behavior feature", asy
   try {
     await feature.onLoad();
     assert.equal(feature.getState().config.grouping, "name");
-    assert.deepEqual(feature.getState().groupings, ["provider", "name"]);
+    assert.deepEqual(feature.getState().groupings, ["provider", "vendor", "name"]);
 
     const saved = await feature.onPanelInvoke("behavior.modelPicker.setGrouping", { grouping: "provider" });
     assert.equal(saved.ok, true);
@@ -146,11 +146,19 @@ test("最近使用的行不再把来源写在右边", () => {
   assert.match(source, /flex:1 0 100%/);
 });
 
-test("按供应商时最近使用的模型回到自己的分组、标题不再压底色", () => {
+test("分组视图把最近使用的模型并回分组，并按 A–Z 排序", () => {
   const source = read("renderer/model-picker.mjs");
-  // 分组视图把最近使用过的行按名称插回对应的供应商桶里。
-  assert.match(source, /insertSorted\(bucketFor\(row\.provider\), row\)/);
-  assert.match(source, /function providerOrder\(list\)/);
+  // 按供应商 / 按厂商共用一份分组视图：分组名排序、组内也排序。
+  assert.match(source, /function groupedView\(rows, keyOf\)/);
+  assert.match(source, /\.sort\(\(left, right\) => compareNames\(left\[0\], right\[0\]\)\)/);
+  assert.match(source, /bucket\.slice\(\)\.sort\(compareRows\)/);
+  // 最近使用过的行已经在 rows 里，不再单独插到某个位置。
+  assert.doesNotMatch(source, /insertSorted/);
+  // 按厂商：FAMILIES 的 label 就是分组名，认不出就落到供应商名下。
+  assert.match(source, /function vendorOf\(row\)/);
+  assert.match(source, /return family \? family\.label : \(row\.provider \|\| row\.label\);/);
+  assert.match(source, /for \(const group of groupedView\(rows, vendorOf\)\)/);
+  assert.match(source, /for \(const group of groupedView\(rows, \(row\) => row\.provider \|\| row\.label\)\)/);
   // 分组标题沿用宿主的类名，但把它的底色与模糊一起清掉。
   assert.match(
     source,
@@ -158,18 +166,23 @@ test("按供应商时最近使用的模型回到自己的分组、标题不再�
   );
 });
 
-test("切换按钮长在搜索框右侧，点一下换一种排列", () => {
+test("排列方式在搜索框外面，三个选项点哪个是哪个", () => {
   const source = read("renderer/model-picker.mjs");
-  assert.match(source, /const SWITCH_CLASS = "piopt-mp-switch";/);
-  assert.match(source, /search\.append\(button\)/);
-  assert.match(source, /setGrouping\(grouping === "provider" \? "name" : "provider"\)/);
-  // 按钮上的字跟随宿主 locale。
+  assert.match(source, /const MODES_CLASS = "piopt-mp-modes";/);
+  assert.match(source, /const MODE_CLASS = "piopt-mp-mode";/);
+  assert.match(source, /const MODE_ATTR = "data-piopt-mp-mode";/);
+  // 挂在根节点里、紧跟搜索框之后：不再塞进搜索框内部。
+  assert.match(source, /const root = menuElement\.querySelector\("\.composer-menu-root"\)/);
+  assert.match(source, /search\.after\(bar\)/);
+  assert.doesNotMatch(source, /search\.append\(/);
+  // 三种模式一轮渲染，点击直接切到那一种。
+  assert.match(source, /for \(const mode of GROUPINGS\) \{/);
+  assert.match(source, /void setGrouping\(mode\)/);
+  assert.match(source, /button\.setAttribute\("aria-pressed", String\(grouping === mode\)\)/);
+  // 文案跟随宿主 locale。
   assert.match(source, /function copyOf\(\)/);
   assert.match(source, /document\.documentElement\.lang/);
-  // 搜索框里要给按钮腾位置：输入框可收缩。
-  assert.match(source, /\.composer-model-search input\{flex:1 1 auto;min-width:0\}/);
 });
-
 test("the injected rules key off the attributes the module writes", () => {
   const source = read("renderer/model-picker.mjs");
   for (const attribute of [
@@ -243,9 +256,8 @@ test("the popup picks an icon by model name first, then by provider", () => {
   const source = read("renderer/model-picker.mjs");
   assert.match(source, /import \{ ICONS \} from "\.\/model-logos\/icons\.mjs";/);
   assert.match(source, /const FAMILIES = \[/);
-  // 先比模型名、再比供应商名：OpenRouter 上的 claude 也该显示 Claude 的标。
-  assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(model\)\) return family\.icon;/);
-  assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(provider\)\) return family\.icon;/);
+  assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(model\)\) return family;/);
+  assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(provider\)\) return family;/);
   // Claude 的菊花排在 Anthropic 的 A 标前面：名字里带 claude/sonnet/opus/haiku 都先吃菊花。
   const claudeRule = source.indexOf('icon: "claude"');
   const anthropicRule = source.indexOf('icon: "anthropic"');

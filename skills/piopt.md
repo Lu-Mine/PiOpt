@@ -16,17 +16,19 @@ them: they are panel settings.
   theme; the view is one page, the sections are not separate panels. Each
   section has a 重置 button with a confirm step.
 - **行为 (behavior)** — the chat composer's model popup. It always lists every
-  model (the host's height limits are untouched); the button at the right of the
-  popup's search field toggles grouping by provider and flat sorting by name.
-  Provider grouping puts recently used models back under their provider and
-  drops the group label's background; name sorting adds a faint source line
-  under each option. Every row also carries a 14px colored brand mark picked by
+  model (the host's height limits are untouched); a bar right under the search
+  field switches between grouping by provider, grouping by model vendor, and a
+  flat list sorted by name. Groups and the rows inside them are all A–Z (Latin
+  first, then Chinese). Provider grouping puts recently used models back under
+  their provider and drops the group label's background; vendor grouping labels
+  groups by brand (Anthropic, OpenAI, Tencent…); name sorting adds a faint source
+  line under each option. Every row also carries a 14px colored brand mark picked by
   model name first and provider name second, with a colored initial as fallback
   for brands not in the table (icons are lobe-icons, bundled, no network).
   Recently used rows show the same reasoning/vision badges and context reading as
   the provider groups: the first open probes them with the host's own search
   while the content is hidden, then caches the markup in localStorage. The
-  switch lives in the host window (`renderer/model-picker.mjs`) and writes the
+  bar lives in the host window (`renderer/model-picker.mjs`) and writes the
   plugin's `modelPicker` key; the panel's 行为 view only reports the current
   value, so do not tell the user to change it there.
 - **AI 网关 (gateway)** — one page in three sections (连接 / 上游 / 用量) under a
