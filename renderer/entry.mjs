@@ -25,7 +25,7 @@ const ICON =
   '<span class="piopt-mark" aria-hidden="true"><i></i><i></i><i></i></span>';
 
 const STYLE = [
-  `[${ENTRY_ATTR}]{border:0;background:transparent;padding:0;margin:0;cursor:pointer}`,
+  `[${ENTRY_ATTR}]{border:0;background:transparent;padding:0;margin:0;cursor:pointer;user-select:none;-webkit-user-select:none}`,
   `[${ENTRY_ATTR}] .piopt-mark{width:13px;height:13px;display:grid;grid-template-columns:repeat(3,3px);align-items:end;gap:2px}`,
   `[${ENTRY_ATTR}] .piopt-mark i{display:block;border-radius:1px;background:currentColor}`,
   `[${ENTRY_ATTR}] .piopt-mark i:nth-child(1){height:6px;opacity:.55}`,

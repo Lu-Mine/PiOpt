@@ -19,6 +19,32 @@ body {
   font: var(--text-base)/var(--leading-body) -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
     "PingFang SC", "Microsoft YaHei UI", sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/*
+ * The panel is an instrument, not a document: dragging across labels, stats or
+ * chips must not paint a selection. Selection is off at the root, and only the
+ * values a user actually carries away — fields, endpoints, keys, hashes,
+ * changelogs and failure text — opt back in below.
+ */
+input,
+textarea,
+code,
+pre,
+.mono,
+.gw-key-mask,
+.gw-oauth-link,
+.gw-status-error,
+.gw-toast,
+.kvrow .v,
+.modal-title .sub,
+.pname .pid,
+.probe .m,
+.mrow-err {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /*
@@ -37,7 +63,6 @@ body {
   padding: 0 148px 0 14px;
   border-bottom: 1px solid var(--ds-border-default);
   background: var(--ds-bg-secondary);
-  user-select: none;
   -webkit-app-region: drag;
 }
 

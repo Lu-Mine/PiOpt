@@ -122,6 +122,30 @@ test("panel opts into the paint-through chrome that has no development hint", ()
   assert.match(css, /\.opt-dragbar \{[^}]*-webkit-app-region: drag/);
 });
 
+test("panel text is chrome, not a document: only copied values stay selectable", () => {
+  const css = read("renderer/base.css");
+  // Labels, stats and chips are marked up with the same spans as the copy they
+  // sit next to, so the rule has to be root-wide instead of per-component.
+  assert.match(css, /body \{[^}]*-webkit-user-select: none;/);
+  assert.match(css, /body \{[^}]*\n  user-select: none;/);
+  // The values a user actually carries away stay selectable.
+  const allow = css.slice(css.search(/input,\s+textarea,/));
+  assert.match(allow, /-webkit-user-select: text;/);
+  for (const selector of [
+    "input,",
+    "textarea,",
+    "code,",
+    "pre,",
+    ".gw-key-mask,",
+    ".gw-oauth-link,",
+    ".kvrow .v,",
+  ]) {
+    assert.ok(allow.includes(selector), `${selector} must stay selectable`);
+  }
+  // The sidebar entry is one row of host chrome; dragging it selects nothing.
+  assert.match(read("renderer/entry.mjs"), /cursor:pointer;user-select:none;-webkit-user-select:none/);
+});
+
 test("feature styles are scoped so the views cannot collide", () => {
   assert.match(read("renderer/market.css"), /@scope \(#view-market\)/);
   assert.match(read("renderer/appearance.css"), /@scope \(#view-appearance\)/);
