@@ -19,7 +19,7 @@ const DEFAULT_CONFIG = {
   followReducedMotion: true,
   mode: "auto",
 };
-
+const MOTION_LIMITS = { intensity: [0.5, 1.5], speed: [0.4, 2] };
 // ---------------------------------------------------------------- glass model
 
 const DEFAULT_GLASS = {
@@ -104,6 +104,24 @@ function normalizeRecent(input) {
     });
   }
   return out;
+}
+function normalizeMotion(input) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  return {
+    override: source.override !== false,
+    disabled: source.disabled === true,
+    preset: typeof source.preset === "string" ? source.preset : DEFAULT_CONFIG.preset,
+    intensity:
+      Math.round(
+        clamp(finiteNumber(source.intensity, 1), MOTION_LIMITS.intensity[0], MOTION_LIMITS.intensity[1]) * 100
+      ) / 100,
+    speed:
+      Math.round(
+        clamp(finiteNumber(source.speed, 1), MOTION_LIMITS.speed[0], MOTION_LIMITS.speed[1]) * 100
+      ) / 100,
+    followReducedMotion: source.followReducedMotion !== false,
+    mode: ["auto", "light", "dark"].includes(source.mode) ? source.mode : DEFAULT_CONFIG.mode,
+  };
 }
 
 function normalizeGlass(input) {
@@ -192,7 +210,7 @@ function applyAppearance(appearance) {
 
 function applyResult(result) {
   if (!result || typeof result !== "object") return;
-  if (result.config) state.config = { ...DEFAULT_CONFIG, ...result.config };
+  if (result.config) state.config = normalizeMotion({ ...DEFAULT_CONFIG, ...result.config });
   if (typeof result.preference === "string") state.preference = result.preference;
   if (result.appearance) state.appearance = result.appearance;
   if (typeof result.resolvedBase === "string") state.appliedBase = result.resolvedBase;
@@ -276,9 +294,27 @@ function setSub(sub, expanded) {
 function renderMode() {
   renderPressed("[data-mode]", "mode", state.config.mode);
 }
+function syncPanelMotion(config) {
+  const style = document.documentElement.style;
+  if (config.disabled) {
+    style.setProperty("--motion-duration-fast", "1ms");
+    style.setProperty("--motion-duration-normal", "1ms");
+    return;
+  }
+  if (!config.override) {
+    style.removeProperty("--motion-duration-fast");
+    style.removeProperty("--motion-duration-normal");
+    return;
+  }
+  const speed = clamp(finiteNumber(config.speed, 1), MOTION_LIMITS.speed[0], MOTION_LIMITS.speed[1]);
+  style.setProperty("--motion-duration-fast", `${Math.max(20, Math.round(135 / speed))}ms`);
+  style.setProperty("--motion-duration-normal", `${Math.max(24, Math.round(195 / speed))}ms`);
+}
 
 function renderMotion() {
-  const config = state.config;
+  const config = normalizeMotion(state.config);
+  state.config = config;
+  syncPanelMotion(config);
   elements.motionOverride.checked = config.override;
   elements.motionDisabled.checked = config.disabled;
 
@@ -303,7 +339,7 @@ function renderMotion() {
 }
 
 function setMotionConfig(patch, debounceMs = 80) {
-  state.config = { ...state.config, ...patch };
+  state.config = normalizeMotion({ ...state.config, ...patch });
   renderMotion();
   scheduleSync(debounceMs);
 }

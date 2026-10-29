@@ -1,13 +1,18 @@
 "use strict";
 
 // One theme, not two. Its base is whatever the user chose (or the system, for
-// "auto"), so the host lists a single "Motion Lab" entry instead of a light and
-// a dark one that the user has to pick between.
+// "auto"), so the host lists a single "PiOpt Appearance" entry instead of a
+// light and a dark one that the user has to pick between.
 const THEME_ID = "motion";
 // The pre-merge pair; registered by older versions and removed on sight.
 const LEGACY_THEME_IDS = Object.freeze(["motion-light", "motion-dark"]);
 const SETTINGS_KEY = "motionLab";
 const CSS_LIMIT_BYTES = 256 * 1024;
+
+const LIMITS = Object.freeze({
+  intensity: Object.freeze([0.5, 1.5]),
+  speed: Object.freeze([0.4, 2]),
+});
 
 const PRESETS = Object.freeze({
   agile: Object.freeze({ durationScale: 0.78, motionScale: 0.8, continuous: true }),
@@ -38,52 +43,72 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function round(value, digits = 100) {
+  return Math.round(value * digits) / digits;
+}
+
 function normalizeConfig(input = {}) {
-  const preset = Object.prototype.hasOwnProperty.call(PRESETS, input.preset)
-    ? input.preset
+  const source = input && typeof input === "object" ? input : {};
+  const preset = Object.prototype.hasOwnProperty.call(PRESETS, source.preset)
+    ? source.preset
     : DEFAULT_CONFIG.preset;
-  const mode = ["auto", "light", "dark"].includes(input.mode)
-    ? input.mode
+  const mode = ["auto", "light", "dark"].includes(source.mode)
+    ? source.mode
     : DEFAULT_CONFIG.mode;
 
   return {
-    override: input.override !== false,
-    disabled: input.disabled === true,
+    override: source.override !== false,
+    disabled: source.disabled === true,
     preset,
-    intensity: Math.round(clamp(finiteNumber(input.intensity, 1), 0.5, 1.5) * 100) / 100,
-    speed: Math.round(clamp(finiteNumber(input.speed, 1), 0.6, 1.6) * 100) / 100,
-    followReducedMotion: input.followReducedMotion !== false,
+    intensity: round(clamp(finiteNumber(source.intensity, 1), LIMITS.intensity[0], LIMITS.intensity[1])),
+    speed: round(clamp(finiteNumber(source.speed, 1), LIMITS.speed[0], LIMITS.speed[1])),
+    followReducedMotion: source.followReducedMotion !== false,
     mode,
   };
 }
 
+/**
+ * Unified motion language tokens.
+ *
+ * Five duration tiers (instant / fast / base / slow + system themeSwitch),
+ * five spatial amplitude tiers (xs / sm / md / panel / sheet + scale pairs),
+ * and one symmetric deceleration curve shared by both halves of every
+ * reversible interaction (expand <-> collapse, pop <-> dismiss, slide <-> return).
+ * `exitRatio` is 1 so round-trip transitions stay symmetric and interruptible.
+ */
 function motionTokens(input = {}) {
   const config = normalizeConfig(input);
   const preset = PRESETS[config.preset];
   const durationFactor = preset.durationScale / config.speed;
   const distanceFactor = preset.motionScale * config.intensity;
   const reduced = config.preset === "reduced";
+  const easeSymmetric = config.preset === "gentle"
+    ? "cubic-bezier(.2,.88,.28,1)"
+    : "cubic-bezier(.22,1,.36,1)";
 
   return {
-    instant: Math.round((reduced ? 70 : 80) * durationFactor),
-    fast: Math.round((reduced ? 80 : 130) * durationFactor),
-    base: Math.round((reduced ? 90 : 190) * durationFactor),
-    slow: Math.round((reduced ? 90 : 260) * durationFactor),
-    distanceSm: Math.round(3 * distanceFactor * 100) / 100,
-    distanceMd: Math.round(7 * distanceFactor * 100) / 100,
-    distancePanel: Math.round(8 * distanceFactor * 100) / 100,
-    scaleFrom: reduced ? 1 : Math.round((1 - 0.015 * distanceFactor) * 10000) / 10000,
+    instant: Math.max(16, Math.round((reduced ? 60 : 85) * durationFactor)),
+    fast: Math.max(20, Math.round((reduced ? 75 : 135) * durationFactor)),
+    base: Math.max(24, Math.round((reduced ? 90 : 195) * durationFactor)),
+    slow: Math.max(30, Math.round((reduced ? 95 : 260) * durationFactor)),
+    pressY: reduced ? 0 : 1,
+    distanceXs: round(2 * distanceFactor),
+    distanceSm: round(4 * distanceFactor),
+    distanceMd: round(7 * distanceFactor),
+    distancePanel: round(10 * distanceFactor),
+    distanceSheet: round(16 * distanceFactor),
+    scaleSubtle: reduced ? 1 : round(1 - 0.012 * distanceFactor, 10000),
+    scaleFrom: reduced ? 1 : round(1 - 0.018 * distanceFactor, 10000),
     // Fixed on purpose: the palette cross-fade is not part of the speed/preset
     // tuning. A theme swap is a system-level change rather than part of the
     // motion design, and scaling it made the whole window feel sluggish at slow
     // settings. The reduced preset (and prefers-reduced-motion, in the generated
     // CSS) still shortens it, because that is an accessibility guarantee.
     themeSwitch: reduced ? 90 : 160,
-    exitRatio: 0.72,
+    exitRatio: 1,
     continuous: preset.continuous,
-    easeOut: config.preset === "gentle"
-      ? "cubic-bezier(.18,.86,.24,1)"
-      : "cubic-bezier(.16,1,.3,1)",
+    easeSymmetric,
+    easeOut: easeSymmetric,
     easeStandard: "cubic-bezier(.2,0,0,1)",
     easeIn: "cubic-bezier(.4,0,1,1)",
   };
@@ -91,19 +116,36 @@ function motionTokens(input = {}) {
 
 function tokenDeclarations(tokens) {
   return [
+    "--pm-active:1",
     `--pm-instant:${tokens.instant}ms`,
     `--pm-fast:${tokens.fast}ms`,
     `--pm-base:${tokens.base}ms`,
     `--pm-slow:${tokens.slow}ms`,
     `--pm-exit-ratio:${tokens.exitRatio}`,
+    `--pm-press-y:${tokens.pressY}px`,
+    `--pm-distance-xs:${tokens.distanceXs}px`,
     `--pm-distance-sm:${tokens.distanceSm}px`,
     `--pm-distance-md:${tokens.distanceMd}px`,
     `--pm-distance-panel:${tokens.distancePanel}px`,
+    `--pm-distance-sheet:${tokens.distanceSheet}px`,
     `--pm-switch:${tokens.themeSwitch}ms`,
+    `--pm-scale-subtle:${tokens.scaleSubtle}`,
     `--pm-scale-from:${tokens.scaleFrom}`,
+    `--pm-ease-symmetric:${tokens.easeSymmetric}`,
     `--pm-ease-out:${tokens.easeOut}`,
     `--pm-ease-standard:${tokens.easeStandard}`,
     `--pm-ease-in:${tokens.easeIn}`,
+    // Bridge PI-Desktop's own motion custom properties so every native
+    // transition in the host shell speaks the exact same language and scales
+    // with the user's 0.4–2.0x speed slider.
+    "--default-transition-duration:var(--pm-fast)",
+    "--default-transition-timing-function:var(--pm-ease-standard)",
+    "--motion-duration-fast:var(--pm-fast)",
+    "--motion-duration-normal:var(--pm-base)",
+    "--motion-duration-slow:var(--pm-slow)",
+    "--motion-ease-out:var(--pm-ease-out)",
+    "--motion-ease-in:var(--pm-ease-symmetric)",
+    "--motion-ease-standard:var(--pm-ease-standard)",
   ].join(";");
 }
 
@@ -122,8 +164,165 @@ const HOST_CHROME_EXIT_CSS = `
 const DISABLED_CSS = `/* PiOpt motion: disabled. Every transition and animation is flattened to 1ms
    rather than "none": the host unmounts entering nodes on animationend, and
    "none" would mean those events never fire. */
+:root{--pm-active:0}
 *,*::before,*::after{animation-duration:1ms!important;animation-delay:0ms!important;animation-iteration-count:1!important;transition-duration:1ms!important;transition-delay:0ms!important;scroll-behavior:auto!important}
 ${HOST_CHROME_EXIT_CSS}`;
+
+// Interactive rows, tabs, segments, cards and options across every PI-Desktop surface.
+const INTERACTIVE_SURFACES = [
+  ".sidebar-item",
+  ".project-item",
+  ".session-item",
+  ".thread-item",
+  ".sidebar-session-group-header",
+  ".sidebar-session-group-title",
+  ".nav-item",
+  ".settings-nav-item",
+  ".file-tree-row",
+  ".work-panel-tab",
+  ".work-panel-launcher-row",
+  ".plugins-row",
+  ".plugins-card",
+  ".plugins-filter",
+  ".plugins-segment-btn",
+  ".plugins-template",
+  ".plugins-version",
+  ".settings-segment-item",
+  ".settings-row",
+  ".settings-remote-host-card",
+  ".dock-tab",
+  ".todo-dock-row",
+  ".task-row",
+  ".notification-filter",
+  ".notification-item",
+  ".scope-seg",
+  ".scope-chip",
+  ".scope-option",
+  ".scope-compact-option",
+  ".mcpm-chip",
+  ".mcpm-page-btn",
+  ".mcpm-card",
+  ".sklm-chip",
+  ".sklm-page-btn",
+  ".sklm-card",
+  ".projects-row-block",
+  ".projects-tag",
+  ".projects-detail-task",
+  ".scheduled-task",
+  ".scheduled-run",
+  ".scheduled-run-main",
+  ".service-chooser-tile",
+  ".ext-row",
+  ".ext-transport-card",
+  ".ext-preset-chip",
+  ".provider-models-row",
+  ".provider-model-card",
+  ".composer-model-option",
+  ".composer-ac-item",
+  ".composer-plus-item",
+  ".context-menu-item",
+  ".home-project-switcher-item",
+  ".provider-service-option",
+  ".settings-font-item",
+  ".settings-language-option",
+  ".settings-theme-option",
+  ".settings-menu-select-option",
+  ".asktool-options>*",
+  ".oauth-option",
+  ".search-message-hit",
+  "[role=option]",
+  "[role=tab]",
+].join(",");
+
+// Carets and chevrons that rotate on expand/collapse across the entire app.
+const DISCLOSURE_ICONS = [
+  ".tool-row-caret",
+  ".tool-activity-caret",
+  ".review-change-card-caret",
+  ".sidebar-disclosure-icon",
+  ".file-tree-caret",
+  ".projects-row-disclosure",
+  ".import-group-chevron",
+  ".provider-model-card-chevron",
+  ".provider-model-multi-trigger>svg",
+  ".provider-service-trigger-chevron",
+  ".model-default-trigger-chevron",
+  ".scope-compact-chevron",
+  ".composer-mode-chip-caret",
+  ".composer-model-thinking-chevron",
+  ".scheduled-run-chevron",
+  ".message-error-toggle svg",
+  ".ext-sheet-advanced-toggle svg",
+  ".settings-disclosure>summary svg",
+  ".plugins-row-details-toggle svg",
+  ".live-voice-work-disclosure svg:last-child",
+].join(",");
+
+// Menus that may host position:fixed submenus (or carry role=menu): opacity only,
+// never transform, so nested fixed children stay anchored to the viewport.
+const STATEFUL_MENUS = [
+  ".context-menu",
+  ".composer-permission-menu",
+  ".composer-mode-menu",
+  ".plan-approval-menu",
+  ".agent-capability-menu",
+  ".projects-menu",
+  ".plugins-menu",
+  ".scope-compact-menu",
+].join(",");
+
+// Standalone popovers and pickers that toggle `.is-open`: symmetric opacity + subtle lift/scale,
+// resting at `transform: none` so no containing block remains once open.
+const STATEFUL_POPOVERS = [
+  ".settings-font-menu",
+  ".settings-language-menu",
+  ".settings-theme-menu",
+  ".settings-menu-select-menu",
+  ".provider-model-menu",
+  ".provider-model-multi-menu",
+  ".provider-service-menu",
+  ".model-default-menu",
+  ".home-project-switcher-menu",
+  ".composer-autocomplete",
+  ".scope-popover",
+  ".turn-usage-popover",
+  ".context-inspector-popover",
+  ".live-voice-popup",
+].join(",");
+
+const SPINNERS = [
+  ".spinner",
+  "[data-loading=true] .loading-spinner",
+  ".voice-spinner",
+  ".route-pending-indicator",
+  ".tool-spinner",
+  ".provider-model-spinner",
+  ".provider-models-reload.is-loading svg",
+].join(",");
+
+const PULSES = [
+  ".streaming-indicator",
+  ".generating-indicator",
+  ".voice-mic-active",
+  ".voice-recording-dot",
+  ".dock-live-dot",
+  ".task-row[data-state=running] .task-state",
+  ".project-run-badge-dot",
+  ".working-indicator-mark>span",
+  ".activity-marker",
+  ".tool-row-state.is-running .tool-row-state-dot",
+  ".subagent-topology-node.outcome-creating .subagent-topology-status-icon",
+  ".agent-capability-badge.is-connecting .agent-capability-status-dot",
+  ".scheduled-task-live",
+].join(",");
+
+const SKELETON_LINES = [
+  ".transcript-skeleton-line",
+  ".plugins-skeleton-line",
+  ".agent-capability-skeleton-glyph",
+  ".agent-capability-skeleton-line",
+  ".mermaid-loading>span",
+].join(",");
 
 // Even with motion override off, glass needs these two host-animation guards.
 function buildThemeCss(input = {}, base = "dark") {
@@ -131,96 +330,128 @@ function buildThemeCss(input = {}, base = "dark") {
   // 完全禁用优先于总开关：这是用户对「还要不要动效」的直接回答。
   if (config.disabled) return DISABLED_CSS;
   // 总开关关掉时不写动效，只保留材质所必需的宿主进出场保护。
-  if (!config.override) return HOST_CHROME_EXIT_CSS;
+  if (!config.override) return `:root{--pm-active:0}\n${HOST_CHROME_EXIT_CSS}`;
+
   const tokens = motionTokens(config);
   const spinRule = tokens.continuous
-    ? ".spinner,[data-loading=true] .loading-spinner{animation:pm-spin 900ms linear infinite}"
-    : ".spinner,[data-loading=true] .loading-spinner{animation:none}";
+    ? `.spinner,[data-loading=true] .loading-spinner{animation:pm-spin 900ms linear infinite}\n:is(${SPINNERS}){animation:pm-spin 900ms linear infinite}`
+    : `.spinner,[data-loading=true] .loading-spinner{animation:none}\n:is(${SPINNERS}){animation:none}`;
   const pulseRule = tokens.continuous
-    ? ".streaming-indicator,.generating-indicator{animation:pm-breathe 1600ms ease-in-out infinite}"
-    : ".streaming-indicator,.generating-indicator{animation:none;opacity:.72}";
+    ? `.streaming-indicator,.generating-indicator{animation:pm-breathe 1600ms ease-in-out infinite}\n:is(${PULSES}){animation:pm-breathe 1600ms ease-in-out infinite}`
+    : `.streaming-indicator,.generating-indicator{animation:none;opacity:.72}\n:is(${PULSES}){animation:none;opacity:.72}`;
+  const skeletonRule = tokens.continuous
+    ? `.skeleton::after{animation:pm-shimmer 1600ms ease-in-out infinite}\n:is(${SKELETON_LINES}){animation:pm-breathe 1400ms ease-in-out infinite}`
+    : `.skeleton::after{animation:none}\n:is(${SKELETON_LINES}){animation:none;opacity:.68}`;
+
+  const reducedMedia = config.followReducedMotion
+    ? `@media(prefers-reduced-motion:reduce){
+:root{--pm-active:0;--pm-instant:60ms;--pm-fast:75ms;--pm-base:85ms;--pm-slow:90ms;--pm-switch:90ms;--pm-press-y:0px;--pm-distance-xs:0px;--pm-distance-sm:0px;--pm-distance-md:0px;--pm-distance-panel:0px;--pm-distance-sheet:0px;--pm-scale-subtle:1;--pm-scale-from:1}
+:is(.chat-surface,.route-page,.route-surface,.settings-content,.settings-content-enter,.plugins-page,.scheduled-frame,.mcpm,.sklm,[role=tabpanel],.scheduled-detail,.message-row,.message-item,.assistant-message,.user-message,.asktool-card,.permission-card,.plan-approval-bar,.turn-outcome-card,.planning-state-indicator,.composer-queued-prompt,.composer-directory-drop,.message-edit,.composer-chip,.message-attachment,.tool-result,.thinking-content,.tool-row-body,.review-change-card-body,.task-output,.message-error-details,.projects-inspector,.provider-model-card-details,.provider-chosen-row-body,.ext-sheet-advanced-body,[role=tooltip],.tooltip-content,.ui-tooltip,.sidebar-session-hover-card,.minimap-popover,.image-hover-card,[role=menu],.popover-content,.dropdown-content,.sidebar-row-menu,.sidebar-popover,[role=dialog],.dialog,.p-dialog,.dialog-content,.modal-content,.plugins-modal,.search-dialog,.plugins-sheet,.plugins-reviews,.mcpm-sheet,.sklm-sheet,.overlay,.search-overlay,.dialog-overlay,.modal-overlay,.plugins-modal-backdrop,.plugins-sheet-scrim,.plugins-reviews-scrim,.mcpm-overlay,.sklm-overlay,.drawer-content,.toast,.update-notice,.chat-error-notice,.backend-banner,.p-notice,.jump-latest-btn,.error-message){animation-name:pm-fade-in;animation-duration:80ms}
+:is(button,[role=button]):active:not(:disabled):not([role=menuitem]){transform:none}
+.work-panel,.work-panel.is-exiting,.sidebar.is-entering,.sidebar.is-exiting,:root[data-platform=win32] .sidebar.is-exiting{animation-duration:80ms}
+details::details-content{transition-duration:80ms}
+:is(${SPINNERS},${PULSES},${SKELETON_LINES}){animation:none}
+.skeleton::after{animation:none}
+}`
+    : "";
 
   const css = `/* Pi Modify Motion Lab: ${base} motion layer. No color tokens are changed. */
 :root{${tokenDeclarations(tokens)}}
-/* A palette swap is a colour change on surfaces that do not otherwise animate,
-   so it needs its own transition: without this the app cuts over in one frame
-   and no duration setting can be felt.
-
-   Cheap on purpose. Only background-color is animated: text colour and borders
-   are spread over thousands of elements, and transitioning them re-paints text
-   on every frame. The root and the body stay out as well — recolouring them
-   dirties the whole document. This keeps the cross-fade on a handful of solid
-   surfaces, which is what the eye actually reads as the theme changing. */
+details{interpolate-size:allow-keywords}
+/* System palette cross-fade: cheap single-property transition on primary solid surfaces. */
 :is(.app-shell,.main-pane,.chat-surface,.sidebar-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard)}
-/* Every entrance uses backwards, never both. Both keeps the final keyframe, and
-   our final keyframe carries transform: translateY(0) scale(1); that leaves a
-   transform on the element forever, which makes the host's position: fixed
-   popups (its context menu, its sidebar submenu) resolve against us instead of
-   the viewport and land in the wrong place. A vanishing submenu was exactly
-   this. Backwards applies the first frame before the animation starts and then
-   hands the element back untouched.
-
-   For the same reason the shell and every floating layer animate opacity only:
-   a transform on their ancestor, even while it plays, re-anchors fixed children. */
-:is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) backwards;transform-origin:center}
-:is(.message-row,.message-item,.assistant-message,.user-message):last-child{animation:pm-message-in var(--pm-base) var(--pm-ease-out) backwards}
-/* An element with opacity < 1 is a Backdrop Root in CSS Filter Effects 2: any
-   backdrop-filter inside it samples only what is painted inside that ancestor,
-   never the backdrop behind it. So while an opacity keyframe is running, every
-   frosted surface under it loses its blur and snaps back only on the last frame
-   (measured over a 12px/12px black-white stripe: stripe contrast under the top
-   bar jumps from 0 to 26 during pm-content-in on .main-pane, and in the work
-   panel body from 0 to 72 during pm-panel-right-in).
-
-   Therefore nothing that holds a frosted surface may animate opacity:
-   - .app-shell stays out (it wraps the whole window);
-   - .main-pane stays out (it wraps .conversation-topbar and .main-titlebar),
-     and its content (.chat-surface, .route-page, .settings-content) animates
-     instead;
-   - .work-panel and .sidebar slide and size without fading, including the
-     host's own .sidebar.is-entering and .work-panel.is-exiting rules, whose
-     keyframes stay prefixed with sidebar-in* / work-panel-out* so the host's
-     onAnimationEnd handlers still match animationName.startsWith(...). */
-:is(.chat-surface,.route-page,.settings-content){animation:pm-content-in var(--pm-base) var(--pm-ease-out) backwards}
-:is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab]){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
-:is(.tool-result,.thinking-content,[data-state=open]>.collapsible-content){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) backwards}
-:is(button,[role=button],input,textarea,select){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard),transform var(--pm-instant) var(--pm-ease-out)}
-/* Menu items are excluded: nudging one by a pixel while a submenu is open from
-   it moves the trigger out from under the pointer. */
+/* Layer 1: Controls, switches, inputs, tabs, segments and interactive rows (symmetric & interruptible). */
+:is(button,[role=button],.btn,.icon-btn,.title-nav-btn,.send-btn,.stop-btn,.copy-btn,input,textarea,select,.field-input,.field-textarea){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard),transform var(--pm-instant) var(--pm-ease-symmetric)}
+/* Menu items are excluded: nudging one by a pixel while a submenu is open from it moves the trigger out from under the pointer. */
 :is(button,[role=button]):active:not(:disabled):not([role=menuitem]){transform:translateY(1px)}
-:is(input,textarea,select):focus-visible{transition-duration:var(--pm-fast)}
-:is([role=tooltip],.tooltip-content){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) backwards}
-:is([role=menu],.popover-content,.dropdown-content,[data-radix-popper-content-wrapper]>div){animation:pm-fade-in var(--pm-base) var(--pm-ease-out) backwards}
-:is([role=dialog],.dialog-content,.modal-content){animation:pm-dialog-in var(--pm-slow) var(--pm-ease-out) backwards}
-:is(.dialog-overlay,.modal-overlay,[data-overlay]){animation:pm-fade-in var(--pm-base) var(--pm-ease-standard) backwards}
-:is(.work-panel,.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) backwards}
-.work-panel.is-exiting{animation:work-panel-out-pm calc(var(--pm-slow) * var(--pm-exit-ratio)) var(--pm-ease-in) both;overflow:hidden}
-.sidebar.is-entering{animation:sidebar-in-pm var(--pm-base) var(--pm-ease-out) backwards}
+:is(input,textarea,select,.field-input,.field-textarea):focus-visible{transition-duration:var(--pm-fast)}
+.composer-shell{transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-base) var(--pm-ease-symmetric),transform var(--pm-base) var(--pm-ease-symmetric)}
+:is(.settings-search-wrap,.plugins-search-wrap,.provider-models-search-wrap,.provider-chosen-search-wrap,.agent-capability-search-wrap,.projects-search-wrap){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard)}
+.settings-toggle{transition:background-color var(--pm-fast) var(--pm-ease-symmetric),box-shadow var(--pm-fast) var(--pm-ease-standard)}
+.settings-toggle-thumb{transition:transform var(--pm-fast) var(--pm-ease-symmetric),background-color var(--pm-fast) var(--pm-ease-standard)}
+:is(.composer-thinking-thumb,.composer-thinking-dot,.composer-thinking-tick,.update-notice-progress>span,.plugins-install-bar-fill,.plugins-reviews-dist-fill,.settings-config-sync-progress-bar-fill,.voice-volume-fill){transition:transform var(--pm-fast) var(--pm-ease-symmetric),width var(--pm-base) var(--pm-ease-symmetric),background-color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
+:is(${INTERACTIVE_SURFACES}){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
+:is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) backwards;transform-origin:center}
+:is(.thread-item-more,.thread-item-last-reply,.sidebar-session-group-add,.tool-row-head-copy,.tool-row-copy,.message-actions,.work-panel-tab-close,.plugins-search-clear,.agent-capability-search-clear,.ext-row-actions,.sidebar-resize-handle::after,.chat-width-handle::before){transition:opacity var(--pm-fast) var(--pm-ease-symmetric),background-color var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard)}
+:is(${DISCLOSURE_ICONS}){transition:transform var(--pm-fast) var(--pm-ease-symmetric),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
+.plugins-row-details[open]>.plugins-row-details-toggle svg{transform:rotate(90deg)}
+/* Layer 2: Symmetric & interruptible expand/collapse (Grid disclosures, <details>, chrome width & topbar sync). */
+.sidebar-session-group-body.project{transition:grid-template-rows var(--pm-base) var(--pm-ease-symmetric)}
+.sidebar-session-group-body.project>.sidebar-session-group-clip{opacity:1;transition:opacity var(--pm-base) var(--pm-ease-symmetric)}
+.sidebar-session-group-body.project.collapsed>.sidebar-session-group-clip{opacity:0}
+:is(.todo-dock-content,.dock-content){transition:grid-template-rows var(--pm-base) var(--pm-ease-symmetric),opacity var(--pm-base) var(--pm-ease-symmetric),transform var(--pm-base) var(--pm-ease-symmetric)}
+.tool-activity-collapse{transition:grid-template-rows var(--pm-base) var(--pm-ease-symmetric),opacity var(--pm-base) var(--pm-ease-symmetric)}
+.tool-activity-collapse-inner{min-height:0;overflow:hidden}
+details::details-content{overflow:hidden;block-size:0;opacity:0;transition:block-size var(--pm-base) var(--pm-ease-symmetric),opacity var(--pm-base) var(--pm-ease-symmetric),content-visibility var(--pm-base) allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1}
+.conversation-topbar,.conversation-topbar.ct-collapsed{transition:padding-left var(--pm-base) var(--pm-ease-symmetric)}
+.conversation-topbar .ct-lead,.conversation-topbar.ct-collapsed .ct-lead{transition:left var(--pm-base) var(--pm-ease-symmetric),opacity var(--pm-base) var(--pm-ease-symmetric)}
+.main-pane,.app-shell.sidebar-collapsed .main-pane{--chat-width-transition:var(--pm-base) var(--pm-ease-symmetric)}
+.transcript-settle-veil{transition:opacity var(--pm-fast) var(--pm-ease-symmetric)}
+/* Layer 3: Symmetric & interruptible popovers, menus, tooltips, dialogs and sheets.
+   Every entrance keyframe uses backwards (never both) so no resting transform re-anchors fixed children.
+   Menus never animate transform at all because nested submenus resolve viewport coordinates. */
+:is([role=tooltip],.tooltip-content,.ui-tooltip,.sidebar-session-hover-card,.minimap-popover,.image-hover-card){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) backwards}
+:is([role=menu],.popover-content,.dropdown-content,[data-radix-popper-content-wrapper]>div,.sidebar-row-menu,.sidebar-popover){animation:pm-fade-in var(--pm-base) var(--pm-ease-out) backwards}
+.composer-model-thinking-menu:not(.is-open){opacity:0;visibility:hidden;pointer-events:none}
+.composer-model-thinking-menu.is-open{opacity:1;visibility:visible;pointer-events:auto;animation:none}
+:is(${STATEFUL_MENUS},.composer-model-thinking-menu){animation:none;transition:opacity var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear var(--pm-fast)}
+:is(${STATEFUL_MENUS},.composer-model-thinking-menu).is-open{animation:none;transition:opacity var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear 0s}
+:is(${STATEFUL_POPOVERS}){animation:none;transform:translateY(var(--pm-distance-xs)) scale(var(--pm-scale-subtle));transition:opacity var(--pm-fast) var(--pm-ease-symmetric),transform var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear var(--pm-fast)}
+:is(${STATEFUL_POPOVERS}).is-open{animation:none;transform:none;transition:opacity var(--pm-fast) var(--pm-ease-symmetric),transform var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear 0s}
+:is(.overlay,.search-overlay,.dialog-overlay,.modal-overlay,.plugins-modal-backdrop,.plugins-sheet-scrim,.plugins-reviews-scrim,.mcpm-overlay,.sklm-overlay,[data-overlay]){animation:pm-fade-in var(--pm-base) var(--pm-ease-symmetric) backwards}
+:is([role=dialog]:not(.plugins-sheet):not(.plugins-reviews):not(.turn-usage-popover):not(.context-inspector-popover):not(.scope-popover):not(.settings-menu-select-menu),.dialog,.p-dialog,.dialog-content,.modal-content,.plugins-modal){animation:pm-dialog-in var(--pm-slow) var(--pm-ease-out) backwards}
+.search-dialog{animation:pm-dialog-top-in var(--pm-slow) var(--pm-ease-out) backwards}
+:is(.plugins-sheet,.plugins-reviews,.mcpm-sheet,.sklm-sheet){animation:pm-sheet-right-in var(--pm-slow) var(--pm-ease-out) backwards}
+:is(.composer-image-preview,.generated-image-viewer)[open]{animation:pm-dialog-in var(--pm-base) var(--pm-ease-out) backwards}
+/* Layer 4: Frosted-safe panels & sidebars (no opacity keyframes on ancestors of backdrop-filter). */
+:is(.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) backwards}
+.work-panel:not(.work-panel-pending):not([data-resizing=true]){animation:work-panel-in-pm var(--pm-slow) var(--pm-ease-symmetric) backwards;overflow:hidden}
+.work-panel.is-exiting{animation:work-panel-out-pm calc(var(--pm-slow) * var(--pm-exit-ratio)) var(--pm-ease-symmetric) both;overflow:hidden}
+.sidebar.is-entering{animation:sidebar-in-pm var(--pm-base) var(--pm-ease-symmetric) backwards}
+.sidebar.is-exiting,:root[data-platform=win32] .sidebar.is-exiting{animation:sidebar-out-pm var(--pm-base) var(--pm-ease-symmetric) both}
 :is([data-side=left],.drawer-left){animation:pm-panel-left-in var(--pm-slow) var(--pm-ease-out) backwards}
+/* Layer 5: Route surfaces, tab views, chat stream, inline disclosures, chips and notifications. */
+:is(.chat-surface,.route-page,.settings-content){animation:pm-content-in var(--pm-base) var(--pm-ease-out) backwards}
+:is(.route-surface,.settings-content-enter,.plugins-page,.scheduled-frame,.mcpm,.sklm){animation:pm-content-in var(--pm-base) var(--pm-ease-out) backwards}
+:is(.work-panel-tabpane,.work-panel-launcher,.scheduled-detail){animation:pm-view-in var(--pm-fast) var(--pm-ease-out) backwards}
+:is(.message-row,.message-item,.assistant-message,.user-message):last-child{animation:pm-message-in var(--pm-base) var(--pm-ease-out) backwards}
+:is(.asktool-card,.permission-card,.plan-approval-bar,.turn-outcome-card,.planning-state-indicator,.composer-queued-prompt,.composer-directory-drop,.message-edit){animation:pm-card-in var(--pm-base) var(--pm-ease-out) backwards}
+:is(.composer-chip,.message-attachment,.composer-mode-chip-face,.plugins-card-review-text,.project-memory-card){animation:pm-subtle-in var(--pm-fast) var(--pm-ease-out) backwards}
+.composer-placeholder:not(.composer-placeholder-suggestion){animation:pm-placeholder-in var(--pm-fast) var(--pm-ease-out) backwards}
+:is(.tool-result,.thinking-content,[data-state=open]>.collapsible-content,.tool-row-body,.review-change-card-body,.task-output,.message-error-details,.projects-inspector,.provider-model-card-details,.provider-chosen-row-body,.ext-sheet-advanced-body,.scheduled-instruction.is-open){animation:pm-fade-in var(--pm-fast) var(--pm-ease-out) backwards}
+.jump-latest-btn{animation:pm-pop-in var(--pm-base) var(--pm-ease-out) backwards}
+:is(.toast,.update-notice,.chat-error-notice,.backend-banner,.p-notice){animation:pm-toast-in var(--pm-base) var(--pm-ease-out) backwards}
+.toast.closing{animation:toast-out-pm var(--pm-base) var(--pm-ease-symmetric) forwards}
 :is(.error-message,[role=alert][data-severity=error]){animation:pm-error-nudge var(--pm-fast) var(--pm-ease-out) backwards}
 ${spinRule}
 ${pulseRule}
-.skeleton::after{animation:${tokens.continuous ? "pm-shimmer 1600ms ease-in-out infinite" : "none"}}
+${skeletonRule}
 @keyframes pm-content-in{from{opacity:0;transform:translateX(var(--pm-distance-md))}to{opacity:1;transform:translateX(0)}}
+@keyframes pm-view-in{from{opacity:0;transform:translateY(var(--pm-distance-xs))}to{opacity:1;transform:translateY(0)}}
 @keyframes pm-message-in{from{opacity:0;transform:translateY(var(--pm-distance-md))}to{opacity:1;transform:translateY(0)}}
+@keyframes pm-card-in{from{opacity:0;transform:translateY(var(--pm-distance-sm)) scale(var(--pm-scale-subtle))}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes pm-subtle-in{from{opacity:0;transform:translateY(var(--pm-distance-xs))}to{opacity:1;transform:translateY(0)}}
+@keyframes pm-placeholder-in{from{opacity:0}to{opacity:.72}}
 @keyframes pm-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes pm-pop-in{from{opacity:0;scale:var(--pm-scale-from)}to{opacity:1;scale:1}}
 @keyframes pm-indicator-in{from{opacity:0;transform:scaleY(.45)}to{opacity:1;transform:scaleY(1)}}
 @keyframes pm-dialog-in{from{opacity:0;transform:translateY(var(--pm-distance-md)) scale(var(--pm-scale-from))}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes pm-dialog-top-in{from{opacity:0;transform:translateY(calc(var(--pm-distance-md) * -1)) scale(var(--pm-scale-from))}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes pm-sheet-right-in{from{opacity:0;transform:translateX(var(--pm-distance-sheet))}to{opacity:1;transform:translateX(0)}}
+@keyframes pm-toast-in{from{opacity:0;transform:translateY(calc(var(--pm-distance-sm) * -1)) scale(var(--pm-scale-subtle))}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes toast-out-pm{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(calc(var(--pm-distance-sm) * -1)) scale(var(--pm-scale-subtle))}}
 @keyframes pm-panel-right-in{from{transform:translateX(var(--pm-distance-panel))}to{transform:translateX(0)}}
-@keyframes work-panel-out-pm{from{flex-basis:var(--work-panel-width);width:var(--work-panel-width);transform:translateX(0)}to{flex-basis:0;width:0;transform:translateX(var(--pm-distance-panel))}}
-@keyframes sidebar-in-pm{from{flex-basis:0;width:0;transform:translateX(calc(var(--pm-distance-panel) * -1))}to{flex-basis:var(--ds-sidebar-width);width:var(--ds-sidebar-width);transform:translateX(0)}}
+@keyframes work-panel-in-pm{from{flex-basis:var(--pm-wp-from,0px);width:var(--pm-wp-from,0px);transform:translateX(var(--pm-wp-shift,var(--pm-distance-panel)))}to{flex-basis:var(--work-panel-width);width:var(--work-panel-width);transform:translateX(0)}}
+@keyframes work-panel-out-pm{from{flex-basis:var(--pm-wp-from,var(--work-panel-width));width:var(--pm-wp-from,var(--work-panel-width));transform:translateX(var(--pm-wp-shift,0px))}to{flex-basis:0;width:0;transform:translateX(var(--pm-distance-panel))}}
+@keyframes sidebar-in-pm{from{flex-basis:var(--pm-sb-from,0px);width:var(--pm-sb-from,0px);transform:translateX(var(--pm-sb-shift,calc(var(--pm-distance-panel) * -1)))}to{flex-basis:var(--ds-sidebar-width);width:var(--ds-sidebar-width);transform:translateX(0)}}
+@keyframes sidebar-out-pm{from{flex-basis:var(--pm-sb-from,var(--ds-sidebar-width));width:var(--pm-sb-from,var(--ds-sidebar-width));transform:translateX(var(--pm-sb-shift,0px))}to{flex-basis:0;width:0;transform:translateX(calc(var(--pm-distance-panel) * -1))}}
 @keyframes pm-panel-left-in{from{transform:translateX(calc(var(--pm-distance-panel) * -1))}to{transform:translateX(0)}}
 @keyframes pm-error-nudge{0%{transform:translateX(0)}45%{transform:translateX(2px)}100%{transform:translateX(0)}}
 @keyframes pm-spin{to{transform:rotate(1turn)}}
 @keyframes pm-breathe{0%,100%{opacity:.48}50%{opacity:1}}
 @keyframes pm-shimmer{from{transform:translateX(-110%)}to{transform:translateX(110%)}}
-@media(prefers-reduced-motion:reduce){
-:root{--pm-instant:70ms;--pm-fast:80ms;--pm-base:90ms;--pm-slow:90ms;--pm-switch:90ms;--pm-distance-sm:0px;--pm-distance-md:0px;--pm-distance-panel:0px;--pm-scale-from:1}
-:is(.chat-surface,.route-page,.settings-content,[role=tabpanel],.message-row,.message-item,.assistant-message,.user-message,.tool-result,.thinking-content,[role=tooltip],.tooltip-content,[role=menu],.popover-content,.dropdown-content,[role=dialog],.dialog-content,.modal-content,.dialog-overlay,.modal-overlay,.drawer-content,.error-message){animation-name:pm-fade-in;animation-duration:80ms}
-.work-panel,.work-panel.is-exiting,.sidebar.is-entering{animation-duration:80ms}
-:is(.spinner,[data-loading=true] .loading-spinner,.streaming-indicator,.generating-indicator){animation:none}
-.skeleton::after{animation:none}
-}`;
+${reducedMedia}`;
 
   if (Buffer.byteLength(css, "utf8") > CSS_LIMIT_BYTES) {
     throw new RangeError("Generated theme CSS exceeds the PI-Desktop 256 KB limit.");
@@ -255,14 +486,15 @@ function resolveBase(mode, appearance = {}, hints = {}) {
 module.exports = {
   CSS_LIMIT_BYTES,
   DEFAULT_CONFIG,
+  DISABLED_CSS,
+  LEGACY_THEME_IDS,
+  LIMITS,
   PRESETS,
   SETTINGS_KEY,
   THEME_ID,
-  LEGACY_THEME_IDS,
-  preferenceFrom,
   buildThemeCss,
-  DISABLED_CSS,
   motionTokens,
   normalizeConfig,
+  preferenceFrom,
   resolveBase,
 };

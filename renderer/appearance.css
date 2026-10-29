@@ -7,7 +7,7 @@
 
 @scope (#view-appearance) {
 * { box-sizing: border-box; }
-[hidden] { display: none !important; }
+:not(.confirm, .toast)[hidden] { display: none !important; }
 
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -472,9 +472,20 @@ label.settings-row { cursor: pointer; }
   padding: 24px;
   background: var(--ds-scrim);
   backdrop-filter: blur(2px);
-  animation: piopt-confirm-in var(--motion-duration-normal) var(--motion-ease-out) backwards;
+  opacity: 1;
+  transition:
+    opacity var(--motion-duration-normal) var(--motion-ease-out),
+    display var(--motion-duration-normal) allow-discrete;
 }
-@keyframes piopt-confirm-in { from { opacity: 0; } to { opacity: 1; } }
+.confirm[hidden] {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+@starting-style {
+  .confirm { opacity: 0; }
+  .confirm .confirm-box { opacity: 0; transform: translateY(6px) scale(0.985); }
+}
 
 .confirm-box {
   width: min(360px, 100%);
@@ -483,6 +494,14 @@ label.settings-row { cursor: pointer; }
   border-radius: var(--radius-md);
   background: var(--ds-bg-elevated-opaque);
   box-shadow: var(--ds-shadow-dialog);
+  transform: none;
+  transition:
+    opacity var(--motion-duration-normal) var(--motion-ease-out),
+    transform var(--motion-duration-normal) var(--motion-ease-out);
+}
+.confirm[hidden] .confirm-box {
+  opacity: 0;
+  transform: translateY(6px) scale(0.985);
 }
 .confirm-box h2 {
   margin: 0;
@@ -510,7 +529,7 @@ label.settings-row { cursor: pointer; }
   left: 50%;
   bottom: 18px;
   max-width: min(400px, calc(100vw - 32px));
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(0);
   padding: 8px 12px;
   border: 1px solid var(--ds-border-default);
   border-radius: var(--radius-2xs);
@@ -518,6 +537,20 @@ label.settings-row { cursor: pointer; }
   color: var(--ds-text-primary);
   box-shadow: var(--ds-shadow-dialog);
   font-size: var(--text-sm);
+  opacity: 1;
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    display var(--motion-duration-fast) allow-discrete;
+}
+.toast[hidden] {
+  display: none;
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+  pointer-events: none;
+}
+@starting-style {
+  .toast { opacity: 0; transform: translateX(-50%) translateY(4px); }
 }
 .toast.error {
   border-color: color-mix(in oklab, var(--ds-error) 60%, var(--ds-border-default));
@@ -534,7 +567,9 @@ label.settings-row { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .confirm { animation: none; }
+  .confirm,
+  .confirm-box,
+  .toast,
   .settings-sub { transition: none; }
   .segmented button,
   .switch,

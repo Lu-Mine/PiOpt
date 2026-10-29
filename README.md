@@ -51,28 +51,31 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 | 场景 | 默认值 | 行为 |
 |---|---:|---|
-| 按压 | 80ms | 按钮下移 1px |
-| 控件 | 130ms | hover、focus、开关与菜单 |
-| 内容 | 190ms | 页面、列表、消息进入 |
-| 弹层 | 260ms | Dialog、抽屉与工作面板 |
-| 位移 | 3 / 7 px | 小内容 / 消息与弹层 |
-| 弹层缩放 | 0.985 → 1 | 建立层级，不弹跳 |
+| 按压 (`instant`) | 85ms | 按钮下移 1px，释放即时对称回弹 |
+| 控件与轻浮层 (`fast`) | 135ms | hover、focus、开关、分段器、箭头旋转、菜单与气泡弹出退回 |
+| 内容与折叠 (`base`) | 195ms | 页面/标签页进入、消息与卡片、内联展开收缩、侧栏往返伸缩 |
+| 空间弹层 (`slow`) | 260ms | Dialog、全局搜索、侧滑抽屉 Sheet 与工作面板往返伸缩 |
+| 空间幅度 | 2 / 4 / 7 / 10 / 16 px | 微浮层 / 折叠与卡片 / 消息与对话框 / 面板 / 抽屉 |
+| 弹层缩放 | 0.988 / 0.982 → 1 | 轻浮层 / 模态层建立层级，不弹跳 |
 
-入场动画统一用 `animation-fill-mode: backwards`，**不用 `both`**：`both` 会保留最终帧，而最终帧里的 `transform` 会永久留在元素上，让宿主的 `position: fixed` 浮层（右键菜单、侧栏二级菜单）改以它为参照，位置就错了。因此所有浮层（`[role="menu"]`、tooltip、popover）只做透明度淡入，不做位移；菜单项（`[role="menuitem"]`）也不参与“按下去 1px”。
+整套动画使用**统一的对称减速度语言**（`--pm-ease-symmetric` + 宿主 `--motion-*` 全量桥接）：
 
-同时，**任何包裹着磨砂表面的容器都不动画 `opacity`**：`opacity < 1` 的元素在 CSS Filter Effects 2 中同样是 Backdrop Root，动画播放期间它里面的 `backdrop-filter` 看不到后面的背景图，只会退化成未模糊的灰层，直到最后一帧 `opacity` 回到 `1` 才啪一下恢复。因此 `.app-shell` 与 `.main-pane`（里面包着 `.conversation-topbar` / `.main-titlebar`）都不挂入场动画，改成动画它们里面的内容层（`.chat-surface`、`.route-page`、`.settings-content`）；工作面板与侧栏的进出场（含宿主自带的 `.sidebar.is-entering` 与 `.work-panel.is-exiting`）只做位移和宽度伸缩、不改 `opacity`，且关键帧名保留 `sidebar-in*` / `work-panel-out*` 前缀以配合宿主的 `onAnimationEnd` 卸载判断。
+- **全场景覆盖**：除主题 CSS 外，桥接宿主自身的 `--motion-duration-*`、`--motion-ease-*` 与 `--default-transition-duration`，覆盖控件、开关、分段器、17 类折叠箭头、`<details>` 原生折叠、侧栏与工作面板联动、路由与标签页切换、聊天流消息/思考/工具/子代理/评审卡片、Composer 芯片与排队提示、菜单/Popover/Tooltip/Dialog/Sheet 及 Toast 通知。
+- **可往返动画双向对称、随时可打断**：展开↔收缩、弹出↔退回共享同一时长（`exitRatio = 1`）与同一曲线。对留在树上的状态切换使用 CSS `transition` 与 `details::details-content`；对宿主 React 直接卸载的折叠块与浮层，以及半途反向的侧栏/工作面板，由宿主窗口内的 `renderer/motion-runtime.mjs` 在不触碰 React 真实节点的前提下用惰性克隆与三次贝塞尔瞬时进度采样完成对称退回与半空反向接力。
+
+入场关键帧统一用 `animation-fill-mode: backwards`，**不用 `both`**：`both` 会保留最终帧，而最终帧里的 `transform` 会永久留在元素上，让宿主的 `position: fixed` 浮层（右键菜单、侧栏二级菜单）改以它为参照。同理，可能挂载子菜单的 `[role="menu"]` / 右键菜单只做透明度过渡、不做位移；菜单项（`[role="menuitem"]`）也不参与“按下去 1px”。
+
+同时，**任何包裹着磨砂表面的容器都不动画 `opacity`**：`opacity < 1` 的元素在 CSS Filter Effects 2 中同样是 Backdrop Root，动画播放期间它里面的 `backdrop-filter` 看不到后面的背景图。因此 `.app-shell` 与 `.main-pane` 都不挂入场动画，改成动画它们里面的内容层（`.chat-surface`、`.route-page`、`.settings-content` 等）；工作面板与侧栏的进出场（含 `sidebar-in-pm` / `sidebar-out-pm` 与 `work-panel-in-pm` / `work-panel-out-pm`）只做位移和宽度伸缩、不改 `opacity`，且关键帧名保留宿主 `onAnimationEnd` 依赖的前缀。
 
 两个开关：
 
 - **完全禁用动画**：把所有过渡与动画压到 1ms。用 1ms 而不是 `none`——宿主靠 `animationend` 卸载进场节点，`none` 会让这些事件永远不来。
-- **动画优化**：关掉后完全不写动效规则，界面就是 PI-Desktop 自己的行为。
+- **动画优化**：关掉后完全不写动效规则（协调器同步旁路），界面就是 PI-Desktop 自己的行为。
 
 层级照依赖关系排：**运动强度、响应速度、跟随系统减弱动态是「动画优化」的二级内容**——它们只改这一层写出去的动效规则，父项关掉就没有意义，于是整块收起（缩进成一枚内嵌的浅槽，`grid-template-rows` 0fr/1fr 过渡；收起时 `inert`，键盘与读屏都跳过看不见的控件，父项开关上带 `aria-expanded`）。「完全禁用动画」是同级开关而不是二级项：它优先于总开关（开着时即使「动画优化」关了也写 1ms 规则），必须随时可达。它开着时**「动画优化」这一层整体不可用**——父开关连同三个二级项一起禁用，标题、滑杆与开关自己变灰，不另加说明文字；关掉它即恢复。「外观基底」不受这两个开关影响，仍是一级行。
 
-速度滑杆只影响时长；强度滑杆只影响位移与缩放，范围 0.60–1.60× 与 50–150%（5% 一档）。拖动滑杆或切换明暗基底后**自动生效**：面板先即时更新读数，再在 80ms 防抖后写入并应用宿主主题。连续拖动只提交最后一版参数，同步进行中的新改动会补发。
-两把滑杆的范围是速度 0.60–1.60×、强度 50–150%（5% 一档）；1.00× 落在速度滑杆的 40% 处，因为区间两端并不对称。
+速度滑杆只影响时长；强度滑杆只影响位移与缩放，范围 **0.40–2.00×** 与 **50–150%**（5% 一档，1.00× 位于速度滑杆 37.5% 处）。拖动滑杆或切换明暗基底后**自动生效**：面板先即时更新读数与自身动效令牌，再在 80ms 防抖后写入并应用宿主主题。连续拖动只提交最后一版参数，同步进行中的新改动会补发。
 明暗底色交叉淡变是**例外**：它固定 1.00×（160ms），不随速度与强度伸缩——换色属于系统级变化，跟着调慢只会让整个窗口显得迟钝。
-
 状态点与标题栏显示「正在同步 / 实时应用已就绪 / 实时同步失败」。失败时参数保留在本地，调整任一选项即可重试。
 
 插件只写**一个**运行时主题 `PiOpt Appearance`（动效与玻璃层都在里面），它的基底由上面那三档决定：
@@ -296,7 +299,8 @@ PiOpt/
 │  │  ├─ icons.mjs         浮窗用的彩色图标表（生成物，24×24，id 已按品牌重写）
 │  │  └─ LICENSE           lobe-icons 的 MIT 许可
 │  ├─ shell.js              视图切换与按需启动（Alt+1…4）
-│  ├─ entry.mjs             宿主窗口的入口按钮与模型浮窗改写（renderer.extension）
+│  ├─ entry.mjs             宿主窗口入口按钮、可逆动效协调器与模型浮窗改写（renderer.extension）
+│  ├─ motion-runtime.mjs    宿主窗口可往返动画（展开收缩、弹出退回）的双向对称与打断协调器
 │  └─ model-picker.mjs      模型浮窗：始终展开、三种排列、品牌图标与能力标记
 ├─ skills/piopt.md          Agent 使用规则
 ├─ tools/

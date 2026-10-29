@@ -194,6 +194,7 @@ async function statePayload(hints = {}) {
   const preference = motion.preferenceFrom(appearance.theme) ?? await readPreference();
   return {
     config: motionConfig,
+    limits: motion.LIMITS,
     appearance,
     themes,
     preference,

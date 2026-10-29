@@ -115,9 +115,12 @@ about the calls, only about the prefix.
    PI-Desktop themes are mutually exclusive, so never promise that motion or the
    material stacks on another theme — touching either section switches to the
    `PiOpt Appearance` theme.
-4. The four presets are 敏捷 / 平衡 / 柔和 / 减弱. 减弱 removes spatial movement
-   and stops continuous animation; do not describe it as "slower motion".
-5. Never claim motion is applied to plugin panels, the terminal or browser
+4. The four presets are 敏捷 / 平衡 / 柔和 / 减弱, paired with strength (50–150%)
+   and response speed (0.40–2.00×). Reversible interactions (expand/collapse,
+   pop/dismiss, panel slide in/out) are symmetric and interruptible mid-flight.
+   减弱 removes spatial movement and stops continuous animation; do not describe
+   it as "slower motion".
+5. Never claim motion is applied to other plugin panels, the terminal or browser
    views: those are separate documents that theme CSS cannot reach.
 
 ## Glass: when to use

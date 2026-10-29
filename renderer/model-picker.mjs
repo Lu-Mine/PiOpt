@@ -84,6 +84,8 @@ export const MODEL_PICKER_CSS = [
   /* 按名称：来源另起一行、居左、比次要文字再淡一档。 */
   `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main{flex-wrap:wrap}`,
   `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
+  `.${VIEW_CLASS}[data-piopt-mp-switch="true"]{animation:piopt-mp-switch var(--motion-duration-fast,135ms) var(--motion-ease-out,cubic-bezier(.22,1,.36,1)) backwards}`,
+  `@keyframes piopt-mp-switch{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}`,
 ].join("\n");
 
 let host = null;
@@ -93,6 +95,16 @@ let bodyObserver = null;
 let listObserver = null;
 let syncTimer = null;
 let building = false;
+let animateNextView = false;
+
+function findLiveMenu() {
+  if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return null;
+  for (const el of document.querySelectorAll(MENU_SELECTOR)) {
+    if (typeof el.getAttribute === "function" && el.getAttribute("data-pm-ghost") === "true") continue;
+    return el;
+  }
+  return null;
+}
 
 // The collator is the only locale-aware piece: 模型名多是英文，但排序要和界面的
 // 中文语境一致，所以让平台自己决定语言，数字按数而不是按字符比较（`gpt-4` 在
@@ -437,7 +449,7 @@ async function probeCaps(list) {
     let owned = "";
     for (let index = 0; index < pending.length; index += 1) {
       const row = pending[index];
-      if (menu !== document.querySelector(MENU_SELECTOR)) return;
+      if (menu !== findLiveMenu()) return;
       // 用户自己开始打字了就退出，别把输入抢走。
       if (input.value !== owned) return;
       owned = row.modelId;
@@ -559,7 +571,11 @@ function renderView(list) {
   const view = document.createElement("div");
   view.className = VIEW_CLASS;
   view.setAttribute(LAYOUT_ATTR, grouping);
-
+  if (animateNextView) {
+    animateNextView = false;
+    view.setAttribute("data-piopt-mp-switch", "true");
+    view.addEventListener("animationend", () => view.removeAttribute("data-piopt-mp-switch"), { once: true });
+  }
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "composer-model-empty";
@@ -637,6 +653,7 @@ async function setGrouping(next) {
   if (!GROUPINGS.includes(next) || next === grouping) return grouping;
   grouping = next;
   if (menu) {
+    animateNextView = true;
     syncModes(menu);
     sync();
   }
@@ -807,7 +824,7 @@ function onDocumentInput(event) {
 function watchBody() {
   if (typeof MutationObserver !== "function" || !document.body) return;
   bodyObserver = new MutationObserver(() => {
-    const found = document.querySelector(MENU_SELECTOR);
+    const found = findLiveMenu();
     if (!found) {
       if (menu) unbindMenu();
       return;
@@ -826,7 +843,7 @@ export function mountModelPicker(bridge) {
     document.addEventListener("input", onDocumentInput, true);
     watchBody();
   }
-  const open = document.querySelector(MENU_SELECTOR);
+  const open = findLiveMenu();
   if (open && open !== menu) bindMenu(open);
   return refreshGrouping();
 }

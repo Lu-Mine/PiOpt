@@ -14,7 +14,7 @@
 // travel together and share one injected stylesheet.
 
 import { MODEL_PICKER_CSS, mountModelPicker, unmountModelPicker } from "./model-picker.mjs";
-
+import { MOTION_RUNTIME_CSS, mountMotionRuntime, unmountMotionRuntime } from "./motion-runtime.mjs";
 const ENTRY_ATTR = "data-piopt-entry";
 const ENTRY_CLASS = "piopt-entry";
 const HOST_ACTION_CLASS = "footer-action";
@@ -40,6 +40,7 @@ const STYLE = [
   `[${ENTRY_ATTR}] svg{display:block}`,
   `[${ENTRY_ATTR}][${BUSY_ATTR}="true"]{opacity:.55}`,
   MODEL_PICKER_CSS,
+  MOTION_RUNTIME_CSS,
 ].join("\n");
 
 let host = null;
@@ -143,7 +144,8 @@ export async function onLoad(pi) {
   // window wakes up covers the case where it was built while the tab was hidden.
   document.addEventListener("visibilitychange", scheduleScan);
 
-  // The popup rewrite rides along: same window, same lifecycle.
+  // The popup rewrite and reversible motion coordinator ride along: same window, same lifecycle.
+  mountMotionRuntime();
   await mountModelPicker(pi);
 }
 
@@ -158,7 +160,7 @@ export async function onUnload() {
   }
   document.removeEventListener("visibilitychange", scheduleScan);
   unmountModelPicker();
-
+  unmountMotionRuntime();
   for (const element of document.querySelectorAll(`[${ENTRY_ATTR}]`)) element.remove();
   if (styleDisposer) {
     styleDisposer();
