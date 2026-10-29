@@ -217,7 +217,6 @@
               <div class="settings-row-copy">
                 <div class="settings-row-title">背景图</div>
                 <div class="settings-row-detail glass-wallpaper-name" id="glass-wallpaper-name">未选择图片</div>
-                <div class="glass-path" id="glass-wallpaper-path" hidden></div>
               </div>
               <div class="settings-row-control">
                 <button type="button" class="ui-btn ui-btn-sm ui-btn-quiet" id="glass-wallpaper-clear">清除</button>
@@ -243,15 +242,14 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- 最近使用是背景图的历史，跟着这张图走，不另起一块。 -->
+                <div class="wallpaper-recent" id="glass-recent" hidden>
+                  <div class="wallpaper-recent-head">最近使用</div>
+                  <div class="wallpaper-grid" id="glass-recent-list"></div>
+                </div>
               </div>
             </div>
-          </div>
-
-          <div class="settings-group" id="glass-recent" hidden>
-            <div class="settings-row recent-head">
-              <span class="settings-row-title">最近使用</span>
-            </div>
-            <div id="glass-recent-list"></div>
           </div>
         </section>
       </main>

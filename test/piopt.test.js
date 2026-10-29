@@ -167,15 +167,31 @@ test("dependent settings sit under the option they depend on", () => {
     "外观基底 must stay a first-level row after the motion sub-block"
   );
 
-  // Blur strength belongs to the glass switch, the fit to the chosen photo.
+  // Blur strength belongs to the glass switch; the fit and the recent list both
+  // live inside the photo's own block. The absolute path is no longer shown
+  // anywhere — the row and the cards name the source file instead.
+  const start = html.indexOf('id="glass-wallpaper-sub"');
+  const photoSub = html.slice(start, html.indexOf("</section>", start));
+  assert.match(photoSub, /data-glass-fit="fill"/);
+  assert.match(photoSub, /id="glass-recent"/);
+  assert.doesNotMatch(html, /id="glass-wallpaper-path"/);
+  assert.doesNotMatch(html, /class="glass-path"/);
   const blurSub = html.slice(html.indexOf('id="glass-enabled-sub"'), html.indexOf('id="glass-wallpaper"'));
   assert.match(blurSub, /id="glass-intensity"/);
-  const fitSub = html.slice(html.indexOf('id="glass-wallpaper-sub"'), html.indexOf('id="glass-recent"'));
-  assert.match(fitSub, /data-glass-fit="fill"/);
 
   // Collapsing hides the block from the keyboard and tells assistive tech; the
   // switch that owns it also goes unavailable while animations are fully off.
   const js = read("renderer/appearance.js");
+
+  // The recent list is a thumbnail grid: 1:1 cards that apply on click, a remove
+  // icon revealed on hover, and a confirmation before anything is deleted.
+  assert.match(js, /class="wallpaper-card/);
+  assert.match(js, /class="wallpaper-remove"/);
+  assert.match(js, /askConfirm\(\s*"删除这张背景图"/);
+  assert.match(js, /entry\.thumb/);
+  const glassHost = read("features/appearance/index.js");
+  assert.match(glassHost, /nativeImage\.createFromPath/);
+  assert.match(glassHost, /thumb: problem \? "" : wallpaperThumb\(entry\.path\)/);
   assert.match(js, /sub\.inert = !expanded;/);
   assert.match(js, /elements\.motionOverride\.disabled = config\.disabled;/);
   assert.match(js, /setSub\(elements\.motionOverrideSub, config\.override\)/);

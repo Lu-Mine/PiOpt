@@ -261,6 +261,55 @@ function readSystemBase() {
   }
 }
 
+// ------------------------------------------------------------ wallpaper thumbs
+
+/*
+ * The recent list shows a 1:1 crop of each photo. The panel cannot read the file
+ * — it has no fs permission and the photo sits in the plugin's data folder, not
+ * next to its own page — so the crop is made here, once per path, and travels as
+ * a data URL (96 px, a few KB each).
+ *
+ * `nativeImage` is Electron's own decoder: absent under `node --test`, and blind
+ * to formats it cannot decode (svg). A missing thumb is not an error — the card
+ * falls back to its filename — so this never takes the state payload down.
+ */
+const THUMB_EDGE = 96;
+const THUMB_CACHE_LIMIT = 32;
+const thumbCache = new Map();
+
+function wallpaperThumb(file) {
+  const target = String(file ?? "").trim();
+  if (!target) return "";
+  if (thumbCache.has(target)) return thumbCache.get(target);
+
+  let url = "";
+  try {
+    const { nativeImage } = require("electron");
+    const image = nativeImage.createFromPath(target);
+    if (!image.isEmpty()) {
+      const { width, height } = image.getSize();
+      const edge = Math.min(width, height);
+      const square = image.crop({
+        x: Math.round((width - edge) / 2),
+        y: Math.round((height - edge) / 2),
+        width: edge,
+        height: edge,
+      });
+      url = square.resize({ width: THUMB_EDGE, height: THUMB_EDGE, quality: "good" }).toDataURL();
+    }
+  } catch {
+    // No Electron, or a format nativeImage cannot decode: filename card only.
+  }
+
+  if (thumbCache.size >= THUMB_CACHE_LIMIT) thumbCache.clear();
+  thumbCache.set(target, url);
+  return url;
+}
+
+function forgetThumb(file) {
+  thumbCache.delete(String(file ?? "").trim());
+}
+
 // ---------------------------------------------------------------------- glass
 
 function glassStatePayload() {
@@ -269,6 +318,8 @@ function glassStatePayload() {
     return {
       path: entry.path,
       name: entry.name,
+      // 读不到或已不可用的图不生成缩略图：卡片只剩文件名，比空白方块更清楚。
+      thumb: problem ? "" : wallpaperThumb(entry.path),
       // 只有 missing 才是「文件没了」；其它问题在选中的时候才会被拦下。
       missing: problem === "missing" || problem === "unsupported",
     };
@@ -534,6 +585,7 @@ async function onGlass(channel, payload) {
           /* 删不掉文件不影响把它从列表里去掉 */
         }
       }
+      forgetThumb(target);
       return { ok: true, ...(await persistGlass(next)) };
     }
     case "appearance.glass.clearWallpaper":

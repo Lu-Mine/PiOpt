@@ -98,6 +98,8 @@ function normalizeRecent(input) {
     out.push({
       path: String(path),
       name: (entry && typeof entry === "object" && entry.name) || basename(path),
+      // 主进程画好的 1:1 缩略图；没有（svg、读不到）时卡片只剩文件名。
+      thumb: (entry && typeof entry === "object" && typeof entry.thumb === "string") ? entry.thumb : "",
       missing: Boolean(entry && typeof entry === "object" && entry.missing),
     });
   }
@@ -328,29 +330,37 @@ function renderGlass() {
   const name = (current && current.name) || basename(config.wallpaper);
   elements.wallpaperName.textContent = name || "未选择图片";
   elements.wallpaperName.dataset.empty = String(!name);
-  elements.wallpaperPath.hidden = !config.wallpaper;
-  elements.wallpaperPath.textContent = config.wallpaper;
-  elements.wallpaperPath.title = config.wallpaper;
   elements.clearButton.disabled = state.busy || !config.wallpaper;
 
   renderRecent();
 }
 
+/*
+ * 最近使用是一张图一张卡片：1:1 的缩略图，文件名在图片下面，点卡片就用这张
+ * 图；删除图标只在 hover 或键盘焦点进入时出现，点它先确认再删。
+ */
 function renderRecent() {
   const list = elements.recentList;
   elements.recentGroup.hidden = state.recent.length === 0;
-  list.innerHTML = state.recent.map((entry) => `
-    <div class="recent-item" data-path="${escapeAttr(entry.path)}">
-      <div class="recent-copy">
-        <span class="recent-name">${escapeHtml(entry.name)}</span>
-        <span class="recent-path mono" title="${escapeAttr(entry.path)}">${escapeHtml(entry.path)}</span>
-      </div>
-      <div class="recent-actions">
-        <button type="button" class="ui-btn ui-btn-sm" data-recent-use="${escapeAttr(entry.path)}">使用</button>
-        <button type="button" class="ui-btn ui-btn-sm ui-btn-quiet" data-recent-forget="${escapeAttr(entry.path)}">删除</button>
-      </div>
-    </div>
-  `).join("");
+  list.innerHTML = state.recent.map((entry) => {
+    const current = entry.path === state.glass.wallpaper;
+    const thumb = entry.thumb ? `<img src="${escapeAttr(entry.thumb)}" alt="" />` : "";
+    const label = escapeAttr(entry.name);
+    return `
+    <div class="wallpaper-card${current ? " is-current" : ""}">
+      <button type="button" class="wallpaper-apply" data-recent-use="${escapeAttr(entry.path)}"
+        aria-pressed="${current}" aria-label="使用 ${label}">
+        <span class="wallpaper-thumb">${thumb}</span>
+        <span class="wallpaper-name" title="${label}">${escapeHtml(entry.name)}</span>
+      </button>
+      <button type="button" class="wallpaper-remove" data-recent-forget="${escapeAttr(entry.path)}"
+        aria-label="删除 ${label}" title="删除">
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 4l8 8M12 4l-8 8" />
+        </svg>
+      </button>
+    </div>`;
+  }).join("");
 }
 
 function escapeHtml(value) {
@@ -414,11 +424,12 @@ function flushSync(version) {
 
 let confirmResolve = null;
 
-function askConfirm(title, text) {
+function askConfirm(title, text, confirmLabel = "重置") {
   return new Promise((resolve) => {
     confirmResolve = resolve;
     elements.confirmTitle.textContent = title;
     elements.confirmText.textContent = text;
+    elements.confirmOk.textContent = confirmLabel;
     elements.confirm.hidden = false;
     elements.confirmOk.focus();
   });
@@ -543,13 +554,23 @@ async function useRecent(path) {
 
 async function forgetRecent(path) {
   if (state.busy) return;
+  const entry = state.recent.find((item) => item.path === path);
+  const name = (entry && entry.name) || basename(path);
+  const current = state.glass.wallpaper === path;
+  const ok = await askConfirm(
+    "删除这张背景图",
+    current ? `「${name}」正在使用，删除后会回到没有背景图的状态。` : `「${name}」会从最近使用里移除。`,
+    "删除"
+  );
+  if (!ok) return;
+
   setBusy(true);
   try {
     const result = await invoke(`${GLASS}.forgetWallpaper`, { path });
     adoptGlassState(result);
-    toast("已从最近使用里删除");
+    toast("已删除背景图");
   } catch (error) {
-    toast(error.message || "无法删除这条记录", true);
+    toast(error.message || "无法删除这张背景图", true);
   } finally {
     setBusy(false);
   }
@@ -604,14 +625,21 @@ function bindEvents() {
   elements.clearButton.addEventListener("click", clearWallpaper);
 
   elements.recentList.addEventListener("click", (event) => {
-    const use = event.target.closest("[data-recent-use]");
-    if (use) {
-      void useRecent(use.dataset.recentUse);
+    // 删除图标是卡片的兄弟节点而不是子节点，但先判删除更稳：卡片正被删除时
+    // 不该顺手把这张图又应用一次。
+    const forget = event.target.closest("[data-recent-forget]");
+    if (forget) {
+      void forgetRecent(forget.dataset.recentForget);
       return;
     }
-    const forget = event.target.closest("[data-recent-forget]");
-    if (forget) void forgetRecent(forget.dataset.recentForget);
+    const use = event.target.closest("[data-recent-use]");
+    if (use) void useRecent(use.dataset.recentUse);
   });
+
+  // 缩略图是主进程用 nativeImage 画的；某个格式解码失败时只留文件名。
+  elements.recentList.addEventListener("error", (event) => {
+    if (event.target instanceof HTMLImageElement) event.target.remove();
+  }, true);
 
   elements.confirmCancel.addEventListener("click", () => closeConfirm(false));
   elements.confirmOk.addEventListener("click", () => closeConfirm(true));
@@ -643,7 +671,6 @@ async function initialize() {
     glassIntensity: byId("glass-intensity"),
     glassIntensityValue: byId("glass-intensity-value"),
     wallpaperName: byId("glass-wallpaper-name"),
-    wallpaperPath: byId("glass-wallpaper-path"),
     pickButton: byId("glass-wallpaper-pick"),
     clearButton: byId("glass-wallpaper-clear"),
     glassFitHint: byId("glass-fit-hint"),
