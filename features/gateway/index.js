@@ -254,7 +254,7 @@ async function onPanelInvoke(channel, payload = {}) {
       if (payload.kind === "panel") {
         const url = localHttpUrl(payload.url);
         if (!url) throw new Error("只允许打开本机面板");
-        await pi.shell.openExternal(url);
+        await pi.shell.openExternal(await services.panelUrl(url));
         return { ok: true };
       }
       if (payload.kind === "oauth") {

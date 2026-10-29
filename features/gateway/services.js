@@ -504,8 +504,23 @@ async function wbAction(payload) {
   return wbRequest(routes[action], { method: "POST", body, timeout: action === "refresh" || action === "credits" ? 310000 : 120000 });
 }
 
+// The wb2api panel in the browser cannot know the rotated password, so the
+// "open" action hands it over as ?pwd=, which the panel uses to log in. Only
+// for the wb2api origin, and only with the sealed value; the renderer never
+// sees it.
+async function panelUrl(url) {
+  let parsed;
+  try { parsed = new URL(String(url || "")); } catch { return url; }
+  if (parsed.origin !== new URL(WB_BASE).origin) return url;
+  const password = await store.get("wbPanelPassword");
+  if (!password) return url;
+  parsed.searchParams.set("pwd", password);
+  return parsed.href;
+}
+
 module.exports = {
   secretStore: store,
+  panelUrl,
   setOwnership,
   CP_BASE,
   WB_BASE,

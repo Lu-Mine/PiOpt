@@ -650,3 +650,16 @@ test("services.js no longer reads auth files or calls Google itself", () => {
   assert.equal(/readAuthFiles|access_token|accessToken/.test(source), false);
   assert.equal(/fetch\(\s*["'`]https:\/\/[^"'`]*googleapis/.test(source), false);
 });
+
+test("opening the wb2api panel carries the sealed password, other panels do not", async t => {
+  global.pi = { plugin: { getSettings: async () => ({}) } };
+  t.after(() => { delete global.pi; });
+  const service = await mockServices(t, (request, response) => json(response, {}));
+  service.secretStore._cache.set("wbPanelPassword", "rotated-secret");
+  const wb = new URL(await service.panelUrl(service.WB_BASE + "/"));
+  assert.equal(wb.searchParams.get("pwd"), "rotated-secret");
+  // mockServices points both bases at one port, so use the real 8317 origin here.
+  const cp = "http://127.0.0.1:8317/management.html";
+  assert.equal(await service.panelUrl(cp), cp);
+  service.secretStore._cache.delete("wbPanelPassword");
+});
