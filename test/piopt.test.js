@@ -189,15 +189,22 @@ test("dependent settings sit under the option they depend on", () => {
   assert.match(js, /class="wallpaper-remove"/);
   assert.match(js, /askConfirm\(\s*"删除这张背景图"/);
   assert.match(js, /entry\.thumb/);
-  const glassHost = read("features/appearance/index.js");
-  assert.match(glassHost, /nativeImage\.createFromPath/);
-  assert.match(glassHost, /thumb: problem \? "" : wallpaperThumb\(entry\.path\)/);
   assert.match(js, /sub\.inert = !expanded;/);
   assert.match(js, /elements\.motionOverride\.disabled = config\.disabled;/);
   assert.match(js, /setSub\(elements\.motionOverrideSub, config\.override\)/);
   assert.match(js, /setSub\(elements\.glassEnabledSub, config\.enabled\)/);
   assert.match(js, /setSub\(elements\.glassWallpaperSub, Boolean\(config\.wallpaper\)\)/);
   assert.match(read("renderer/appearance.css"), /\.settings-sub\[data-collapsed="true"\]/);
+
+  // Thumbnails are drawn in the panel (the plugin process has no image decoder)
+  // and stored on the entry; missing ones are backfilled from the original bytes.
+  assert.match(js, /toDataURL\("image\/png"\)/);
+  assert.match(js, /wallpaperBytes/);
+  assert.match(js, /saveThumb/);
+  const glassHost = read("features/appearance/index.js");
+  assert.match(glassHost, /readFileSync\(target\)\.toString\("base64"\)/);
+  assert.match(glassHost, /case "appearance\.glass\.saveThumb"/);
+  assert.match(read("features/appearance/glass.js"), /thumb: thumbValue\(value\.thumb\)/);
 });
 
 test("the rail opens and closes from a toggle above the tabs", () => {

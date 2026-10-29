@@ -70,19 +70,30 @@ const DEFAULT_CONFIG = Object.freeze({
 
 const RECENT_MAX = 8;
 
+// 缩略图是面板用 canvas 画好、随条目一起存下来的 data URL。插件进程没有图像
+// 解码器（nativeImage 只在 Electron 主进程里），面板也读不到数据目录，所以这
+// 一份小图是唯一能让「最近使用」显示预览的东西。只认 data:image/ 前缀，其它
+// 一律当作没有。
+const THUMB_PREFIX = "data:image/";
+
+function thumbValue(value) {
+  const thumb = typeof value === "string" ? value.trim() : "";
+  return thumb.startsWith(THUMB_PREFIX) ? thumb : "";
+}
+
 function recentEntry(value) {
   if (typeof value === "string") {
     const path = value.trim();
     if (!isSupportedWallpaper(path)) return null;
-    return { path, name: path.split(/[\/]/).pop() || path };
+    return { path, name: path.split(/[\\/]/).pop() || path, thumb: "" };
   }
   if (!value || typeof value !== "object") return null;
   const path = String(value.path ?? "").trim();
   if (!isSupportedWallpaper(path)) return null;
   const name = typeof value.name === "string" && value.name.trim()
     ? value.name.trim()
-    : path.split(/[\/]/).pop() || path;
-  return { path, name };
+    : path.split(/[\\/]/).pop() || path;
+  return { path, name, thumb: thumbValue(value.thumb) };
 }
 
 function normalizeRecent(input) {
@@ -102,9 +113,14 @@ function normalizeRecent(input) {
 }
 
 /** 把一个路径提到最近使用的最前面（去重、截断）。 */
-function rememberWallpaper(current, target, name) {
-  const list = normalizeRecent(current).filter((entry) => entry.path.toLowerCase() !== String(target).toLowerCase());
-  return normalizeRecent([{ path: target, name }, ...list]);
+function rememberWallpaper(current, target, name, thumb = "") {
+  const list = normalizeRecent(current);
+  const previous = list.find((entry) => entry.path.toLowerCase() === String(target).toLowerCase());
+  return normalizeRecent([
+    // 换图时传进来的缩略图优先；只是从列表里切回旧图时，保留它原来那份。
+    { path: target, name, thumb: thumbValue(thumb) || (previous ? previous.thumb : "") },
+    ...list.filter((entry) => entry.path.toLowerCase() !== String(target).toLowerCase()),
+  ]);
 }
 
 const LIMITS = Object.freeze({ intensity: Object.freeze([0.6, 1.6]) });

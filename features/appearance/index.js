@@ -14,7 +14,7 @@
  * survived a reload can still be holding the old ones.
  */
 
-const { readdirSync, statSync, unlinkSync, writeFileSync } = require("node:fs");
+const { readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } = require("node:fs");
 const { basename, join } = require("node:path");
 
 const motion = require("./motion.js");
@@ -264,50 +264,25 @@ function readSystemBase() {
 // ------------------------------------------------------------ wallpaper thumbs
 
 /*
- * The recent list shows a 1:1 crop of each photo. The panel cannot read the file
- * — it has no fs permission and the photo sits in the plugin's data folder, not
- * next to its own page — so the crop is made here, once per path, and travels as
- * a data URL (96 px, a few KB each).
+ * 缩略图不在这里画。插件主入口跑在独立的 Node 进程里，不是 Electron 主进程，
+ * 所以 `require("electron").nativeImage` 不存在——早先那版缩略图在真实宿主里
+ * 一片空白就是这个原因。面板是 Chromium，能解码图片也能用 canvas 缩图，但它
+ * 读不到数据目录（宿主的 fs 范围只覆盖工作区）。
  *
- * `nativeImage` is Electron's own decoder: absent under `node --test`, and blind
- * to formats it cannot decode (svg). A missing thumb is not an error — the card
- * falls back to its filename — so this never takes the state payload down.
+ * 于是缩略图由面板画好，随条目存在 recent 里（saveWallpaper / saveThumb）；存量
+ * 图片则由面板逐张取原图字节（wallpaperBytes）现画一次再存回来。
  */
-const THUMB_EDGE = 96;
-const THUMB_CACHE_LIMIT = 32;
-const thumbCache = new Map();
+const IMAGE_MIME = Object.freeze({
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+});
 
-function wallpaperThumb(file) {
-  const target = String(file ?? "").trim();
-  if (!target) return "";
-  if (thumbCache.has(target)) return thumbCache.get(target);
-
-  let url = "";
-  try {
-    const { nativeImage } = require("electron");
-    const image = nativeImage.createFromPath(target);
-    if (!image.isEmpty()) {
-      const { width, height } = image.getSize();
-      const edge = Math.min(width, height);
-      const square = image.crop({
-        x: Math.round((width - edge) / 2),
-        y: Math.round((height - edge) / 2),
-        width: edge,
-        height: edge,
-      });
-      url = square.resize({ width: THUMB_EDGE, height: THUMB_EDGE, quality: "good" }).toDataURL();
-    }
-  } catch {
-    // No Electron, or a format nativeImage cannot decode: filename card only.
-  }
-
-  if (thumbCache.size >= THUMB_CACHE_LIMIT) thumbCache.clear();
-  thumbCache.set(target, url);
-  return url;
-}
-
-function forgetThumb(file) {
-  thumbCache.delete(String(file ?? "").trim());
+function imageMimeOf(name) {
+  return IMAGE_MIME[extensionOf(name)] || "application/octet-stream";
 }
 
 // ---------------------------------------------------------------------- glass
@@ -319,7 +294,7 @@ function glassStatePayload() {
       path: entry.path,
       name: entry.name,
       // 读不到或已不可用的图不生成缩略图：卡片只剩文件名，比空白方块更清楚。
-      thumb: problem ? "" : wallpaperThumb(entry.path),
+      thumb: problem ? "" : entry.thumb || "",
       // 只有 missing 才是「文件没了」；其它问题在选中的时候才会被拦下。
       missing: problem === "missing" || problem === "unsupported",
     };
@@ -386,7 +361,7 @@ function refuse(reason) {
   return { ok: false, reason, message, ...glassStatePayload() };
 }
 
-async function adoptWallpaper(target, name) {
+async function adoptWallpaper(target, name, thumb = "") {
   const problem = wallpaperProblem(target);
   if (problem) {
     // Drop a reference that stopped resolving instead of leaving the theme
@@ -404,7 +379,7 @@ async function adoptWallpaper(target, name) {
   await persistGlass({
     ...glassConfig,
     wallpaper: target,
-    recent: glass.rememberWallpaper(glassConfig.recent, target, name),
+    recent: glass.rememberWallpaper(glassConfig.recent, target, name, thumb),
   });
   return { ok: true, ...glassStatePayload() };
 }
@@ -420,7 +395,7 @@ function extensionOf(name) {
  * 每次上传都写一个独立的文件（时间戳命名），因为「最近使用」要同时留住几张图；
  * 只在使用者从列表里删掉某一项时才删除对应文件。
  */
-async function saveWallpaperBytes(name, base64) {
+async function saveWallpaperBytes(name, base64, thumb = "") {
   const extension = extensionOf(name);
   if (!glass.WALLPAPER_EXTENSIONS.includes(extension)) return refuse("unsupported");
 
@@ -447,7 +422,7 @@ async function saveWallpaperBytes(name, base64) {
     return refuse("unreadable");
   }
 
-  return adoptWallpaper(target, name);
+  return adoptWallpaper(target, name, thumb);
 }
 
 // ------------------------------------------------------------------ lifecycle
@@ -559,7 +534,7 @@ async function onGlass(channel, payload) {
       return { ok: true, ...(await persistGlass(merged)) };
     }
     case "appearance.glass.saveWallpaper":
-      return saveWallpaperBytes(payload.name, payload.data);
+      return saveWallpaperBytes(payload.name, payload.data, payload.thumb);
     case "appearance.glass.setWallpaper":
       // For scripted use and tests; the panel uploads bytes instead.
       return adoptWallpaper(payload.path, basename(String(payload?.path ?? "")));
@@ -585,8 +560,32 @@ async function onGlass(channel, payload) {
           /* 删不掉文件不影响把它从列表里去掉 */
         }
       }
-      forgetThumb(target);
       return { ok: true, ...(await persistGlass(next)) };
+    }
+    case "appearance.glass.wallpaperBytes": {
+      // 存量图片没有缩略图：面板取一次原图字节，画好再存回来。
+      const target = String(payload?.path ?? "").trim();
+      if (!glassConfig.recent.some((entry) => entry.path === target)) {
+        return { ok: false, reason: "missing" };
+      }
+      const problem = wallpaperProblem(target);
+      if (problem) return { ok: false, reason: problem };
+      try {
+        return { ok: true, mime: imageMimeOf(target), data: readFileSync(target).toString("base64") };
+      } catch {
+        return { ok: false, reason: "unreadable" };
+      }
+    }
+    case "appearance.glass.saveThumb": {
+      const target = String(payload?.path ?? "").trim();
+      const thumb = typeof payload?.thumb === "string" ? payload.thumb : "";
+      if (!target || !thumb.startsWith("data:image/")) return { ok: false, ...glassStatePayload() };
+      glassConfig = glass.normalizeGlassConfig({
+        ...glassConfig,
+        recent: glassConfig.recent.map((entry) => (entry.path === target ? { ...entry, thumb } : entry)),
+      });
+      await pi.plugin.setSettings({ [glass.SETTINGS_KEY]: glassConfig });
+      return { ok: true, ...glassStatePayload() };
     }
     case "appearance.glass.clearWallpaper":
       return { ok: true, ...(await persistGlass({ ...glassConfig, wallpaper: "" })) };

@@ -155,6 +155,8 @@ async function invoke(channel, payload = {}) {
     state.recent = state.recent.filter((entry) => entry.path !== payload.path);
     return { ok: true, ...glassPreviewState() };
   }
+  if (channel === `${GLASS}.wallpaperBytes`) return { ok: false, reason: "preview" };
+  if (channel === `${GLASS}.saveThumb`) return { ok: false, ...glassPreviewState() };
   if (channel === `${GLASS}.clearWallpaper`) {
     state.glass = { ...state.glass, wallpaper: "" };
     return { ok: true, ...glassPreviewState({ wallpaper: "" }), applied: false };
@@ -333,6 +335,7 @@ function renderGlass() {
   elements.clearButton.disabled = state.busy || !config.wallpaper;
 
   renderRecent();
+  void fillMissingThumbs();
 }
 
 /*
@@ -361,6 +364,35 @@ function renderRecent() {
       </button>
     </div>`;
   }).join("");
+}
+
+/*
+ * 升级前上传的图片没有缩略图：逐张向主进程要一次原图字节，面板画好再存回去。
+ * 一次只跑一张，保存后重新渲染，卡片会陆续补上预览。
+ */
+let thumbFilling = false;
+
+async function fillMissingThumbs() {
+  if (thumbFilling) return;
+  thumbFilling = true;
+  try {
+    for (const entry of [...state.recent]) {
+      if (entry.thumb || entry.missing) continue;
+      if (!state.recent.some((item) => item.path === entry.path)) continue;
+      try {
+        const bytes = await invoke(`${GLASS}.wallpaperBytes`, { path: entry.path });
+        if (!bytes || bytes.ok === false || !bytes.data) continue;
+        const thumb = await makeThumb(`data:${bytes.mime};base64,${bytes.data}`);
+        if (!thumb) continue;
+        const result = await invoke(`${GLASS}.saveThumb`, { path: entry.path, thumb });
+        if (result && result.ok !== false) adoptGlassState(result);
+      } catch {
+        /* 单张失败不影响其它图片 */
+      }
+    }
+  } finally {
+    thumbFilling = false;
+  }
 }
 
 function escapeHtml(value) {
@@ -472,17 +504,44 @@ async function resetGlass() {
 
 // ---------------------------------------------------------------- wallpaper
 
-function readAsBase64(file) {
+// 面板是唯一能解码图片的一侧（插件进程没有图像库，也没有 electron），所以缩略图
+// 在这里画：中心方图裁切后缩到 96px，存进「最近使用」条目，卡片直接用。
+const THUMB_EDGE = 96;
+
+function readAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result ?? "");
-      const comma = result.indexOf(",");
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
+    reader.onload = () => resolve(String(reader.result ?? ""));
     reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
     reader.readAsDataURL(file);
   });
+}
+
+async function makeThumb(dataUrl) {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+  const width = image.naturalWidth;
+  const height = image.naturalHeight;
+  const edge = Math.min(width, height);
+  if (!edge) return "";
+
+  const canvas = document.createElement("canvas");
+  canvas.width = THUMB_EDGE;
+  canvas.height = THUMB_EDGE;
+  const context = canvas.getContext("2d");
+  context.drawImage(
+    image,
+    (width - edge) / 2,
+    (height - edge) / 2,
+    edge,
+    edge,
+    0,
+    0,
+    THUMB_EDGE,
+    THUMB_EDGE
+  );
+  return canvas.toDataURL("image/png");
 }
 
 async function uploadWallpaper(file) {
@@ -499,8 +558,11 @@ async function uploadWallpaper(file) {
 
   setBusy(true);
   try {
-    const data = await readAsBase64(file);
-    const result = await invoke(`${GLASS}.saveWallpaper`, { name: file.name, data });
+    const dataUrl = await readAsDataUrl(file);
+    const comma = dataUrl.indexOf(",");
+    const data = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+    const thumb = await makeThumb(dataUrl).catch(() => "");
+    const result = await invoke(`${GLASS}.saveWallpaper`, { name: file.name, data, thumb });
     adoptGlassState(result);
     if (result && result.ok === false) {
       toast(result.message || "无法使用该图片", true);
