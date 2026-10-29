@@ -16,6 +16,8 @@
 // 宿主在搜索、方向键高亮、模型异步加载时都会重渲染这棵子树，搬动别人的节点会
 // 让它下一次 insertBefore 找不到参照。
 
+import { ICONS } from "./model-logos/icons.mjs";
+
 const MENU_SELECTOR = ".composer-model-menu";
 const LIST_SELECTOR = ".composer-model-list";
 const GROUP_SELECTOR = ".composer-model-group";
@@ -60,6 +62,13 @@ export const MODEL_PICKER_CSS = [
   `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}{flex:none;height:20px;margin-left:auto;padding:0 7px;border:1px solid var(--ds-border-subtle);border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 7%,transparent);color:var(--ds-text-muted);font:inherit;font-size:var(--text-xs);line-height:1;cursor:pointer;transition:color var(--motion-duration-fast) var(--motion-ease-out),background var(--motion-duration-fast) var(--motion-ease-out)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}:hover{background:color-mix(in oklab,var(--ds-text-primary) 13%,transparent);color:var(--ds-text-primary)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}:focus-visible{outline:2px solid color-mix(in oklab,var(--ds-focus) 55%,transparent);outline-offset:1px}`,
+  /* 图标与名称贴在一起；认不出品牌时用供应商首字母色块补位。 */
+  `.${VIEW_CLASS} .composer-model-option-main{align-items:center}`,
+  `.piopt-mp-lead{display:flex;align-items:center;gap:6px;min-width:0}`,
+  `.piopt-mp-lead .composer-model-label{flex:0 1 auto;min-width:0}`,
+  `.piopt-mp-logo{flex:none;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:inherit}`,
+  `.piopt-mp-logo svg{width:14px;height:14px;display:block}`,
+  `.piopt-mp-logo-letter{border-radius:4px;background:color-mix(in oklab,var(--piopt-logo) 22%,transparent);color:var(--piopt-logo);font-size:9px;font-weight:600;line-height:1}`,
   /* 按名称：来源另起一行、居左、比次要文字再淡一档。 */
   `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main{flex-wrap:wrap}`,
   `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
@@ -189,6 +198,84 @@ function insertSorted(bucket, row) {
 
 // ------------------------------------------------------------------- rendering
 
+// ---------------------------------------------------------------------- icons
+
+/**
+ * 品牌匹配表。
+ *
+ * 先拿模型名与模型 id 去比，再拿供应商名比：OpenRouter、Azure 这类转售商下面跑
+ * 的仍是谁家的模型就显示谁家的标。匹配不到时退回首字母色块，所以没上表的新模型
+ * 或新服务也不会空着 —— 名字里带 `claude`、`gpt`、`glm` 之类的新版本照样命中。
+ */
+const FAMILIES = [
+  { icon: "anthropic", test: /claude|anthropic|sonnet|opus|haiku/i },
+  { icon: "openai", test: /openai|chatgpt|\bgpt\b|gpt-\d|codex|davinci|(?:^|[^a-z])o[1-9](?:[^0-9]|$)/i },
+  { icon: "gemini", test: /gemini|gemma|bard|palm|google/i },
+  { icon: "xai", test: /grok|xai/i },
+  { icon: "deepseek", test: /deepseek/i },
+  { icon: "zhipu", test: /glm|zhipu|chatglm|bigmodel/i },
+  { icon: "qwen", test: /qwen|qwq|tongyi|dashscope|alibaba/i },
+  { icon: "kimi", test: /kimi|moonshot/i },
+  { icon: "minimax", test: /minimax|abab|hailuo/i },
+  { icon: "mistral", test: /mistral|mixtral|codestral|pixtral|magistral|devstral/i },
+  { icon: "meta", test: /llama|\bmeta\b/i },
+  { icon: "cohere", test: /cohere|command-r/i },
+  { icon: "openrouter", test: /openrouter/i },
+  { icon: "together", test: /together/i },
+  { icon: "perplexity", test: /perplexity|sonar/i },
+  { icon: "doubao", test: /doubao|bytedance|seedream|seed-?edit/i },
+  { icon: "baidu", test: /ernie|wenxin|baidu/i },
+  { icon: "hunyuan", test: /hunyuan|tencent/i },
+  { icon: "stepfun", test: /stepfun|step-\d/i },
+  { icon: "huggingface", test: /huggingface|hf\.co/i },
+  { icon: "nvidia", test: /nvidia|nemotron/i },
+  { icon: "yi", test: /(?:^|[^a-z])yi(?:-|\b)|01\.ai|lingyi/i },
+  { icon: "cerebras", test: /cerebras/i },
+  { icon: "azure", test: /azure/i },
+  { icon: "aws", test: /bedrock|\baws\b/i },
+  { icon: "ollama", test: /ollama/i },
+];
+
+// 认不出来的服务用首字母色块，颜色从这一组里按名字取，明暗两种主题下都够醒目。
+const LETTER_COLORS = ["#5B8DEF", "#D97757", "#10A37F", "#A855F7", "#F59E0B", "#EC4899", "#14B8A6", "#8B5CF6"];
+
+function iconIdFor(row) {
+  const model = `${row.label} ${row.modelId}`.toLowerCase();
+  const provider = String(row.provider || "").toLowerCase();
+  for (const family of FAMILIES) if (family.test.test(model)) return family.icon;
+  for (const family of FAMILIES) if (family.test.test(provider)) return family.icon;
+  return "";
+}
+
+function letterColor(text) {
+  let hash = 0;
+  for (const character of String(text)) hash = (hash * 31 + character.codePointAt(0)) | 0;
+  return LETTER_COLORS[Math.abs(hash) % LETTER_COLORS.length];
+}
+
+function initialOf(text) {
+  const match = /[a-z0-9\u4e00-\u9fa5]/i.exec(String(text || "").trim());
+  return match ? match[0].toUpperCase() : "?";
+}
+
+/** 一行前面那枚 14px 的标：认得出品牌就画彩色图标，认不出就画供应商首字母。 */
+function buildLogo(row) {
+  const logo = document.createElement("span");
+  logo.className = "piopt-mp-logo";
+  logo.setAttribute("aria-hidden", "true");
+  const icon = iconIdFor(row);
+  const svg = icon ? ICONS[icon] : "";
+  if (svg) {
+    logo.innerHTML = svg;
+    return logo;
+  }
+  const source = row.provider || row.label;
+  logo.classList.add("piopt-mp-logo-letter");
+  logo.style.setProperty("--piopt-logo", letterColor(source));
+  logo.textContent = initialOf(source);
+  return logo;
+}
+
 /**
  * 一行自建选项。克隆保留宿主的样子（标签、徽标、上下文读数、对勾），只去掉两样
  * 东西：键盘高亮的瞬时类，以及「最近使用」行右侧那枚来源 —— 需求是来源不写在
@@ -206,6 +293,15 @@ function buildRow(row, showSource) {
       if (meta) meta.remove();
     }
     if (showSource && row.provider) main.setAttribute(PROVIDER_ATTR, row.provider);
+    // 图标和名称贴在一起：宿主给 main 的列间距是 8px，直接塞进去会离得太远，
+    // 所以把名称挪进一个自带 6px 间距的 lead 里。
+    const label = main.querySelector(LABEL_SELECTOR);
+    if (label) {
+      const lead = document.createElement("span");
+      lead.className = "piopt-mp-lead";
+      label.replaceWith(lead);
+      lead.append(buildLogo(row), label);
+    }
   }
   item.addEventListener("click", (event) => {
     event.preventDefault();

@@ -20,7 +20,10 @@ them: they are panel settings.
   popup's search field toggles grouping by provider and flat sorting by name.
   Provider grouping puts recently used models back under their provider and
   drops the group label's background; name sorting adds a faint source line
-  under each option. The switch lives in the host window
+  under each option. Every row also carries a 14px colored brand mark picked by
+  model name first and provider name second, with a colored initial as fallback
+  for brands not in the table (icons are lobe-icons, bundled, no network). The
+  switch lives in the host window
   (`renderer/model-picker.mjs`) and writes the plugin's `modelPicker` key; the
   panel's 行为 view only reports the current value, so do not tell the user to
   change it there.

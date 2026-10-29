@@ -209,3 +209,45 @@ test("the entry mounts the popup rewrite with its own lifecycle", () => {
   assert.match(entry, /await mountModelPicker\(pi\)/);
   assert.match(entry, /unmountModelPicker\(\)/);
 });
+
+test("the brand icon table ships inside the plugin and is safe to inline", async () => {
+  const icons = await import("../renderer/model-logos/icons.mjs");
+  const ids = Object.keys(icons.ICONS);
+  // 常见几家必须覆盖；新增品牌在 tools/build-model-icons.js 的表里加一行再生成。
+  for (const id of [
+    "anthropic", "openai", "gemini", "deepseek", "zhipu", "qwen", "kimi",
+    "minimax", "mistral", "meta", "openrouter", "doubao", "azure",
+  ]) {
+    assert.ok(ids.includes(id), id);
+  }
+  for (const [id, svg] of Object.entries(icons.ICONS)) {
+    assert.ok(svg.startsWith("<svg"), id);
+    assert.ok(svg.endsWith("</svg>"), id);
+    // 没有标题、没有内联尺寸：尺寸由 CSS 决定。
+    assert.doesNotMatch(svg, /<title>/, id);
+    assert.doesNotMatch(svg, /(?:height|width)="1em"/, id);
+    // 渐变/裁切的 id 必须带品牌前缀，否则同一屏里两个同品牌图标会互相覆盖。
+    for (const match of svg.matchAll(/\sid="([^"]+)"/g)) {
+      assert.ok(match[1].startsWith(`piopt-${id}-`), `${id}: ${match[1]}`);
+    }
+  }
+});
+
+test("the popup picks an icon by model name first, then by provider", () => {
+  const source = read("renderer/model-picker.mjs");
+  assert.match(source, /import \{ ICONS \} from "\.\/model-logos\/icons\.mjs";/);
+  assert.match(source, /const FAMILIES = \[/);
+  // 先比模型名、再比供应商名：OpenRouter 上的 claude 也该显示 Anthropic 的标。
+  assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(model\)\) return family\.icon;/);
+  assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(provider\)\) return family\.icon;/);
+  // 匹配是按名字里的关键字族做的，未来同族的新版本（gpt-6、claude-5…）照样命中。
+  assert.match(source, /claude\|anthropic\|sonnet\|opus\|haiku/);
+  assert.match(source, /gemini\|gemma\|bard\|palm\|google/);
+  // 认不出来就画供应商首字母，新服务上线也不至于空着。
+  assert.match(source, /classList\.add\("piopt-mp-logo-letter"\)/);
+  assert.match(source, /--piopt-logo/);
+  // 图标和名称进同一个 lead，间距 6px。
+  assert.match(source, /lead\.className = "piopt-mp-lead"/);
+  assert.match(source, /lead\.append\(buildLogo\(row\), label\)/);
+  assert.match(source, /\.piopt-mp-logo\{flex:none;width:14px;height:14px/);
+});
