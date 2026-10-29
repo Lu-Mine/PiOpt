@@ -283,9 +283,11 @@ function renderView(list) {
 
 // --------------------------------------------------------------------- switch
 
+// 宿主把当前界面语言写在 <html lang> 上；只有中文界面用中文，其余一律用英文，
+// 免得日文/德文界面里冒出一颗中文按钮。
 function copyOf() {
   const lang = (document.documentElement && document.documentElement.lang) || "";
-  return /^en\b/i.test(lang) ? COPY.en : COPY.zh;
+  return /^zh\b/i.test(lang) ? COPY.zh : COPY.en;
 }
 
 /**
