@@ -44,8 +44,11 @@ with sync_playwright() as p:
 
     # Work panel must beat the later glass animation:none!important rule.
     page.evaluate('''() => {document.body.insertAdjacentHTML('beforeend', '<div class="shell app-chat-shell"><main class="main"><div class="thread-content">Conversation</div></main><aside class="work-panel" style="--work-panel-width:400px"><div class="work-panel-main"><p>Long text stays on the same lines throughout the entire slide.</p></div></aside></div>')}''')
-    assert page.locator('.work-panel').evaluate('(e)=>getComputedStyle(e).animationName') == 'work-panel-in-pm'
+    state = page.locator('.work-panel').evaluate('(e)=>({animation:getComputedStyle(e).animationName,phase:e.getAttribute("data-pm-wp-phase")})')
+    assert state['animation']=='work-panel-in-pm', (state,errors)
     page.wait_for_timeout(700)
+    replay = page.evaluate('''async () => {const panel=document.querySelector('.work-panel');panel.setAttribute('data-resizing','true');getComputedStyle(panel).animationName;panel.removeAttribute('data-resizing');panel.classList.add('is-exit-pending');getComputedStyle(panel).animationName;panel.classList.remove('is-exit-pending');const frames=[];for(let i=0;i<5;i++){await new Promise(requestAnimationFrame);frames.push(document.querySelector('.main').getBoundingClientRect().width)}return frames}''')
+    assert max(replay)-min(replay)<1 and abs(replay[-1]-600)<1, ('work panel replay moved main page',replay)
     page.locator('.work-panel').evaluate('(e)=>e.classList.add("is-exiting")')
     assert page.locator('.work-panel').evaluate('(e)=>getComputedStyle(e).animationName') == 'work-panel-out-pm'
     samples = page.evaluate('''async () => {const result=[];for(let i=0;i<8;i++){await new Promise(requestAnimationFrame);result.push({main:document.querySelector('.main').getBoundingClientRect().width,inner:document.querySelector('.work-panel-main').getBoundingClientRect().width,left:document.querySelector('.work-panel-main').getBoundingClientRect().left})}return result}''')
@@ -163,6 +166,20 @@ with sync_playwright() as p:
     page.wait_for_timeout(550)
     assert page.locator('.dock-content').evaluate('(e)=>e.getBoundingClientRect().height')==0
     print('PASS task dock: explicit closing height animation and interrupted reopen')
+    page.evaluate('''() => {document.querySelector('.todo-dock-list').innerHTML=Array.from({length:100},(_,i)=>'<div class="todo-dock-row">Task '+i+'</div>').join('');document.querySelector('.dock-panel').hidden=false;document.querySelector('.dock').classList.add('is-expanded')}''')
+    trajectory = page.evaluate('''async () => {const content=document.querySelector('.dock-content');const frames=[];for(let i=0;i<40;i++){await new Promise(requestAnimationFrame);frames.push(content.getBoundingClientRect().height)}return frames}''')
+    assert max(trajectory)<=201, trajectory
+    assert all(trajectory[i]<=trajectory[i+1]+.2 for i in range(len(trajectory)-1)), trajectory
+    assert abs(trajectory[-1]-200)<1, trajectory
+    assert page.locator('.dock-content').evaluate('(e)=>getComputedStyle(e).transitionDuration')=='0s'
+    assert page.locator('.dock-content').evaluate('(e)=>e.getAnimations().length')==0
+    page.evaluate('''() => {document.querySelector('.dock').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));document.querySelector('.dock').classList.remove('is-expanded');document.querySelector('.dock').classList.add('changed');document.querySelector('.dock-panel').hidden=true}''')
+    assert page.locator('.dock-content').evaluate('(e)=>e.getAnimations().length')==1
+    trajectory = page.evaluate('''async () => {const content=document.querySelector('.dock-content');const frames=[];for(let i=0;i<40;i++){await new Promise(requestAnimationFrame);frames.push(content.getBoundingClientRect().height)}return frames}''')
+    assert all(trajectory[i]>=trajectory[i+1]-.2 for i in range(len(trajectory)-1)), trajectory
+    assert trajectory[-1]==0, trajectory
+    assert page.locator('.dock-content').evaluate('(e)=>e.getAnimations().length')==0
+    print('PASS long task list: capped height, one animation, monotonic frames and no tail transition')
     assert not errors, errors
     page.evaluate('picker.unmountModelPicker();motion.unmountMotionRuntime()')
     browser.close()

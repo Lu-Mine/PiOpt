@@ -408,8 +408,9 @@ details[open]::details-content{block-size:auto;opacity:1}
 :is(.composer-image-preview,.generated-image-viewer)[open]{animation:pm-dialog-in var(--pm-base) var(--pm-ease-out) backwards}
 /* Layer 4: Frosted-safe panels & sidebars (no opacity keyframes on ancestors of backdrop-filter). */
 :is(.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) backwards}
-.work-panel:not(.work-panel-pending):not(.is-exiting):not(.is-exit-pending):not([data-resizing=true]){animation:work-panel-in-pm var(--pm-slow) var(--pm-ease-symmetric) backwards!important}
-.work-panel.work-panel.is-exiting{animation:work-panel-out-pm var(--pm-slow) var(--pm-ease-symmetric) both!important;overflow:hidden}
+.work-panel{animation:none!important}
+.work-panel[data-pm-wp-phase=in]{animation:work-panel-in-pm var(--pm-slow) var(--pm-ease-symmetric) backwards!important}
+.work-panel.work-panel[data-pm-wp-phase=out]{animation:work-panel-out-pm var(--pm-slow) var(--pm-ease-symmetric) both!important;overflow:hidden}
 /* The flex allocation changes once per frame, but the sheet's content stays rigid.
    Its left edge moves toward the viewport edge, carrying unchanged text with it. */
 .work-panel:not(.is-maximized):not([data-resizing=true])>.work-panel-main{flex:0 0 var(--work-panel-width);width:var(--work-panel-width);min-width:var(--work-panel-width)}
@@ -420,7 +421,10 @@ details[open]::details-content{block-size:auto;opacity:1}
 .dock:not(.is-expanded) .dock-panel[hidden]:has(.todo-dock-list){display:block!important;pointer-events:none}
 .dock:not(.is-expanded) .dock-content{pointer-events:none}
 .dock-panel:not([hidden]){animation:pm-fade-in var(--pm-fast) var(--pm-ease-symmetric) backwards}
-:is(.dock-content,.todo-dock-content)[data-pm-dock-motion]{transition:none!important}
+/* Dock height is owned by one runtime animation, including the settled frame. */
+:is(.dock-content,.todo-dock-content){transition:none!important;transform:none!important}
+:is(.dock-content,.todo-dock-content)[data-pm-dock-motion]{grid-template-rows:minmax(0,1fr)!important;overflow:hidden}
+:is(.dock-content,.todo-dock-content)[data-pm-dock-motion] .dock-panel{animation:none!important}
 @starting-style{.context-menu.is-open{opacity:0}}
 .sidebar.is-entering{animation:sidebar-in-pm var(--pm-base) var(--pm-ease-symmetric) backwards}
 .sidebar.is-exiting,:root[data-platform=win32] .sidebar.is-exiting{animation:sidebar-out-pm var(--pm-base) var(--pm-ease-symmetric) both}

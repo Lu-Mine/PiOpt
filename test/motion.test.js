@@ -82,8 +82,8 @@ test("unified motion language bridges host tokens and enforces symmetric round-t
   assert.match(css, /details::details-content\{[^}]*block-size var\(--pm-base\) var\(--pm-ease-symmetric\)/);
   assert.match(css, /\.sidebar\.is-entering\{animation:sidebar-in-pm var\(--pm-base\) var\(--pm-ease-symmetric\) backwards\}/);
   assert.match(css, /\.sidebar\.is-exiting,:root\[data-platform=win32\] \.sidebar\.is-exiting\{animation:sidebar-out-pm var\(--pm-base\) var\(--pm-ease-symmetric\) both\}/);
-  assert.match(css, /\.work-panel:not\(\.work-panel-pending\):not\(\.is-exiting\):not\(\.is-exit-pending\):not\(\[data-resizing=true\]\)\{animation:work-panel-in-pm[^}]*backwards!important/);
-  assert.match(css, /\.work-panel\.work-panel\.is-exiting\{animation:work-panel-out-pm[^}]*both!important/);
+  assert.match(css, /\.work-panel\[data-pm-wp-phase=in\]\{animation:work-panel-in-pm[^}]*backwards!important/);
+  assert.match(css, /\.work-panel\.work-panel\[data-pm-wp-phase=out\]\{animation:work-panel-out-pm[^}]*both!important/);
 });
 
 test("reduced preset removes spatial movement and continuous motion", () => {
@@ -558,7 +558,7 @@ test("motion-runtime animates portal pop/dismiss symmetrically, interrupts mid-d
     assert.ok(Number.parseFloat(panel.style.animationDuration) < 260);
 
     panel.dispatchEvent({ type: "animationend", target: panel });
-    assert.equal(panel.style.getPropertyValue("--pm-wp-from"), "", "inline custom properties cleaned on animationend");
+    assert.equal(Number.parseFloat(panel.style.getPropertyValue("--pm-wp-from")), midWidth, "exit keeps its final frame until host removal instead of resetting flex width");
 
     // C. Turning motion optimization off (`--pm-active: 0`) makes the runtime completely inert
     env.tokenMap["--pm-active"] = "0";

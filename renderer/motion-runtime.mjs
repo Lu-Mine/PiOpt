@@ -362,10 +362,21 @@ function flightProgress(record, bezier) {
 
 // Snapshot visible disclosures, overlays and panels right as an input event
 // begins (capture phase), before React processes the click/key and unmounts them.
-function captureSnapshot() {
+function captureSnapshot(event) {
   if (typeof document === "undefined" || !document.body) return;
   const tokens = readMotionState(document);
   if (!tokens.active) return;
+  const dock = isElement(event?.target) ? event.target.closest(".dock,.todo-dock") : null;
+  if (dock) {
+    const content = dock.querySelector(".dock-content,.todo-dock-content");
+    if (content) rectSnapshots.set(content, { height: content.getBoundingClientRect().height });
+    for (const output of dock.querySelectorAll(".task-output")) {
+      if (isGhost(output)) continue;
+      const rect = output.getBoundingClientRect();
+      if (rect.height > 0) rectSnapshots.set(output, { height: rect.height, width: rect.width });
+    }
+    return;
+  }
 
   for (const selector of [DISCLOSURE_SELECTOR, ALL_PORTAL_SELECTOR, INLINE_FLOAT_SELECTOR, ".dock-content,.todo-dock-content"]) {
     for (const el of document.querySelectorAll(selector)) {
@@ -891,6 +902,8 @@ function handleInlineFloatRemoved(el, parent, tokens) {
 function syncChromePanel(el, kind, tokens) {
   if (!el || isGhost(el) || typeof el.getBoundingClientRect !== "function") return;
   const isWorkPanel = kind === "work-panel";
+  if (isWorkPanel && (el.classList.contains("work-panel-pending") || el.classList.contains("is-exit-pending") || el.getAttribute("data-resizing") === "true")) return;
+  if (isWorkPanel && !el.classList.contains("is-exiting") && el.getAttribute("data-pm-wp-phase") === "idle") return;
   const exiting = el.classList.contains("is-exiting");
   const entering = isWorkPanel ? !exiting && !el.classList.contains("work-panel-pending") : el.classList.contains("is-entering");
   if (!entering && !exiting) return;
@@ -957,14 +970,21 @@ function syncChromePanel(el, kind, tokens) {
     targetWidth,
   };
   panelFlights.set(el, record);
+  if (isWorkPanel) el.setAttribute("data-pm-wp-phase", direction);
 
   const clearInline = (event) => {
     if (event && event.target !== el) return;
+    if (event?.animationName && !event.animationName.startsWith(isWorkPanel ? "work-panel-" : "sidebar-")) return;
     el.removeEventListener("animationend", clearInline);
     if (panelFlights.get(el) === record) {
+      // Keep the final exit frame until React unmounts; resetting its start width
+      // here would replay the final frame against a different flex allocation.
+      if (isWorkPanel && direction === "out") return;
       panelFlights.delete(el);
+      if (isWorkPanel) el.setAttribute("data-pm-wp-phase", "idle");
       el.style.removeProperty(propFrom);
       el.style.removeProperty(propShift);
+      el.style.removeProperty("animation-duration");
       el.style.animationDuration = "";
     }
   };
@@ -1043,7 +1063,7 @@ function syncDock(dock, wasExpanded, tokens) {
   if (!content) return;
   const previous = dockFlights.get(content);
   const snapshot = rectSnapshots.get(content);
-  const fullHeight = Math.max(content.scrollHeight, content.firstElementChild?.scrollHeight || 0);
+  const fullHeight = content.firstElementChild?.scrollHeight || content.scrollHeight;
   const current = previous ? content.getBoundingClientRect().height
     : expanded ? 0 : snapshot?.height || fullHeight;
   const opacity = previous ? getComputedStyle(content).opacity : expanded ? 0 : 1;
@@ -1052,8 +1072,8 @@ function syncDock(dock, wasExpanded, tokens) {
   content.setAttribute("data-pm-dock-motion", "true");
   let animation = null;
   animation = runAnimation(content, [
-    { height: `${current}px`, gridTemplateRows: "1fr", opacity, transform: "none", overflow: "hidden" },
-    { height: `${target}px`, gridTemplateRows: "1fr", opacity: expanded ? 1 : 0, transform: "none", overflow: "hidden" },
+    { height: `${current}px`, opacity },
+    { height: `${target}px`, opacity: expanded ? 1 : 0 },
   ], { duration: Math.max(24, tokens.base * Math.min(1, Math.abs(target-current) / (fullHeight || 1))), easing: tokens.easeSymmetric }, () => {
     if (dockFlights.get(content) !== animation) return;
     dockFlights.delete(content);
@@ -1080,11 +1100,14 @@ function processMutations(records) {
     for (const node of record.removedNodes) if (isElement(node) && !isGhost(node)) batchRemoved.add(node);
   }
   syncSettingsCategory(tokens);
+  const processedDocks = new Set();
   for (const record of records) {
     if (record.type === "attributes" && (record.attributeName === "class" || record.attributeName === "data-piopt-mp-ready")) {
       const target = record.target;
       if (!isElement(target) || isGhost(target)) continue;
       if (matches(target, ".dock,.todo-dock")) {
+        if (processedDocks.has(target)) continue;
+        processedDocks.add(target);
         syncDock(target, String(record.oldValue || "").split(/\s+/).includes("is-expanded"), tokens);
         continue;
       }
@@ -1143,6 +1166,8 @@ function processMutations(records) {
     // 2. Additions
     for (const node of record.addedNodes) {
       if (!isElement(node) || isGhost(node)) continue;
+      // React can mount an entire shell in one mutation, with the panel nested inside.
+      for (const panel of node.querySelectorAll(".work-panel")) syncChromePanel(panel, "work-panel", tokens);
 
       if (node.classList && node.classList.contains("work-panel")) {
         syncChromePanel(node, "work-panel", tokens);
