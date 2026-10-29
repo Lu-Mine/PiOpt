@@ -415,7 +415,10 @@ details[open]::details-content{block-size:auto;opacity:1}
    Its left edge moves toward the viewport edge, carrying unchanged text with it. */
 .work-panel:not(.is-maximized):not([data-resizing=true])>.work-panel-main{flex:0 0 var(--work-panel-width);width:var(--work-panel-width);min-width:var(--work-panel-width)}
 .app-chat-shell:has(.work-panel) :is(.thread-content,.composer-stack,.home-stack-inner){transition:none!important}
-.app-chat-shell:has(.work-panel){overflow-x:clip}
+/* app-chat-shell is display:contents in the host, so it cannot clip overflow.
+   Clip at the real flex shell: a fixed-width incoming panel otherwise lets
+   tab scrollIntoView/focus scroll #root and pull even the project list left. */
+.app-shell:has(.work-panel){overflow:clip}
 /* Keep the Todo panel measurable while the enclosing grid collapses. The host
    hides this panel immediately, otherwise its intrinsic height becomes zero. */
 .dock:not(.is-expanded) .dock-panel[hidden]:has(.todo-dock-list){display:block!important;pointer-events:none}
