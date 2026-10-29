@@ -3,9 +3,8 @@
 const fs = require("fs");
 const path = require("path");
 const data = require("./data.js");
+const paths = require("./paths.js");
 
-const GATEWAY_DIR = "C:/Users/Avencess/ai-gateway";
-const AUTH_DIR = path.join(GATEWAY_DIR, "auth");
 const CP_BASE = "http://127.0.0.1:8317";
 const WB_BASE = "http://127.0.0.1:8318";
 const MGMT = "/v8/management";
@@ -23,6 +22,14 @@ async function readSettings() {
   }
 }
 
+// Same resolution as the lifecycle: setting > <data>/gateway > ~/ai-gateway.
+async function gatewayRoot() {
+  const settings = await readSettings();
+  let dataDir = "";
+  try { dataDir = await pi.plugin.getDataPath(); } catch { /* none */ }
+  return paths.pickRoot({ setting: settings.gatewayRoot, dataDir }).root;
+}
+
 const BCRYPT_KEY = /^\$2[aby]\$/;
 
 // CLIProxyAPI 启动时会把 config.yaml 里的明文管理密钥哈希后回写，哈希无法反推明文，
@@ -32,7 +39,7 @@ async function localManagementKey() {
   const configured = typeof settings.gatewayManagementKey === "string" ? settings.gatewayManagementKey.trim() : "";
   if (configured) return configured;
   try {
-    const yaml = fs.readFileSync(path.join(GATEWAY_DIR, "cliproxy", "config.yaml"), "utf8");
+    const yaml = fs.readFileSync(path.join(await gatewayRoot(), "cliproxy", "config.yaml"), "utf8");
     const block = yaml.match(/^management:\s*\n((?:[ \t]+.*\n?)*)/m);
     const match = block && block[1].match(/^[ \t]+secret-key:[ \t]*["']?([^\s"']+)/m);
     const value = match ? match[1] : "";
@@ -154,12 +161,12 @@ async function cpModels() {
   return data.modelRows(await response.json());
 }
 
-function readAuthFiles() {
+function readAuthFiles(authDir) {
   let names = [];
-  try { names = fs.readdirSync(AUTH_DIR).filter(name => name.endsWith(".json")); } catch { return []; }
+  try { names = fs.readdirSync(authDir).filter(name => name.endsWith(".json")); } catch { return []; }
   return names.map(name => {
     try {
-      const doc = JSON.parse(fs.readFileSync(path.join(AUTH_DIR, name), "utf8"));
+      const doc = JSON.parse(fs.readFileSync(path.join(authDir, name), "utf8"));
       return {
         name,
         email: String(doc.email || name.replace(/\.json$/, "")),
@@ -171,7 +178,7 @@ function readAuthFiles() {
 
 async function antigravityQuota(force = false) {
   const now = Date.now();
-  return Promise.all(readAuthFiles().map(async account => {
+  return Promise.all(readAuthFiles(path.join(await gatewayRoot(), "auth")).map(async account => {
     const cached = quotaCache.get(account.email);
     if (!force && cached && now - cached.at < 60000) return { email: account.email, summary: cached.summary };
     let summary = cached ? cached.summary : null;
@@ -299,7 +306,7 @@ async function overview() {
 // Antigravity 的配额接口要走 Google 域，慢且常不可达；单独一条通道，页面先出结构。
 async function antigravity() {
   try {
-    return { ok: true, groups: data.aggregateAntigravity(readAuthFiles(), await antigravityQuota()) };
+    return { ok: true, groups: data.aggregateAntigravity(readAuthFiles(path.join(await gatewayRoot(), "auth")), await antigravityQuota()) };
   } catch (error) {
     return { ok: false, groups: [], error: publicError(error) };
   }

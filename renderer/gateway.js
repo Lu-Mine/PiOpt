@@ -162,14 +162,14 @@
     const dot = el("i", "ui-dot");
     dot.dataset.live = String(Boolean(status.ok));
     bar.append(dot, el("strong", "", status.mode === "reused" ? "复用已有实例" : status.ok ? "网关运行中" : "网关未运行"));
-    if (status.supervisor) {
-      bar.append(el("span", "gw-status-meta", `PID ${status.supervisor.pid} · ${uptime(status.supervisor.uptimeSeconds)}`));
+    if (status.process) {
+      bar.append(el("span", "gw-status-meta", `PID ${status.process.pid} · ${uptime(status.process.uptimeSeconds)}`));
     }
     if (status.lastError) bar.append(el("span", "gw-status-error", status.lastError));
     const actions = el("div", "gw-status-actions");
     actions.append(
       actionButton(state.busy ? "刷新中" : "刷新", "refresh", () => load(true), { disabled: state.busy }),
-      actionButton("重启", "bolt", restart, { disabled: state.actionBusy === "restart" || status.mode === "reused" }),
+      actionButton(status.mode === "reused" ? "接管" : "重启", "bolt", restart, { disabled: state.actionBusy === "restart" }),
     );
     bar.append(actions);
     return bar;
@@ -722,7 +722,7 @@
     try {
       const result = await invoke("gateway.restart");
       if (!result.ok) throw new Error(result.error || "重启失败");
-      state.flash = "网关正在重启";
+      state.flash = result.takenOver && result.takenOver.length ? "已接管并重新启动" : "网关正在重启";
       setTimeout(() => load(true), 4500);
     } catch (error) { state.error = errorText(error); }
     finally { state.actionBusy = ""; render(); }

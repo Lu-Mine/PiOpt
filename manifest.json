@@ -172,7 +172,7 @@
       },
       {
         "name": "gateway_status",
-        "description": "Report whether the local AI gateway is running: supervisor pid, which component ports are up, and the tail of its log. Read-only.",
+        "description": "Report whether the local AI gateway is running: mode (owned/reused/stopped), per-component pid and port state, and the tail of the runtime log. Read-only.",
         "risk": "low",
         "schema": {
           "type": "object",
@@ -181,7 +181,7 @@
       },
       {
         "name": "gateway_restart",
-        "description": "Restart the local AI gateway by stopping the supervisor (which kills its children) and starting a fresh one.",
+        "description": "Restart the local AI gateway. If another launcher already runs it, take it over: verify the occupant is our gateway, kill it and start our own. Blocks until spawned, not until the ports are ready.",
         "risk": "medium",
         "schema": {
           "type": "object",
@@ -190,7 +190,7 @@
       },
       {
         "name": "gateway_logs",
-        "description": "Read the tail of a gateway component log: supervisor, gateway, or workbuddy.",
+        "description": "Read the tail of a gateway log. Use component=runtime|gateway|wb2api.",
         "risk": "low",
         "schema": {
           "type": "object",
@@ -233,6 +233,14 @@
         "description": "开启时，若 8317/8318 已有实例在监听就直接复用，不再另起一份。关闭则退回旧行为：总是自己启动。",
         "type": "boolean",
         "default": true,
+        "scope": "plugin"
+      },
+      {
+        "key": "gatewayRoot",
+        "title": "网关目录（可选）",
+        "description": "放 cliproxy/ 与 workbuddy/ 的目录。留空时优先用插件数据目录下的 gateway/，没有则沿用 ~/ai-gateway。",
+        "type": "string",
+        "default": "",
         "scope": "plugin"
       },
       {

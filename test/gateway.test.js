@@ -236,27 +236,68 @@ test("gateway page keeps only the requested sections and sticky process status",
   assert.equal(new Set(manifest.permissions).size, manifest.permissions.length);
 });
 
-test("gateway_logs only reads whitelisted component logs inside LOG_DIR", async () => {
-  const gateway = require("../features/gateway/index.js");
-  const { resolveLogFile } = gateway._internals;
+test("gateway_logs only reads whitelisted component logs inside the runtime dir", async t => {
+  const runtime = require("../features/gateway/runtime.js");
   const dir = path.join(root, "tmp-logs");
-  assert.equal(resolveLogFile("supervisor", dir), path.join(dir, "supervisor.log"));
+  assert.equal(runtime.resolveLogFile("runtime", dir), path.join(dir, "runtime.log"));
+  assert.equal(runtime.resolveLogFile("supervisor", dir), path.join(dir, "runtime.log"));
+  assert.equal(runtime.resolveLogFile("workbuddy", dir), path.join(dir, "wb2api.log"));
   for (const bad of ["../../x", "..\\..\\x", "gateway/../../x", "C:/Windows/win", "", "other"]) {
-    assert.equal(resolveLogFile(bad, dir), null, bad);
+    assert.equal(runtime.resolveLogFile(bad, dir), null, bad);
   }
+  const tmp = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "piopt-logs-"));
+  global.pi = { plugin: { getSettings: async () => ({}), getDataPath: async () => tmp } };
+  t.after(() => { delete global.pi; fs.rmSync(tmp, { recursive: true, force: true }); });
+  const gateway = require("../features/gateway/index.js");
   const result = await gateway.tools.gateway_logs.execute({ component: "../../x" });
   assert.equal(result.ok, false);
   assert.equal(result.text, undefined);
 });
 
-// ---- stage 1: port probe -------------------------------------------------
-// A local server stands in for an already running gateway; a closed port stands
-// in for "nothing listens". bin points nowhere so no test can spawn the real one.
+// ---- stage 1/3: probe + in-plugin lifecycle --------------------------------
+// Real ports come from local servers; processes are fakes, so no test can
+// spawn or kill anything real.
 async function freePort() {
   const server = await listen(() => {});
   const port = server.address().port;
   await new Promise(resolve => server.close(resolve));
   return port;
+}
+
+function tmpRoot(t, withFiles) {
+  const os = require("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-gw-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const rootDir = path.join(dir, "root");
+  if (withFiles) {
+    fs.mkdirSync(path.join(rootDir, "cliproxy"), { recursive: true });
+    fs.mkdirSync(path.join(rootDir, "workbuddy"), { recursive: true });
+    fs.writeFileSync(path.join(rootDir, "cliproxy", "cli-proxy-api.exe"), "");
+    fs.writeFileSync(path.join(rootDir, "workbuddy", "wb_proxy.py"), "");
+  }
+  const stateDir = path.join(dir, "state");
+  return { root: rootDir, stateDir, logDir: stateDir };
+}
+
+function fakeProcesses() {
+  const { EventEmitter } = require("node:events");
+  let next = 5000;
+  const spawned = [];
+  const killed = [];
+  return {
+    spawned,
+    killed,
+    spawn(cmd, args, options) {
+      const child = new EventEmitter();
+      child.pid = next++;
+      child.exitCode = null;
+      spawned.push({ cmd, args, cwd: options.cwd, pid: child.pid });
+      return child;
+    },
+    async killTree(pid) { killed.push(pid); },
+    async waitPortsClosed() { return true; },
+    async legacySupervisors() { return []; },
+  };
 }
 
 test("probe tells a listening port from a closed one", async t => {
@@ -270,47 +311,105 @@ test("probe tells a listening port from a closed one", async t => {
   assert.deepEqual(await probe.probeGateway({ gateway: open, workbuddy: closed }), { gateway: true, workbuddy: false });
 });
 
-test("startSupervisor reuses a running gateway instead of spawning a second one", async t => {
-  const gateway = require("../features/gateway/index.js");
-  const { startSupervisor, statusPayload, restartGateway } = gateway._internals;
-  global.pi = { plugin: { getSettings: async () => ({}) } };
+test("start reuses a listening component and only spawns what is missing", async t => {
+  const runtime = require("../features/gateway/runtime.js");
   const server = await listen(() => {});
-  t.after(() => { server.close(); delete global.pi; });
+  t.after(() => server.close());
   const ports = { gateway: server.address().port, workbuddy: await freePort() };
-  const bin = path.join(root, "no-such-dir", "ai-gateway-mcp.exe");
+  const fake = fakeProcesses();
+  const rt = runtime.createRuntime({ ...fake, inspectPid: async () => null, portOwners: async () => [] });
+  const ctx = { ...tmpRoot(t, true), probeEnabled: true, ports };
 
-  const started = await startSupervisor({ bin, ports });
+  const started = await rt.start(ctx);
   assert.equal(started.ok, true);
-  assert.equal(started.reused, true);
-  assert.equal(started.pid, undefined);
+  assert.deepEqual(started.reused, ["gateway"]);
+  assert.deepEqual(started.started, ["wb2api"]);
+  assert.equal(fake.spawned.length, 1);
+  assert.equal(fake.spawned[0].cmd, "python");
 
-  const status = await statusPayload({ ports });
-  assert.equal(status.mode, "reused");
-  assert.equal(status.ok, true);
-  assert.equal(status.supervisor, null);
+  const state = await rt.status(ctx);
+  assert.equal(state.mode, "reused");
+  assert.equal(state.components.gateway.mode, "reused");
+  assert.equal(state.components.workbuddy.mode, "owned");
 
-  const restarted = await restartGateway({ bin, ports });
-  assert.equal(restarted.ok, false);
-  assert.equal(restarted.reused, true);
+  await rt.stop(ctx);
+  assert.deepEqual(fake.killed, [fake.spawned[0].pid]);
 });
 
-test("probe bypass and empty ports both fall back to the original spawn path", async t => {
-  const gateway = require("../features/gateway/index.js");
-  const { startSupervisor, statusPayload } = gateway._internals;
+test("probe bypass spawns both, and a missing install reports instead of throwing", async t => {
+  const runtime = require("../features/gateway/runtime.js");
   const server = await listen(() => {});
-  t.after(() => { server.close(); delete global.pi; });
-  const bin = path.join(root, "no-such-dir", "ai-gateway-mcp.exe");
+  t.after(() => server.close());
+  const ports = { gateway: server.address().port, workbuddy: await freePort() };
 
-  global.pi = { plugin: { getSettings: async () => ({ gatewayProbeEnabled: false }) } };
-  const bypassed = await startSupervisor({ bin, ports: { gateway: server.address().port, workbuddy: await freePort() } });
-  assert.equal(bypassed.ok, false);
-  assert.equal(bypassed.reused, undefined);
-  assert.match(bypassed.error, /找不到/);
+  const fake = fakeProcesses();
+  const rt = runtime.createRuntime({ ...fake, inspectPid: async () => null, portOwners: async () => [] });
+  const bypassed = await rt.start({ ...tmpRoot(t, true), probeEnabled: false, ports });
+  assert.deepEqual(bypassed.started.sort(), ["gateway", "wb2api"]);
+  assert.deepEqual(bypassed.reused, []);
 
-  global.pi = { plugin: { getSettings: async () => ({}) } };
-  const empty = { gateway: await freePort(), workbuddy: await freePort() };
-  const fresh = await startSupervisor({ bin, ports: empty });
-  assert.equal(fresh.ok, false);
-  assert.match(fresh.error, /找不到/);
-  assert.equal((await statusPayload({ ports: empty })).mode, "stopped");
+  const empty = runtime.createRuntime({ ...fakeProcesses(), inspectPid: async () => null, portOwners: async () => [] });
+  const closedPorts = { gateway: await freePort(), workbuddy: await freePort() };
+  const ctx = { ...tmpRoot(t, false), probeEnabled: true, ports: closedPorts };
+  const missing = await empty.start(ctx);
+  assert.equal(missing.ok, false);
+  assert.match(missing.error, /找不到/);
+  assert.equal((await empty.status(ctx)).mode, "stopped");
+});
+
+test("reap after a crash kills only recorded pids that still match their spec", async t => {
+  const runtime = require("../features/gateway/runtime.js");
+  const ports = { gateway: await freePort(), workbuddy: await freePort() };
+  const base = { ...tmpRoot(t, true), probeEnabled: false, ports };
+
+  const first = fakeProcesses();
+  const crashed = runtime.createRuntime({ ...first, inspectPid: async () => null, portOwners: async () => [] });
+  await crashed.start(base);
+  const run = JSON.parse(fs.readFileSync(path.join(base.stateDir, runtime.RUN_FILE), "utf8"));
+  const gwPid = run.children.gateway.pid;
+  const wbPid = run.children.wb2api.pid;
+  assert.ok(gwPid && wbPid);
+
+  // New load: the gateway pid is still our exe, the wb2api pid was recycled.
+  const second = fakeProcesses();
+  const reloaded = runtime.createRuntime({
+    ...second,
+    portOwners: async () => [],
+    inspectPid: async pid => pid === gwPid
+      ? { exe: path.join(base.root, "cliproxy", "cli-proxy-api.exe"), cmdline: "" }
+      : { exe: "C:/Windows/System32/notepad.exe", cmdline: "notepad" },
+  });
+  const reaped = await reloaded.reap(base);
+  assert.deepEqual(reaped, ["gateway"]);
+  assert.deepEqual(second.killed, [gwPid]);
+});
+
+test("takeover refuses an unknown port owner and replaces a verified one", async t => {
+  const runtime = require("../features/gateway/runtime.js");
+  const server = await listen(() => {});
+  t.after(() => server.close());
+  const ports = { gateway: server.address().port, workbuddy: await freePort() };
+  const ctx = { ...tmpRoot(t, true), probeEnabled: true, ports };
+
+  const strangerFake = fakeProcesses();
+  const stranger = runtime.createRuntime({
+    ...strangerFake,
+    portOwners: async () => [4242],
+    inspectPid: async () => ({ exe: "C:/Program Files/Other/server.exe", cmdline: "" }),
+  });
+  const refused = await stranger.takeover(ctx);
+  assert.equal(refused.ok, false);
+  assert.deepEqual(strangerFake.killed, []);
+  assert.deepEqual(strangerFake.spawned, []);
+
+  const oursFake = fakeProcesses();
+  const ours = runtime.createRuntime({
+    ...oursFake,
+    portOwners: async () => [4343],
+    inspectPid: async () => ({ exe: path.join(ctx.root, "cliproxy", "cli-proxy-api.exe"), cmdline: "" }),
+  });
+  const taken = await ours.takeover(ctx);
+  assert.equal(taken.ok, true);
+  assert.ok(oursFake.killed.includes(4343));
+  assert.ok(oursFake.spawned.some(item => item.cmd.endsWith("cli-proxy-api.exe")));
 });
