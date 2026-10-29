@@ -249,6 +249,25 @@ function renderPressed(selector, attribute, value) {
   });
 }
 
+// ---------------------------------------------------------------- 二级内容
+
+/*
+ * 二级内容是父选项的从属：父项关掉就整块收起，同时设成 inert，让 Tab 顺序
+ * 与读屏都跳过看不见的控件（CSS 只负责高度与透明度的过渡）。aria-expanded
+ * 挂在父项的开关上，读屏能从父项直接知道下面有没有展开的内容。
+ */
+function setSub(sub, expanded) {
+  if (!sub) return;
+  sub.dataset.collapsed = String(!expanded);
+  sub.inert = !expanded;
+  // 只有本来就会报「下面有没有内容」的开关才挂 aria-expanded；背景图那一行是
+  // 没有 role 的容器，不去给它加一个读屏用不上的状态。
+  const trigger = sub.dataset.trigger ? byId(sub.dataset.trigger) : null;
+  if (trigger && trigger.hasAttribute("aria-controls")) {
+    trigger.setAttribute("aria-expanded", String(expanded));
+  }
+}
+
 // -------------------------------------------------------------------- motion
 
 function renderMode() {
@@ -259,12 +278,15 @@ function renderMotion() {
   const config = state.config;
   elements.motionOverride.checked = config.override;
   elements.motionDisabled.checked = config.disabled;
-  // 两个开关都决定下面几行还算不算数：关掉总开关时滑杆照样可读，但改它不会
-  // 有任何效果，所以在视觉与可访问性上都标出来。
-  const inert = !config.override || config.disabled;
-  elements.motionGroup.dataset.inert = String(inert);
+
+  // 强度、速度与「跟随系统减弱」只改这一层写出去的动效规则，所以它们是「覆盖
+  // 宿主动画」的二级内容：父项关掉就收起。「完全禁用动画」是同级开关，它开着
+  // 时二级内容照旧展开，参数可读但改不动，并给一行原因。
+  setSub(elements.motionOverrideSub, config.override);
+  elements.motionOverrideSub.dataset.inert = String(config.disabled);
+  elements.motionDisabledNote.hidden = !(config.override && config.disabled);
   for (const input of [elements.intensity, elements.speed, elements.followReduced]) {
-    input.disabled = inert;
+    input.disabled = !config.override || config.disabled;
   }
 
   elements.intensity.value = String(Math.round(config.intensity * 100));
@@ -287,8 +309,15 @@ function setMotionConfig(patch, debounceMs = 80) {
 
 function renderGlass() {
   const config = state.glass;
-  elements.glassView.dataset.enabled = String(config.enabled);
   elements.glassToggle.checked = config.enabled;
+
+  // 模糊强度属于磨砂玻璃开关，填充方式属于背景图：父项没开、没图时就收起。
+  // 收起只是不可达，值原样留着，重新打开同一张图时填充方式照旧。
+  setSub(elements.glassEnabledSub, config.enabled);
+  setSub(elements.glassWallpaperSub, Boolean(config.wallpaper));
+  elements.glassIntensity.disabled = !config.enabled;
+  for (const button of elements.glassFitButtons) button.disabled = !config.wallpaper;
+
   renderPressed("[data-glass-fit]", "glassFit", config.fit);
   elements.glassIntensity.value = String(Math.round(config.intensity * 100));
   elements.glassIntensityValue.textContent = `${Math.round(config.intensity * 100)}%`;
@@ -599,16 +628,19 @@ function bindEvents() {
 async function initialize() {
   Object.assign(elements, {
     view: byId("view-appearance"),
-    motionGroup: byId("motion-group"),
+    motionOverrideSub: byId("motion-override-sub"),
     motionOverride: byId("motion-override"),
     motionDisabled: byId("motion-disabled"),
+    motionDisabledNote: byId("motion-disabled-note"),
     intensity: byId("intensity"),
     speed: byId("speed"),
     intensityValue: byId("intensity-value"),
     speedValue: byId("speed-value"),
     followReduced: byId("follow-reduced"),
-    glassView: byId("glass-view"),
     glassToggle: byId("glass-toggle"),
+    glassEnabledSub: byId("glass-enabled-sub"),
+    glassWallpaperSub: byId("glass-wallpaper-sub"),
+    glassFitButtons: Array.from(document.querySelectorAll("[data-glass-fit]")),
     glassIntensity: byId("glass-intensity"),
     glassIntensityValue: byId("glass-intensity-value"),
     wallpaperName: byId("glass-wallpaper-name"),

@@ -95,7 +95,8 @@ h1 {
   min-height: 54px;
   padding: 12px 16px;
 }
-.settings-row + .settings-row { border-top: 1px solid var(--ds-border-subtle); }
+.settings-row + .settings-row,
+.settings-sub + .settings-row { border-top: 1px solid var(--ds-border-subtle); }
 label.settings-row { cursor: pointer; }
 
 .settings-row-copy {
@@ -126,10 +127,66 @@ label.settings-row { cursor: pointer; }
   gap: 8px;
 }
 
-/* 总开关关掉或全局禁用时，下面几行不再生效。 */
-.settings-group[data-inert="true"] .settings-row:not(:has(input:not([disabled]))) .settings-row-title,
-.settings-group[data-inert="true"] .settings-row:not(:has(input:not([disabled]))) .settings-row-detail {
-  opacity: 0.5;
+/* --------------------------------------------------------- 二级内容 */
+
+/*
+ * 依赖某个父选项的项收进父行下方：缩进 + 一条引导线，父项关掉就折叠。
+ * 折叠用 grid-template-rows 0fr/1fr 做高度过渡，不写死 max-height；折叠时
+ * opacity 归零并把整块设成 inert（由脚本同步），键盘与读屏都不会落进去。
+ */
+.settings-sub {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--motion-duration-normal) var(--motion-ease-out),
+    opacity var(--motion-duration-normal) var(--motion-ease-out);
+}
+.settings-sub[data-collapsed="true"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.settings-sub-body {
+  position: relative;
+  min-height: 0;
+  padding-left: 32px;
+  overflow: hidden;
+}
+/* 引导线从父行下方垂下来，读出「这些行属于上面那一项」。 */
+.settings-sub-body::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: 0;
+  bottom: 12px;
+  width: 1px;
+  border-radius: var(--radius-full);
+  background: var(--ds-border-strong);
+}
+
+.settings-sub .settings-row {
+  min-height: 48px;
+  padding: 9px 16px 9px 0;
+}
+.settings-sub .settings-row-title {
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
+.settings-sub .settings-row-detail { font-size: var(--text-xs-plus); }
+.settings-sub .range-inline input[type="range"] { width: 132px; }
+.settings-sub .range-inline output { font-size: var(--text-xs-plus); }
+
+/* 父项开着、但被「完全禁用动画」覆盖时：参数仍可读，只是改不动。 */
+.settings-sub[data-inert="true"] .settings-row-title,
+.settings-sub[data-inert="true"] .settings-row-detail { opacity: 0.55; }
+
+.settings-sub-note {
+  margin: 0;
+  padding: 10px 16px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-body);
 }
 
 /* ------------------------------------------------------------- 分段控件 */
@@ -267,8 +324,8 @@ label.settings-row { cursor: pointer; }
   outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
   outline-offset: 2px;
 }
-/* 磨砂关闭时，模糊强度不再影响任何表面。 */
-#glass-view[data-enabled="false"] .range-inline { opacity: 0.5; }
+/* 分段按钮在从属项里也要能读出「现在不可改」。 */
+.segmented button:disabled { cursor: default; color: var(--ds-text-muted); }
 
 /* ------------------------------------------------------------ 背景图 */
 
@@ -384,10 +441,14 @@ label.settings-row { cursor: pointer; }
   .settings-row { align-items: flex-start; }
   .settings-row-control { flex-direction: column; align-items: flex-end; }
   .range-inline input[type="range"] { width: 120px; }
+  .settings-sub-body { padding-left: 20px; }
+  .settings-sub-body::before { left: 9px; }
+  .settings-sub .range-inline input[type="range"] { width: 104px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .confirm { animation: none; }
+  .settings-sub { transition: none; }
   .segmented button,
   .switch,
   .switch span,

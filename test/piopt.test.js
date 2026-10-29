@@ -141,6 +141,47 @@ test("renderer scripts expose an explicit boot hook and do not self-start", () =
   assert.doesNotMatch(appearance, /window\.PiOptGlass/);
 });
 
+test("dependent settings sit under the option they depend on", () => {
+  const html = read("renderer/index.html");
+
+  // Every second-level block names the row that owns it, and that row exists.
+  const subs = [
+    ...html.matchAll(
+      /<div class="settings-sub" id="([a-z-]+)" data-trigger="([a-z-]+)" data-collapsed="(?:true|false)"/g
+    ),
+  ];
+  assert.equal(subs.length, 3);
+  for (const [, , trigger] of subs) {
+    assert.match(html, new RegExp(`id="${trigger}"`), trigger);
+  }
+
+  // The three motion rows only exist inside the override block; the base colour
+  // is not affected by that switch, so it closes the block and stays first-level.
+  const motionSub = html.slice(html.indexOf('id="motion-override-sub"'), html.indexOf('id="glass-view"'));
+  for (const id of ["intensity", "speed", "follow-reduced"]) {
+    assert.match(motionSub, new RegExp(`id="${id}"`), id);
+  }
+  assert.match(
+    html,
+    /<\/label>\s*<\/div>\s*<\/div>\s*<div class="settings-row">\s*<div class="settings-row-copy">\s*<div class="settings-row-title">外观基底/,
+    "外观基底 must stay a first-level row after the motion sub-block"
+  );
+
+  // Blur strength belongs to the glass switch, the fit to the chosen photo.
+  const blurSub = html.slice(html.indexOf('id="glass-enabled-sub"'), html.indexOf('id="glass-wallpaper"'));
+  assert.match(blurSub, /id="glass-intensity"/);
+  const fitSub = html.slice(html.indexOf('id="glass-wallpaper-sub"'), html.indexOf('id="glass-recent"'));
+  assert.match(fitSub, /data-glass-fit="fill"/);
+
+  // Collapsing hides the block from the keyboard and tells assistive tech.
+  const js = read("renderer/appearance.js");
+  assert.match(js, /sub\.inert = !expanded;/);
+  assert.match(js, /setSub\(elements\.motionOverrideSub, config\.override\)/);
+  assert.match(js, /setSub\(elements\.glassEnabledSub, config\.enabled\)/);
+  assert.match(js, /setSub\(elements\.glassWallpaperSub, Boolean\(config\.wallpaper\)\)/);
+  assert.match(read("renderer/appearance.css"), /\.settings-sub\[data-collapsed="true"\]/);
+});
+
 test("the rail opens and closes from a toggle above the tabs", () => {
   const html = read("renderer/index.html");
   assert.match(html, /<nav class="opt-rail" id="optRail"[^>]*data-expanded="false"/);

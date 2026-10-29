@@ -99,17 +99,6 @@
           </header>
 
           <div class="settings-group" id="motion-group">
-            <label class="settings-row switch-row" for="motion-override">
-              <span class="settings-row-copy">
-                <span class="settings-row-title">覆盖宿主动画</span>
-                <span class="settings-row-detail">关闭后完全使用 PI-Desktop 自带的动效</span>
-              </span>
-              <span class="settings-row-control">
-                <input id="motion-override" type="checkbox" checked />
-                <span class="switch" aria-hidden="true"><span></span></span>
-              </span>
-            </label>
-
             <label class="settings-row switch-row" for="motion-disabled">
               <span class="settings-row-copy">
                 <span class="settings-row-title">完全禁用动画</span>
@@ -121,38 +110,56 @@
               </span>
             </label>
 
-            <label class="settings-row" for="intensity">
+            <label class="settings-row switch-row" for="motion-override">
               <span class="settings-row-copy">
-                <span class="settings-row-title">运动强度</span>
-                <span class="settings-row-detail">元素进入与反馈的幅度</span>
-              </span>
-              <span class="settings-row-control range-inline">
-                <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
-                <output id="intensity-value">100%</output>
-              </span>
-            </label>
-
-            <label class="settings-row" for="speed">
-              <span class="settings-row-copy">
-                <span class="settings-row-title">响应速度</span>
-                <span class="settings-row-detail">过渡与动画的播放倍率</span>
-              </span>
-              <span class="settings-row-control range-inline">
-                <input id="speed" type="range" min="60" max="160" step="5" value="100" />
-                <output id="speed-value">1.00×</output>
-              </span>
-            </label>
-
-            <label class="settings-row switch-row" for="follow-reduced">
-              <span class="settings-row-copy">
-                <span class="settings-row-title">跟随系统减弱动态</span>
-                <span class="settings-row-detail">系统开启减少动态时自动收敛</span>
+                <span class="settings-row-title">覆盖宿主动画</span>
+                <span class="settings-row-detail">关闭后完全使用 PI-Desktop 自带的动效</span>
               </span>
               <span class="settings-row-control">
-                <input id="follow-reduced" type="checkbox" checked />
+                <input id="motion-override" type="checkbox" checked aria-controls="motion-override-sub" aria-expanded="true" />
                 <span class="switch" aria-hidden="true"><span></span></span>
               </span>
             </label>
+
+            <!-- 二级内容：三项都只改这一层写出去的动效，父项关掉就没有意义。 -->
+            <div class="settings-sub" id="motion-override-sub" data-trigger="motion-override" data-collapsed="false">
+              <div class="settings-sub-body">
+                <p class="settings-sub-note" id="motion-disabled-note" hidden>已开启「完全禁用动画」，下面的调整不会生效。</p>
+
+                <label class="settings-row" for="intensity">
+                  <span class="settings-row-copy">
+                    <span class="settings-row-title">运动强度</span>
+                    <span class="settings-row-detail">元素进入与反馈的幅度</span>
+                  </span>
+                  <span class="settings-row-control range-inline">
+                    <input id="intensity" type="range" min="50" max="150" step="5" value="100" />
+                    <output id="intensity-value">100%</output>
+                  </span>
+                </label>
+
+                <label class="settings-row" for="speed">
+                  <span class="settings-row-copy">
+                    <span class="settings-row-title">响应速度</span>
+                    <span class="settings-row-detail">过渡与动画的播放倍率</span>
+                  </span>
+                  <span class="settings-row-control range-inline">
+                    <input id="speed" type="range" min="60" max="160" step="5" value="100" />
+                    <output id="speed-value">1.00×</output>
+                  </span>
+                </label>
+
+                <label class="settings-row switch-row" for="follow-reduced">
+                  <span class="settings-row-copy">
+                    <span class="settings-row-title">跟随系统减弱动态</span>
+                    <span class="settings-row-detail">系统开启减少动态时自动收敛</span>
+                  </span>
+                  <span class="settings-row-control">
+                    <input id="follow-reduced" type="checkbox" checked />
+                    <span class="switch" aria-hidden="true"><span></span></span>
+                  </span>
+                </label>
+              </div>
+            </div>
 
             <div class="settings-row">
               <div class="settings-row-copy">
@@ -179,30 +186,35 @@
             <button type="button" class="ui-btn ui-btn-sm" data-reset="glass">重置</button>
           </header>
 
-          <div class="settings-group" id="glass-view" data-enabled="false">
+          <div class="settings-group" id="glass-view">
             <label class="settings-row switch-row" for="glass-toggle">
               <span class="settings-row-copy">
                 <span class="settings-row-title">启用磨砂玻璃</span>
                 <span class="settings-row-detail">侧栏、标题栏与弹层使用半透明模糊材质</span>
               </span>
               <span class="settings-row-control">
-                <input id="glass-toggle" type="checkbox" />
+                <input id="glass-toggle" type="checkbox" aria-controls="glass-enabled-sub" aria-expanded="false" />
                 <span class="switch" aria-hidden="true"><span></span></span>
               </span>
             </label>
 
-            <label class="settings-row" for="glass-intensity">
-              <span class="settings-row-copy">
-                <span class="settings-row-title">模糊强度</span>
-                <span class="settings-row-detail">调整模糊半径与底色厚度</span>
-              </span>
-              <span class="settings-row-control range-inline">
-                <input id="glass-intensity" type="range" min="60" max="160" step="5" value="100" />
-                <output id="glass-intensity-value">100%</output>
-              </span>
-            </label>
+            <!-- 二级内容：模糊强度只调磨砂本身的模糊半径。 -->
+            <div class="settings-sub" id="glass-enabled-sub" data-trigger="glass-toggle" data-collapsed="true" inert>
+              <div class="settings-sub-body">
+                <label class="settings-row" for="glass-intensity">
+                  <span class="settings-row-copy">
+                    <span class="settings-row-title">模糊强度</span>
+                    <span class="settings-row-detail">调整模糊半径与底色厚度</span>
+                  </span>
+                  <span class="settings-row-control range-inline">
+                    <input id="glass-intensity" type="range" min="60" max="160" step="5" value="100" />
+                    <output id="glass-intensity-value">100%</output>
+                  </span>
+                </label>
+              </div>
+            </div>
 
-            <div class="settings-row">
+            <div class="settings-row" id="glass-wallpaper">
               <div class="settings-row-copy">
                 <div class="settings-row-title">背景图</div>
                 <div class="settings-row-detail glass-wallpaper-name" id="glass-wallpaper-name">未选择图片</div>
@@ -215,17 +227,22 @@
               <input type="file" id="glass-wallpaper-file" accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/*" hidden />
             </div>
 
-            <div class="settings-row">
-              <div class="settings-row-copy">
-                <div class="settings-row-title">填充方式</div>
-                <div class="settings-row-detail glass-fit-hint" id="glass-fit-hint">拉伸铺满整个窗口</div>
-              </div>
-              <div class="settings-row-control">
-                <div class="segmented" role="group" aria-label="背景图填充">
-                  <button type="button" data-glass-fit="fill">拉伸</button>
-                  <button type="button" data-glass-fit="contain">适应</button>
-                  <button type="button" data-glass-fit="cover">铺满</button>
-                  <button type="button" data-glass-fit="none">原始</button>
+            <!-- 二级内容：没有背景图时，填充方式没有可作用的图片。 -->
+            <div class="settings-sub" id="glass-wallpaper-sub" data-trigger="glass-wallpaper" data-collapsed="true" inert>
+              <div class="settings-sub-body">
+                <div class="settings-row">
+                  <div class="settings-row-copy">
+                    <div class="settings-row-title">填充方式</div>
+                    <div class="settings-row-detail glass-fit-hint" id="glass-fit-hint">拉伸铺满整个窗口</div>
+                  </div>
+                  <div class="settings-row-control">
+                    <div class="segmented" role="group" aria-label="背景图填充">
+                      <button type="button" data-glass-fit="fill">拉伸</button>
+                      <button type="button" data-glass-fit="contain">适应</button>
+                      <button type="button" data-glass-fit="cover">铺满</button>
+                      <button type="button" data-glass-fit="none">原始</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
