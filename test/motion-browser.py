@@ -137,6 +137,32 @@ with sync_playwright() as p:
     assert page.locator('.sidebar-floating-menu').count() == 0
     assert page.locator('[data-pm-ghost].sidebar-row-menu').count() == 0
     print('PASS context menu exclusivity: new chat context request closes sidebar host state')
+    for menu_class in ['composer-mode-menu', 'composer-permission-menu']:
+        page.evaluate('''cls => {const el=document.createElement('div');el.className=cls+' is-open';el.style.cssText='position:fixed;left:100px;top:100px;width:180px;height:120px;background:#222';el.textContent='Menu choices';document.body.append(el)}''', menu_class)
+        page.wait_for_timeout(40)
+        assert page.locator('.'+menu_class).evaluate('(e)=>e.getAnimations().some(a=>a.effect.getKeyframes().some(f=>f.transform && f.transform!=="none"))')
+        page.wait_for_timeout(550)
+        page.locator('.'+menu_class).evaluate('(e)=>e.remove()')
+        page.wait_for_timeout(10)
+        assert page.locator('[data-pm-ghost].'+menu_class).evaluate('(e)=>e.getAnimations().some(a=>a.effect.getKeyframes().some(f=>f.transform && f.transform!=="none"))')
+        page.wait_for_timeout(550)
+        assert page.locator('[data-pm-ghost].'+menu_class).count()==0
+    print('PASS mode and permission menus: matching pop/retract transforms')
+    page.evaluate('''() => {document.querySelector('.dock-panel').hidden=false;document.querySelector('.dock').classList.add('is-expanded')}''')
+    page.wait_for_timeout(550)
+    page.evaluate('''() => {document.querySelector('.dock').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));document.querySelector('.dock').classList.remove('is-expanded');document.querySelector('.dock-panel').hidden=true}''')
+    page.wait_for_timeout(40)
+    assert page.locator('.dock-content').evaluate('(e)=>e.getAnimations().some(a=>a.effect.getKeyframes().some(f=>f.height))')
+    closing_height=page.locator('.dock-content').evaluate('(e)=>e.getBoundingClientRect().height')
+    page.evaluate('''() => {document.querySelector('.dock-panel').hidden=false;document.querySelector('.dock').classList.add('is-expanded')}''')
+    reopening_height=page.locator('.dock-content').evaluate('(e)=>e.getBoundingClientRect().height')
+    assert abs(closing_height-reopening_height)<8, (closing_height,reopening_height)
+    page.wait_for_timeout(550)
+    assert page.locator('.dock-content').evaluate('(e)=>e.getBoundingClientRect().height')>closing_height
+    page.evaluate('''() => {document.querySelector('.dock').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));document.querySelector('.dock').classList.remove('is-expanded');document.querySelector('.dock-panel').hidden=true}''')
+    page.wait_for_timeout(550)
+    assert page.locator('.dock-content').evaluate('(e)=>e.getBoundingClientRect().height')==0
+    print('PASS task dock: explicit closing height animation and interrupted reopen')
     assert not errors, errors
     page.evaluate('picker.unmountModelPicker();motion.unmountMotionRuntime()')
     browser.close()

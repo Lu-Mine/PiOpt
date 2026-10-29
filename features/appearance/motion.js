@@ -397,6 +397,8 @@ details[open]::details-content{block-size:auto;opacity:1}
 .composer-model-thinking-menu.is-open{opacity:1;visibility:visible;pointer-events:auto;animation:none}
 :is(${STATEFUL_MENUS},.composer-model-thinking-menu){animation:none;transition:opacity var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear var(--pm-fast)}
 :is(${STATEFUL_MENUS},.composer-model-thinking-menu).is-open{animation:none;transition:opacity var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear 0s}
+/* Composer menus share the model selector's WAAPI pop/retract language. */
+:is(.composer-mode-menu,.composer-permission-menu){transform-origin:0 100%;transition:none!important}
 :is(${STATEFUL_POPOVERS}){animation:none;transform:translateY(var(--pm-distance-xs)) scale(var(--pm-scale-subtle));transition:opacity var(--pm-fast) var(--pm-ease-symmetric),transform var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear var(--pm-fast)}
 :is(${STATEFUL_POPOVERS}).is-open{animation:none;transform:none;transition:opacity var(--pm-fast) var(--pm-ease-symmetric),transform var(--pm-fast) var(--pm-ease-symmetric),visibility 0s linear 0s}
 :is(.overlay,.search-overlay,.dialog-overlay,.modal-overlay,.plugins-modal-backdrop,.plugins-sheet-scrim,.plugins-reviews-scrim,.mcpm-overlay,.sklm-overlay,[data-overlay]){animation:pm-fade-in var(--pm-base) var(--pm-ease-symmetric) backwards}
@@ -418,6 +420,7 @@ details[open]::details-content{block-size:auto;opacity:1}
 .dock:not(.is-expanded) .dock-panel[hidden]:has(.todo-dock-list){display:block!important;pointer-events:none}
 .dock:not(.is-expanded) .dock-content{pointer-events:none}
 .dock-panel:not([hidden]){animation:pm-fade-in var(--pm-fast) var(--pm-ease-symmetric) backwards}
+:is(.dock-content,.todo-dock-content)[data-pm-dock-motion]{transition:none!important}
 @starting-style{.context-menu.is-open{opacity:0}}
 .sidebar.is-entering{animation:sidebar-in-pm var(--pm-base) var(--pm-ease-symmetric) backwards}
 .sidebar.is-exiting,:root[data-platform=win32] .sidebar.is-exiting{animation:sidebar-out-pm var(--pm-base) var(--pm-ease-symmetric) both}

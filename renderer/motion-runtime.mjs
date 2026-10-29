@@ -273,7 +273,7 @@ function overlaySignature(el) {
 }
 
 function classifyOverlay(el) {
-  if (matches(el, ".composer-model-menu")) return "model-picker";
+  if (matches(el, ".composer-model-menu,.composer-mode-menu,.composer-permission-menu")) return "model-picker";
   if (matches(el, ".plugins-sheet-layer,.plugins-reviews-layer,.mcpm-overlay,.sklm-overlay")) return "sheet-layer";
   if (matches(el, ".search-overlay")) return "search-layer";
   if (matches(el, ".overlay,.plugins-modal-backdrop,.composer-image-preview,.generated-image-viewer")) return "dialog-layer";
@@ -367,7 +367,7 @@ function captureSnapshot() {
   const tokens = readMotionState(document);
   if (!tokens.active) return;
 
-  for (const selector of [DISCLOSURE_SELECTOR, ALL_PORTAL_SELECTOR, INLINE_FLOAT_SELECTOR]) {
+  for (const selector of [DISCLOSURE_SELECTOR, ALL_PORTAL_SELECTOR, INLINE_FLOAT_SELECTOR, ".dock-content,.todo-dock-content"]) {
     for (const el of document.querySelectorAll(selector)) {
       if (isGhost(el)) continue;
       const rect = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect() : null;
@@ -717,7 +717,7 @@ function handleOverlayOpened(el, tokens) {
   activeOverlayEntrances.set(el, record);
 
   // If resuming from an interrupted dismissal, drive the element smoothly from `startProgress` to 1.
-  if (startProgress > 0.02 || matches(el, ".composer-model-menu")) {
+  if (startProgress > 0.02 || kind === "model-picker") {
     if (kind === "dialog-layer" || kind === "search-layer" || kind === "sheet-layer") {
       animateCompoundLayer(el, kind, tokens, startProgress, 1, record.duration);
     } else {
@@ -1033,6 +1033,36 @@ function roundAlpha(value) {
 function roundScale(value) {
   return Math.round(value * 10000) / 10000;
 }
+// Dock children may acquire hidden in the same React commit as the parent class.
+// Pin the currently painted height before the intrinsic Grid track can collapse.
+const dockFlights = new Map();
+function syncDock(dock, wasExpanded, tokens) {
+  const expanded = dock.classList.contains("is-expanded");
+  if (expanded === wasExpanded) return;
+  const content = dock.querySelector(".dock-content,.todo-dock-content");
+  if (!content) return;
+  const previous = dockFlights.get(content);
+  const snapshot = rectSnapshots.get(content);
+  const fullHeight = Math.max(content.scrollHeight, content.firstElementChild?.scrollHeight || 0);
+  const current = previous ? content.getBoundingClientRect().height
+    : expanded ? 0 : snapshot?.height || fullHeight;
+  const opacity = previous ? getComputedStyle(content).opacity : expanded ? 0 : 1;
+  if (previous) previous.cancel();
+  const target = expanded ? fullHeight : 0;
+  content.setAttribute("data-pm-dock-motion", "true");
+  let animation = null;
+  animation = runAnimation(content, [
+    { height: `${current}px`, gridTemplateRows: "1fr", opacity, transform: "none", overflow: "hidden" },
+    { height: `${target}px`, gridTemplateRows: "1fr", opacity: expanded ? 1 : 0, transform: "none", overflow: "hidden" },
+  ], { duration: Math.max(24, tokens.base * Math.min(1, Math.abs(target-current) / (fullHeight || 1))), easing: tokens.easeSymmetric }, () => {
+    if (dockFlights.get(content) !== animation) return;
+    dockFlights.delete(content);
+    content.removeAttribute("data-pm-dock-motion");
+  });
+  if (animation) dockFlights.set(content, animation);
+  else content.removeAttribute("data-pm-dock-motion");
+}
+
 
 // -------------------------------------------------------- mutation dispatch
 
@@ -1054,6 +1084,10 @@ function processMutations(records) {
     if (record.type === "attributes" && (record.attributeName === "class" || record.attributeName === "data-piopt-mp-ready")) {
       const target = record.target;
       if (!isElement(target) || isGhost(target)) continue;
+      if (matches(target, ".dock,.todo-dock")) {
+        syncDock(target, String(record.oldValue || "").split(/\s+/).includes("is-expanded"), tokens);
+        continue;
+      }
       if (target.classList.contains("work-panel")) {
         syncChromePanel(target, "work-panel", tokens);
       } else if (target.classList.contains("sidebar")) {
@@ -1172,6 +1206,8 @@ export function mountMotionRuntime() {
 }
 
 export function unmountMotionRuntime() {
+  for (const animation of [...dockFlights.values()]) animation.cancel();
+  dockFlights.clear();
   if (observer) {
     observer.disconnect();
     observer = null;
