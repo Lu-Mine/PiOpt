@@ -96,34 +96,85 @@ function quotaCategory(group) {
   return QUOTA_GROUPS.find(category => category.match.test(text)) || null;
 }
 
-function quotaPercent(group) {
+function parseBucketWindow(bucket) {
+  const w = String(bucket?.window || "").toLowerCase();
+  const d = String(bucket?.displayName || "").toLowerCase();
+  if (w === "5h" || w.includes("5h") || w.includes("5 hour") || w.includes("five") || d.includes("5h") || d.includes("5 hour") || d.includes("five")) {
+    return "5h";
+  }
+  if (w === "weekly" || w.includes("week") || d.includes("weekly") || d.includes("week")) {
+    return "weekly";
+  }
+  return null;
+}
+
+function quotaGroupBuckets(group) {
   const buckets = Array.isArray(group.buckets) ? group.buckets : [];
-  const fiveHour = buckets.find(bucket => bucket.window === "5h");
-  const weekly = buckets.find(bucket => bucket.window === "weekly");
-  const bucket = fiveHour || weekly;
-  return bucket ? Math.round(number(bucket.remainingFraction) * 100) : null;
+  let fiveHour = null;
+  let weekly = null;
+  for (const bucket of buckets) {
+    const win = parseBucketWindow(bucket);
+    if (win === "5h" && fiveHour === null && bucket.remainingFraction !== undefined && bucket.remainingFraction !== null) {
+      fiveHour = Math.max(0, Math.min(100, Math.round(number(bucket.remainingFraction) * 100)));
+    } else if (win === "weekly" && weekly === null && bucket.remainingFraction !== undefined && bucket.remainingFraction !== null) {
+      weekly = Math.max(0, Math.min(100, Math.round(number(bucket.remainingFraction) * 100)));
+    }
+  }
+  return { fiveHour, weekly };
+}
+
+function quotaPercent(group) {
+  const { fiveHour, weekly } = quotaGroupBuckets(group);
+  return fiveHour ?? weekly ?? null;
 }
 
 function aggregateAntigravity(accounts, summaries) {
   const byEmail = new Map(summaries.map(item => [String(item.email).toLowerCase(), item.summary]));
-  const groups = new Map(QUOTA_GROUPS.map(group => [group.id, { ...group, sum: 0, count: 0 }]));
+  const groups = new Map(QUOTA_GROUPS.map(group => [
+    group.id,
+    {
+      ...group,
+      fiveHourSum: 0,
+      fiveHourCount: 0,
+      weeklySum: 0,
+      weeklyCount: 0,
+      accountSet: new Set(),
+    }
+  ]));
+
   for (const account of accounts) {
-    const summary = byEmail.get(account.email.toLowerCase());
+    const email = String(account.email || "").toLowerCase();
+    const summary = byEmail.get(email);
     for (const group of (summary && Array.isArray(summary.groups) ? summary.groups : [])) {
       const category = quotaCategory(group);
-      const percent = quotaPercent(group);
-      if (!category || percent === null) continue;
+      if (!category) continue;
       const target = groups.get(category.id);
-      target.sum += Math.max(0, Math.min(100, percent));
-      target.count += 1;
+      const { fiveHour, weekly } = quotaGroupBuckets(group);
+      if (fiveHour !== null) {
+        target.fiveHourSum += fiveHour;
+        target.fiveHourCount += 1;
+        target.accountSet.add(email);
+      }
+      if (weekly !== null) {
+        target.weeklySum += weekly;
+        target.weeklyCount += 1;
+        target.accountSet.add(email);
+      }
     }
   }
-  return Array.from(groups.values()).map(group => ({
-    id: group.id,
-    name: group.name,
-    percent: group.count ? Math.round(group.sum / group.count) : null,
-    accounts: group.count,
-  }));
+
+  return Array.from(groups.values()).map(group => {
+    const fiveHour = group.fiveHourCount ? Math.round(group.fiveHourSum / group.fiveHourCount) : null;
+    const weekly = group.weeklyCount ? Math.round(group.weeklySum / group.weeklyCount) : null;
+    return {
+      id: group.id,
+      name: group.name,
+      fiveHour,
+      weekly,
+      percent: fiveHour ?? weekly ?? null,
+      accounts: group.accountSet.size || Math.max(group.fiveHourCount, group.weeklyCount),
+    };
+  });
 }
 
 function usageSummary(analytics) {

@@ -383,45 +383,111 @@
 
   function quotaBlock() {
     const box = el("div", "gw-quota-grid");
-    const ag = el("article", "gw-quota-card");
-    ag.append(el("h3", "", "Antigravity 剩余量"));
-    const groups = state.quota && state.quota.groups ? state.quota.groups : [];
-    for (const group of groups) {
-      const row = el("div", "gw-quota-row");
-      const label = el("div", "gw-quota-label");
-      label.append(el("span", "", group.name), el("strong", "", group.percent === null ? "—" : `${group.percent}%`));
-      const track = el("div", "gw-progress");
-      const fill = el("i");
-      fill.style.width = `${group.percent || 0}%`;
-      track.append(fill);
-      row.append(label, track);
-      ag.append(row);
-    }
-    if (!groups.length) ag.append(el("p", "gw-empty", state.quotaLoading ? "读取中" : "暂无配额"));
+
+    // 1. Antigravity 剩余量（双限额并排展示）
+    const ag = el("article", "gw-quota-card gw-ag-card");
+    const agHead = el("div", "gw-quota-card-head");
+    agHead.append(el("h3", "", "Antigravity 剩余量"));
+
     const quota = state.quota || {};
     if (quota.updatedAt) {
       const time = new Date(quota.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-      const note = quota.failed ? `更新于 ${time} · ${quota.failed} 个账号读取失败` : `更新于 ${time}`;
-      const meta = el("p", "gw-empty", note);
+      const note = quota.failed ? `更新于 ${time} · ${quota.failed} 账号失败` : `更新于 ${time}`;
+      const meta = el("span", `gw-quota-meta${quota.failed ? " is-warn" : ""}`, note);
       if (quota.error) meta.title = quota.error;
-      ag.append(meta);
+      agHead.append(meta);
     }
-    const pool = state.data.pool || { remain: 0, total: 0, used: 0 };
-    const wb = el("article", "gw-quota-card");
-    wb.append(el("h3", "", "号池积分"));
-    const ratio = pool.total > 0 ? Math.max(0, Math.min(100, pool.remain / pool.total * 100)) : 0;
-    const head = el("div", "gw-pool-total");
-    head.append(el("strong", "", `${fmt(pool.remain, 2)} / ${fmt(pool.total, 2)}`), el("span", "", `${ratio.toFixed(1)}%`));
-    const track = el("div", "gw-progress gw-pool-progress");
-    const remain = el("i", "is-remain"), used = el("i", "is-used");
-    remain.style.width = `${ratio}%`;
-    used.style.width = `${100 - ratio}%`;
-    track.append(remain, used);
-    const legend = el("div", "gw-pool-legend");
-    legend.append(el("span", "", `剩余 ${fmt(pool.remain, 2)}`), el("span", "", `已用 ${fmt(pool.used, 2)}`));
-    wb.append(head, track, legend);
+    ag.append(agHead);
+
+    const groups = state.quota && state.quota.groups ? state.quota.groups : [];
+    if (!groups.length) {
+      ag.append(el("p", "gw-empty", state.quotaLoading ? "读取中..." : "暂无配额"));
+    } else {
+      const list = el("div", "gw-quota-list");
+      for (const group of groups) {
+        const item = el("div", "gw-quota-item");
+        const itemHead = el("div", "gw-quota-item-head");
+        itemHead.append(
+          el("span", "gw-quota-item-name", group.name),
+          el("span", "gw-quota-item-badge", group.accounts ? `${group.accounts} 账号` : "")
+        );
+        item.append(itemHead);
+
+        const dual = el("div", "gw-quota-dual");
+        dual.append(
+          quotaSlot("5 小时", group.fiveHour),
+          quotaSlot("周限额", group.weekly)
+        );
+        item.append(dual);
+        list.append(item);
+      }
+      ag.append(list);
+    }
+
+    // 2. 号池积分
+    const pool = state.data.pool || { remain: 0, total: 0, used: 0, tokens: 0, available: 0 };
+    const wb = el("article", "gw-quota-card gw-pool-card");
+    const wbHead = el("div", "gw-quota-card-head");
+    wbHead.append(el("h3", "", "号池积分"));
+    if (pool.available !== undefined && pool.available !== null) {
+      wbHead.append(el("span", "gw-quota-meta", pool.available ? `${pool.available} 账号可用` : (pool.total ? "账号就绪" : "")));
+    }
+    wb.append(wbHead);
+
+    const ratio = pool.total > 0 ? Math.max(0, Math.min(100, (pool.remain / pool.total) * 100)) : 0;
+    const hero = el("div", "gw-pool-hero");
+    const heroLeft = el("div", "gw-pool-hero-left");
+    heroLeft.append(
+      el("strong", "gw-pool-remain-val", fmt(pool.remain, 2)),
+      el("span", "gw-pool-total-tag", `/ ${fmt(pool.total, 2)} 总额`)
+    );
+    const heroBadge = el("div", "gw-pool-badge", `${ratio.toFixed(1)}% 可用`);
+    hero.append(heroLeft, heroBadge);
+    wb.append(hero);
+
+    const bar = el("div", "gw-pool-bar");
+    const remainBar = el("i", "is-remain");
+    const usedBar = el("i", "is-used");
+    remainBar.style.width = `${ratio}%`;
+    usedBar.style.width = `${100 - ratio}%`;
+    bar.append(remainBar, usedBar);
+    wb.append(bar);
+
+    const stats = el("div", "gw-pool-stats");
+    stats.append(
+      poolStat("剩余积分", fmt(pool.remain, 2)),
+      poolStat("累计已用", fmt(pool.used, 2)),
+      poolStat("今日消耗", pool.tokens ? compact(pool.tokens) : (pool.used > 0 ? `${(100 - ratio).toFixed(1)}%` : "0"))
+    );
+    wb.append(stats);
+
     box.append(ag, wb);
     return box;
+  }
+
+  function quotaSlot(label, percent) {
+    const slot = el("div", "gw-quota-slot");
+    const head = el("div", "gw-slot-head");
+    head.append(
+      el("span", "gw-slot-label", label),
+      el("strong", `gw-slot-val${percent === null ? " is-null" : ""}`, percent === null ? "—" : `${percent}%`)
+    );
+    const track = el("div", "gw-slot-track");
+    if (percent !== null) {
+      const fill = el("i", "gw-slot-fill");
+      fill.style.width = `${percent}%`;
+      if (percent < 10) fill.classList.add("is-critical");
+      else if (percent < 25) fill.classList.add("is-warning");
+      track.append(fill);
+    }
+    slot.append(head, track);
+    return slot;
+  }
+
+  function poolStat(label, value) {
+    const item = el("div", "gw-pool-stat-item");
+    item.append(el("span", "gw-pool-stat-label", label), el("strong", "gw-pool-stat-val", value));
+    return item;
   }
 
   function summary() {

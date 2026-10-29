@@ -663,3 +663,23 @@ test("opening the wb2api panel carries the sealed password, other panels do not"
   assert.equal(await service.panelUrl(cp), cp);
   service.secretStore._cache.delete("wbPanelPassword");
 });
+
+test("Antigravity aggregate exposes both five-hour and weekly percentages", () => {
+  const groups = [
+    { displayName: "Gemini Models", buckets: [{ window: "5h", remainingFraction: 0.95 }, { window: "weekly", remainingFraction: 0.88 }] },
+    { displayName: "Claude and GPT models", buckets: [{ window: "5h", remainingFraction: 0.5 }, { window: "weekly", remainingFraction: 0.1 }] },
+    { displayName: "Gemini 4 Argon", buckets: [{ window: "weekly", remainingFraction: 0.05 }] },
+  ];
+  const result = data.aggregateAntigravity(
+    [{ email: "a@example.com" }, { email: "b@example.com" }],
+    [
+      { email: "a@example.com", summary: { groups } },
+      { email: "b@example.com", summary: { groups } },
+    ],
+  );
+  assert.deepEqual(result.map(g => [g.id, g.fiveHour, g.weekly, g.accounts]), [
+    ["gemini", 95, 88, 2],
+    ["claude-gpt", 50, 10, 2],
+    ["argon", null, 5, 2],
+  ]);
+});
