@@ -58,11 +58,12 @@ const COPY = {
 // has already touched, so an untouched popup keeps the host's own look.
 export const MODEL_PICKER_CSS = [
   /* 探测某个模型的能力时把内容藏起来（布局不动，浮窗坐标不抖）。 */
+  `.composer-model-menu[${PROBING_ATTR}]{opacity:0!important;visibility:hidden!important;transition:none!important;animation:none!important}`,
   `.composer-model-menu[${PROBING_ATTR}] .composer-menu-root{visibility:hidden}`,
   /* 「其他模型」是折叠入口，展开后就没用了：藏掉它，收起这条路也一起消失。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-list > .${COLLAPSE_CLASS}{display:none}`,
   /* 原生列表让位给自建视图；搜索时反过来（搜索结果由宿主自己筛）。 */
-  `.composer-model-menu[${EXPANDED_ATTR}]:not([${SEARCH_ATTR}="true"]) .composer-model-list > *:not(.${VIEW_CLASS}){display:none}`,
+  `.composer-model-menu[${EXPANDED_ATTR}]:not([${SEARCH_ATTR}="true"]) .composer-model-list:has(>.${VIEW_CLASS}) > *:not(.${VIEW_CLASS}){display:none}`,
   `.composer-model-menu[${EXPANDED_ATTR}][${SEARCH_ATTR}="true"] .${VIEW_CLASS}{display:none}`,
   /* 供应商名称不再压一块底色：滚动到上面时就是普通的一行小标题。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-group-label{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}`,
@@ -84,8 +85,8 @@ export const MODEL_PICKER_CSS = [
   /* 按名称：来源另起一行、居左、比次要文字再淡一档。 */
   `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main{flex-wrap:wrap}`,
   `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
-  `.${VIEW_CLASS}[data-piopt-mp-switch="true"]{animation:piopt-mp-switch var(--motion-duration-fast,135ms) var(--motion-ease-out,cubic-bezier(.22,1,.36,1)) backwards}`,
-  `@keyframes piopt-mp-switch{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}`,
+  `.${VIEW_CLASS}[data-piopt-mp-switch="true"]{animation:piopt-mp-switch var(--pm-fast,135ms) var(--pm-ease-symmetric,cubic-bezier(.22,1,.36,1)) backwards}`,
+  `@keyframes piopt-mp-switch{from{opacity:.65}to{opacity:1}}`,
 ].join("\n");
 
 let host = null;
@@ -761,7 +762,7 @@ function bindMenu(element) {
       for (const record of records) {
         if (isOurs(record)) continue;
         const node = record.target;
-        if (closestOf(node, `.${VIEW_CLASS}`)) continue;
+        if (closestOf(node, `.${VIEW_CLASS},.${MODES_CLASS}`)) continue;
         // 只是键盘高亮换了一行：跟着挪一下，别整份重建。
         if (record.type === "attributes" && record.attributeName === "class") {
           syncHighlight(element.querySelector(LIST_SELECTOR));
