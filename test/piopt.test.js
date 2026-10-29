@@ -173,9 +173,11 @@ test("dependent settings sit under the option they depend on", () => {
   const fitSub = html.slice(html.indexOf('id="glass-wallpaper-sub"'), html.indexOf('id="glass-recent"'));
   assert.match(fitSub, /data-glass-fit="fill"/);
 
-  // Collapsing hides the block from the keyboard and tells assistive tech.
+  // Collapsing hides the block from the keyboard and tells assistive tech; the
+  // switch that owns it also goes unavailable while animations are fully off.
   const js = read("renderer/appearance.js");
   assert.match(js, /sub\.inert = !expanded;/);
+  assert.match(js, /elements\.motionOverride\.disabled = config\.disabled;/);
   assert.match(js, /setSub\(elements\.motionOverrideSub, config\.override\)/);
   assert.match(js, /setSub\(elements\.glassEnabledSub, config\.enabled\)/);
   assert.match(js, /setSub\(elements\.glassWallpaperSub, Boolean\(config\.wallpaper\)\)/);

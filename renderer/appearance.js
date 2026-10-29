@@ -281,10 +281,10 @@ function renderMotion() {
 
   // 强度、速度与「跟随系统减弱」只改这一层写出去的动效规则，所以它们是「覆盖
   // 宿主动画」的二级内容：父项关掉就收起。「完全禁用动画」是同级开关，它开着
-  // 时二级内容照旧展开，参数可读但改不动，并给一行原因。
+  // 时这一层整体不可用——覆盖宿主动画连同三个二级项一起禁用，样式按控件的
+  // disabled 状态自己变灰，不再额外写一句说明。
   setSub(elements.motionOverrideSub, config.override);
-  elements.motionOverrideSub.dataset.inert = String(config.disabled);
-  elements.motionDisabledNote.hidden = !(config.override && config.disabled);
+  elements.motionOverride.disabled = config.disabled;
   for (const input of [elements.intensity, elements.speed, elements.followReduced]) {
     input.disabled = !config.override || config.disabled;
   }
@@ -631,7 +631,6 @@ async function initialize() {
     motionOverrideSub: byId("motion-override-sub"),
     motionOverride: byId("motion-override"),
     motionDisabled: byId("motion-disabled"),
-    motionDisabledNote: byId("motion-disabled-note"),
     intensity: byId("intensity"),
     speed: byId("speed"),
     intensityValue: byId("intensity-value"),

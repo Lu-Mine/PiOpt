@@ -177,17 +177,15 @@ label.settings-row { cursor: pointer; }
 .settings-sub .range-inline input[type="range"] { width: 132px; }
 .settings-sub .range-inline output { font-size: var(--text-xs-plus); }
 
-/* 父项开着、但被「完全禁用动画」覆盖时：参数仍可读，只是改不动。 */
-.settings-sub[data-inert="true"] .settings-row-title,
-.settings-sub[data-inert="true"] .settings-row-detail { opacity: 0.55; }
-
-.settings-sub-note {
-  margin: 0;
-  padding: 10px 16px 0 0;
-  color: var(--ds-text-muted);
-  font-size: var(--text-xs-plus);
-  line-height: var(--leading-body);
-}
+/*
+ * 不可用的整层只靠控件自身的 disabled 状态来看出来，不另设一层状态标记：
+ * 开关（input 是隐藏的，画的是 .switch）与滑杆同时变淡，行文字跟着淡，
+ * 行也不再是手型。少一个状态就少一处会漏掉的地方。
+ */
+.settings-row:has(input:disabled) { cursor: default; }
+.settings-row:has(input:disabled) .settings-row-title,
+.settings-row:has(input:disabled) .settings-row-detail { opacity: 0.5; }
+.switch-row input:disabled + .switch { opacity: 0.4; filter: grayscale(1); }
 
 /* ------------------------------------------------------------- 分段控件 */
 
