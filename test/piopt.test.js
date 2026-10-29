@@ -51,7 +51,7 @@ test("agent tools and settings survive the merge", () => {
     "prepare_plugin_update",
   ]);
   const keys = manifest.contributes.settings.map((item) => item.key).sort();
-  assert.deepEqual(keys, ["dataDir", "mirrorRef", "mirrorRepo"]);
+  assert.deepEqual(keys, ["dataDir", "gatewayProbeEnabled", "mirrorRef", "mirrorRepo"]);
   assert.deepEqual(manifest.contributes.skills, ["skills/piopt.md"]);
 });
 

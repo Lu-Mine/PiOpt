@@ -22,6 +22,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const services = require("./services.js");
+const probe = require("./probe.js");
 
 const GATEWAY_DIR = "C:/Users/Avencess/ai-gateway";
 const BIN = path.join(GATEWAY_DIR, "bin", "ai-gateway-mcp.exe");
@@ -70,16 +71,31 @@ function alive() {
   return Boolean(child && child.exitCode === null && !child.killed);
 }
 
-function startSupervisor() {
+async function probeEnabled() {
+  const settings = await services.readSettings();
+  return settings.gatewayProbeEnabled !== false;
+}
+
+// Probe first: if 8317/8318 already answer, someone else (start-gateway.vbs, an
+// earlier PI-Desktop) runs the gateway, and a second supervisor would only fail
+// to bind. Reuse it instead. The probe can be bypassed via gatewayProbeEnabled.
+async function startSupervisor({ bin = BIN, ports, skipProbe } = {}) {
   if (alive()) return { ok: true, already: true };
-  if (!fs.existsSync(BIN)) {
-    lastError = `找不到 ${BIN}`;
+  if (!skipProbe && (await probeEnabled())) {
+    const listening = await probe.probeGateway(ports);
+    if (listening.gateway || listening.workbuddy) {
+      lastError = "";
+      return { ok: true, reused: true, listening };
+    }
+  }
+  if (!fs.existsSync(bin)) {
+    lastError = `找不到 ${bin}`;
     return { ok: false, error: lastError };
   }
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true });
-    child = spawn(BIN, ["--parent-pid", String(process.pid)], {
-      cwd: path.dirname(BIN),
+    child = spawn(bin, ["--parent-pid", String(process.pid)], {
+      cwd: path.dirname(bin),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -114,19 +130,41 @@ function stopSupervisor() {
   return true;
 }
 
-function statusPayload() {
-  const { ports, manager, tail } = parseSupervisorLog();
+// owned: we spawned the supervisor. reused: the ports answer but the process is
+// not ours. stopped: nothing listens.
+async function statusPayload({ ports } = {}) {
+  const { manager, tail } = parseSupervisorLog();
+  const listening = await probe.probeGateway(ports);
+  const owned = alive();
+  const mode = owned ? "owned" : listening.gateway || listening.workbuddy ? "reused" : "stopped";
   return {
-    ok: alive(),
-    supervisor: alive() ? { pid: child.pid, uptimeSeconds: Math.round((Date.now() - startedAt) / 1000) } : null,
+    ok: mode !== "stopped",
+    mode,
+    supervisor: owned ? { pid: child.pid, uptimeSeconds: Math.round((Date.now() - startedAt) / 1000) } : null,
     manager,
     components: {
-      workbuddy: { port: 8318, ready: Boolean(ports.workbuddy) },
-      gateway: { port: 8317, ready: Boolean(ports.gateway) },
+      workbuddy: { port: probe.WORKBUDDY_PORT, ready: listening.workbuddy },
+      gateway: { port: probe.GATEWAY_PORT, ready: listening.gateway },
     },
     lastError: lastError || null,
     logTail: tail.split("\n").slice(-12),
   };
+}
+
+// Only a supervisor we spawned can be restarted. For a reused instance we say so
+// instead of killing a process we do not own.
+async function restartGateway({ bin, ports } = {}) {
+  if (!alive()) {
+    const listening = await probe.probeGateway(ports);
+    if (listening.gateway || listening.workbuddy) {
+      return { ok: false, stopped: false, reused: true, error: "网关由外部进程启动（复用已有实例），插件无法重启它；请先关掉外部实例。" };
+    }
+    return { stopped: false, ...(await startSupervisor({ bin, ports })) };
+  }
+  stopSupervisor();
+  const closed = await probe.waitPortsClosed(ports);
+  if (!closed) return { ok: false, stopped: true, error: "旧实例的端口未在 8 秒内释放，未重新启动。" };
+  return { stopped: true, ...(await startSupervisor({ bin, ports, skipProbe: true })) };
 }
 
 const tools = {
@@ -144,15 +182,8 @@ const tools = {
     risk: "medium",
     schema: { type: "object", properties: {} },
     execute: async () => {
-      const stopped = stopSupervisor();
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      const started = startSupervisor();
-      return {
-        ok: Boolean(started.ok),
-        stopped,
-        started,
-        hint: "端口就绪要几秒，随后用 gateway_status 复核。",
-      };
+      const result = await restartGateway();
+      return { ...result, ok: Boolean(result.ok), hint: "端口就绪要几秒，随后用 gateway_status 复核。" };
     },
   },
 
@@ -177,7 +208,9 @@ const tools = {
 };
 
 async function onLoad() {
-  startSupervisor();
+  startSupervisor().catch(error => {
+    lastError = error && error.message ? error.message : String(error);
+  });
   for (const name of TOOL_NAMES) {
     try {
       await pi.agent.registerTool({ name, ...tools[name] });
@@ -248,12 +281,8 @@ async function onPanelInvoke(channel, payload = {}) {
       return services.cpAction(payload);
     case "gateway.accounts":
       return services.wbAction(payload);
-    case "gateway.restart": {
-      const stopped = stopSupervisor();
-      return new Promise(resolve => {
-        setTimeout(() => resolve({ stopped, ...startSupervisor() }), 1200);
-      });
-    }
+    case "gateway.restart":
+      return restartGateway();
     case "gateway.logs":
       return tools.gateway_logs.execute(payload);
     default:
@@ -266,5 +295,5 @@ module.exports = {
   onUnload,
   onPanelInvoke,
   tools,
-  _internals: { startSupervisor, stopSupervisor, statusPayload, parseSupervisorLog, resolveLogFile, BIN },
+  _internals: { startSupervisor, stopSupervisor, restartGateway, statusPayload, parseSupervisorLog, resolveLogFile, BIN },
 };

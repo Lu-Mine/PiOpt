@@ -161,7 +161,7 @@
     const bar = el("header", "gw-statusbar");
     const dot = el("i", "ui-dot");
     dot.dataset.live = String(Boolean(status.ok));
-    bar.append(dot, el("strong", "", status.ok ? "网关运行中" : "网关未运行"));
+    bar.append(dot, el("strong", "", status.mode === "reused" ? "复用已有实例" : status.ok ? "网关运行中" : "网关未运行"));
     if (status.supervisor) {
       bar.append(el("span", "gw-status-meta", `PID ${status.supervisor.pid} · ${uptime(status.supervisor.uptimeSeconds)}`));
     }
@@ -169,7 +169,7 @@
     const actions = el("div", "gw-status-actions");
     actions.append(
       actionButton(state.busy ? "刷新中" : "刷新", "refresh", () => load(true), { disabled: state.busy }),
-      actionButton("重启", "bolt", restart, { disabled: state.actionBusy === "restart" }),
+      actionButton("重启", "bolt", restart, { disabled: state.actionBusy === "restart" || status.mode === "reused" }),
     );
     bar.append(actions);
     return bar;

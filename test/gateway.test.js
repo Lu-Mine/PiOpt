@@ -248,3 +248,69 @@ test("gateway_logs only reads whitelisted component logs inside LOG_DIR", async 
   assert.equal(result.ok, false);
   assert.equal(result.text, undefined);
 });
+
+// ---- stage 1: port probe -------------------------------------------------
+// A local server stands in for an already running gateway; a closed port stands
+// in for "nothing listens". bin points nowhere so no test can spawn the real one.
+async function freePort() {
+  const server = await listen(() => {});
+  const port = server.address().port;
+  await new Promise(resolve => server.close(resolve));
+  return port;
+}
+
+test("probe tells a listening port from a closed one", async t => {
+  const probe = require("../features/gateway/probe.js");
+  const server = await listen(() => {});
+  t.after(() => server.close());
+  const open = server.address().port;
+  const closed = await freePort();
+  assert.equal(await probe.isListening(open), true);
+  assert.equal(await probe.isListening(closed), false);
+  assert.deepEqual(await probe.probeGateway({ gateway: open, workbuddy: closed }), { gateway: true, workbuddy: false });
+});
+
+test("startSupervisor reuses a running gateway instead of spawning a second one", async t => {
+  const gateway = require("../features/gateway/index.js");
+  const { startSupervisor, statusPayload, restartGateway } = gateway._internals;
+  global.pi = { plugin: { getSettings: async () => ({}) } };
+  const server = await listen(() => {});
+  t.after(() => { server.close(); delete global.pi; });
+  const ports = { gateway: server.address().port, workbuddy: await freePort() };
+  const bin = path.join(root, "no-such-dir", "ai-gateway-mcp.exe");
+
+  const started = await startSupervisor({ bin, ports });
+  assert.equal(started.ok, true);
+  assert.equal(started.reused, true);
+  assert.equal(started.pid, undefined);
+
+  const status = await statusPayload({ ports });
+  assert.equal(status.mode, "reused");
+  assert.equal(status.ok, true);
+  assert.equal(status.supervisor, null);
+
+  const restarted = await restartGateway({ bin, ports });
+  assert.equal(restarted.ok, false);
+  assert.equal(restarted.reused, true);
+});
+
+test("probe bypass and empty ports both fall back to the original spawn path", async t => {
+  const gateway = require("../features/gateway/index.js");
+  const { startSupervisor, statusPayload } = gateway._internals;
+  const server = await listen(() => {});
+  t.after(() => { server.close(); delete global.pi; });
+  const bin = path.join(root, "no-such-dir", "ai-gateway-mcp.exe");
+
+  global.pi = { plugin: { getSettings: async () => ({ gatewayProbeEnabled: false }) } };
+  const bypassed = await startSupervisor({ bin, ports: { gateway: server.address().port, workbuddy: await freePort() } });
+  assert.equal(bypassed.ok, false);
+  assert.equal(bypassed.reused, undefined);
+  assert.match(bypassed.error, /找不到/);
+
+  global.pi = { plugin: { getSettings: async () => ({}) } };
+  const empty = { gateway: await freePort(), workbuddy: await freePort() };
+  const fresh = await startSupervisor({ bin, ports: empty });
+  assert.equal(fresh.ok, false);
+  assert.match(fresh.error, /找不到/);
+  assert.equal((await statusPayload({ ports: empty })).mode, "stopped");
+});

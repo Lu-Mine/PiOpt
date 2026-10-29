@@ -228,6 +228,14 @@
         "scope": "plugin"
       },
       {
+        "key": "gatewayProbeEnabled",
+        "title": "启动前探测网关端口",
+        "description": "开启时，若 8317/8318 已有实例在监听就直接复用，不再另起一份。关闭则退回旧行为：总是自己启动。",
+        "type": "boolean",
+        "default": true,
+        "scope": "plugin"
+      },
+      {
         "key": "dataDir",
         "title": "数据目录（可选）",
         "description": "留空使用 ~/.pi-desktop/plugins/data/local.pimarket。下载的包放在其下的 downloads/。",
