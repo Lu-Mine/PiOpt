@@ -194,6 +194,7 @@ const css = `${motion.buildThemeCss(motionLayer, base)}${glassLayer}`;
 - **按供应商**：最近使用过的模型回到各自供应商那一组（宿主展开时它们被单独放在最上面），供应商名称那行不再压一块底色，滚动到它下面就是普通的一行小标题。
 - **按名称**：全部模型平铺，按显示名排序；每个选项下面另起一行居左的淡色小字写着来源。最近使用过的模型原本把来源写在右侧，两种模式下都不再那样显示。
 - **品牌图标**：每个模型前面一枚 14px 的彩色品牌标（lobe-icons，随包内置、不联网）。Claude 系（`claude`/`sonnet`/`opus`/`haiku`）用自家那朵橙色菊花而不是 Anthropic 的 A 标，混元用那颗蓝球（供应商写「腾讯混元」也认）。匹配先看模型名与 id（`claude`、`gpt`、`glm`、`gemini`…），再看供应商名 —— OpenRouter、Azure 这类转售商下面跑的仍显示模型自家的标。两个都认不出时画供应商首字母的彩块，所以没上表的新模型、新服务也不会空着。加品牌只需在 `tools/build-model-icons.js` 的表里加一行，再重新生成 `renderer/model-logos/icons.mjs`。
+- **最近使用那几行的能力标记**：宿主只在这组里写来源，推理/视觉徽标和上下文读数只画在供应商分组里。这一层把那枚来源换成宿主自己画的那套 meta —— 首次打开时在隐藏状态下用宿主的搜索把这几个模型重新渲染一遍（搜索不会过滤最近使用），抄下它们的徽标与上下文，按「供应商␟模型 id」缓存进 `piopt.modelPicker.capabilities.v1`，之后每次打开直接用。宿主不响应程序化搜索时立刻放弃、不影响浮窗。
 
 设置存在插件 settings 的 `modelPicker` 键里。宿主窗口的 `renderer/model-picker.mjs` 每次打开浮窗都经 `plugin.call` 读一次，按钮点击则立刻写回去，改完不用重启。
 

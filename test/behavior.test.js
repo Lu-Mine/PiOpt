@@ -263,3 +263,23 @@ test("the popup picks an icon by model name first, then by provider", () => {
   assert.match(source, /lead\.append\(buildLogo\(row\), label\)/);
   assert.match(source, /\.piopt-mp-logo\{flex:none;width:14px;height:14px/);
 });
+
+test("最近使用的行补上能力标记，而不是在右边写来源", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 来源（宿主写在最近使用行右侧的供应商名）被换成缓存下来的 meta。
+  assert.match(source, /const cached = caps\(\)\.get\(row\.key\);/);
+  assert.match(source, /meta\.replaceWith\(replacement\)/);
+  // 数据来自宿主自己的另一次渲染：搜索时它会把这些模型连同徽标与上下文画出来。
+  assert.match(source, /async function probeCaps\(list\)/);
+  assert.match(source, /harvestCaps\(list\)/);
+  // React 受控输入要用原生 setter + input 事件才会更新查询。
+  assert.match(source, /Object\.getOwnPropertyDescriptor\(window\.HTMLInputElement\.prototype, "value"\)/);
+  assert.match(source, /dispatchEvent\(new Event\("input", \{ bubbles: true \}\)\)/);
+  // 探测期间内容藏起来，布局不动；结果按供应商␟模型 id 缓存。
+  assert.match(source, /const CAPS_STORAGE_KEY = "piopt\.modelPicker\.capabilities\.v1";/);
+  assert.match(source, /const PROBING_ATTR = "data-piopt-mp-probing";/);
+  assert.match(source, /`\.composer-model-menu\[\$\{PROBING_ATTR\}\] \.composer-menu-root\{visibility:hidden\}`/);
+  // 用户在搜的时候别抢输入框；第一个模型就等到不响应就彻底放弃，不再重试。
+  assert.match(source, /if \(input\.value !== owned\) return;/);
+  assert.match(source, /if \(index === 0\) probeUnsupported = true;/);
+});

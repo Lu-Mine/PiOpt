@@ -22,11 +22,13 @@ them: they are panel settings.
   drops the group label's background; name sorting adds a faint source line
   under each option. Every row also carries a 14px colored brand mark picked by
   model name first and provider name second, with a colored initial as fallback
-  for brands not in the table (icons are lobe-icons, bundled, no network). The
-  switch lives in the host window
-  (`renderer/model-picker.mjs`) and writes the plugin's `modelPicker` key; the
-  panel's 行为 view only reports the current value, so do not tell the user to
-  change it there.
+  for brands not in the table (icons are lobe-icons, bundled, no network).
+  Recently used rows show the same reasoning/vision badges and context reading as
+  the provider groups: the first open probes them with the host's own search
+  while the content is hidden, then caches the markup in localStorage. The
+  switch lives in the host window (`renderer/model-picker.mjs`) and writes the
+  plugin's `modelPicker` key; the panel's 行为 view only reports the current
+  value, so do not tell the user to change it there.
 - **AI 网关 (gateway)** — one page in three sections (连接 / 上游 / 用量) under a
   pinned status bar: what both local panels expose and how to reach them, which
   accounts and credentials feed them, and how much has actually been used.

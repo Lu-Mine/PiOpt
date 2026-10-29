@@ -37,9 +37,14 @@ const EXPANDED_ATTR = "data-piopt-mp-expanded";
 const LAYOUT_ATTR = "data-piopt-mp-layout";
 const PROVIDER_ATTR = "data-piopt-mp-provider";
 const ITEM_ATTR = "data-piopt-mp-item";
+const PROBING_ATTR = "data-piopt-mp-probing";
+const CAPS_STORAGE_KEY = "piopt.modelPicker.capabilities.v1";
 const GROUPINGS = ["provider", "name"];
 const DEFAULT_GROUPING = "provider";
 const SYNC_DELAY_MS = 40;
+// 探测一次「最近使用」模型的能力要一次搜索 + 一次渲染；最多等这么久，超时就放弃。
+const PROBE_TIMEOUT_MS = 400;
+const CAPS_LIMIT = 200;
 
 // 切换按钮上的两个字：宿主界面跟随 locale，这里也跟随。
 const COPY = {
@@ -50,6 +55,8 @@ const COPY = {
 // Injected with the entry stylesheet. Every rule is scoped to a menu this module
 // has already touched, so an untouched popup keeps the host's own look.
 export const MODEL_PICKER_CSS = [
+  /* 探测某个模型的能力时把内容藏起来（布局不动，浮窗坐标不抖）。 */
+  `.composer-model-menu[${PROBING_ATTR}] .composer-menu-root{visibility:hidden}`,
   /* 「其他模型」是折叠入口，展开后就没用了：藏掉它，收起这条路也一起消失。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-list > .${COLLAPSE_CLASS}{display:none}`,
   /* 原生列表让位给自建视图；搜索时反过来（搜索结果由宿主自己筛）。 */
@@ -280,6 +287,146 @@ function buildLogo(row) {
   return logo;
 }
 
+// ------------------------------------------------------------- capabilities
+
+/*
+ * 「最近使用」那一组只有模型名和来源：宿主把能力徽标（推理 / 视觉）与上下文读数
+ * 只画在供应商分组里，而它展开时又把最近用过的模型从分组里剔掉了。所以这些信息
+ * 只能来自宿主自己的另一次渲染 —— 搜索时它不过滤最近使用，那些模型会带着完整的
+ * meta 出现在各自的分组里。
+ *
+ * 打开浮窗时如果还有没缓存过的最近使用模型，就把这一次搜索跑掉：内容先藏起来
+ * （visibility:hidden，布局不动），跑完再放出来。结果按「供应商␟模型 id」缓存到
+ * localStorage，之后每次打开直接用，不再探测。
+ */
+
+let capsStore = null;
+let probeRunning = false;
+let probeUnsupported = false;
+
+function caps() {
+  if (capsStore) return capsStore;
+  capsStore = new Map();
+  try {
+    const raw = window.localStorage.getItem(CAPS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    for (const [key, value] of Object.entries(parsed || {})) {
+      if (typeof value === "string" && value) capsStore.set(key, value);
+    }
+  } catch {
+    // 隐私模式下读不到：这一份就只在内存里。
+  }
+  return capsStore;
+}
+
+function saveCaps() {
+  try {
+    const entries = [...caps().entries()].slice(-CAPS_LIMIT);
+    window.localStorage.setItem(CAPS_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // 存不进去不影响这一次显示。
+  }
+}
+
+function metaOf(option) {
+  const meta = option.querySelector(META_SELECTOR);
+  return meta && meta.innerHTML.trim() ? meta : null;
+}
+
+/** 原生分组里带完整 meta 的行，顺手都记下来。 */
+function harvestCaps(list) {
+  const store = caps();
+  let changed = false;
+  for (const option of list.querySelectorAll(OPTION_SELECTOR)) {
+    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
+    const group = closestOf(option, GROUP_SELECTOR);
+    const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
+    const identity = identityOf(option, groupLabel);
+    if (identity.recent) continue;
+    const meta = metaOf(option);
+    if (!meta) continue;
+    if (store.get(identity.key) !== meta.outerHTML) {
+      store.set(identity.key, meta.outerHTML);
+      changed = true;
+    }
+  }
+  if (changed) saveCaps();
+}
+
+function missingCapRows(list) {
+  const store = caps();
+  return readRows(list).filter((row) => row.recent && !store.has(row.key));
+}
+
+/** 给宿主的搜索框喂一个值。React 认的是原生 setter + input 事件。 */
+function setQuery(input, value) {
+  const descriptor = window.HTMLInputElement
+    ? Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")
+    : null;
+  if (descriptor && descriptor.set) descriptor.set.call(input, value);
+  else input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function metaHtmlFor(list, key) {
+  for (const option of list.querySelectorAll(OPTION_SELECTOR)) {
+    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
+    const group = closestOf(option, GROUP_SELECTOR);
+    const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
+    const identity = identityOf(option, groupLabel);
+    if (identity.recent || identity.key !== key) continue;
+    const meta = metaOf(option);
+    if (meta) return meta.outerHTML;
+  }
+  return "";
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/**
+ * 逐个搜出最近使用过的模型，把它们的 meta（徽标 + 上下文）抄下来。
+ * 只在没有缓存时跑一次；宿主不再按搜索重渲染时立刻放弃，不再重试。
+ */
+async function probeCaps(list) {
+  if (probeRunning || probeUnsupported || !menu || !list) return;
+  probeRunning = true;
+  try {
+    const input = menu.querySelector(SEARCH_INPUT_SELECTOR);
+    if (!input || input.value.trim()) return;
+    const pending = missingCapRows(list);
+    let owned = "";
+    for (let index = 0; index < pending.length; index += 1) {
+      const row = pending[index];
+      if (menu !== document.querySelector(MENU_SELECTOR)) return;
+      // 用户自己开始打字了就退出，别把输入抢走。
+      if (input.value !== owned) return;
+      owned = row.modelId;
+      setQuery(input, owned);
+      const deadline = Date.now() + PROBE_TIMEOUT_MS;
+      let html = "";
+      while (!html && Date.now() < deadline) {
+        await wait(16);
+        html = metaHtmlFor(list, row.key);
+      }
+      if (!html) {
+        // 第一个就没等到：宿主不会为程序化的搜索重渲染，别再耗着。
+        if (index === 0) probeUnsupported = true;
+        break;
+      }
+      caps().set(row.key, html);
+    }
+    saveCaps();
+    if (input.value === owned) setQuery(input, "");
+    await wait(32);
+  } finally {
+    probeRunning = false;
+    if (menu) menu.removeAttribute(PROBING_ATTR);
+    sync();
+  }
+}
+
 /**
  * 一行自建选项。克隆保留宿主的样子（标签、徽标、上下文读数、对勾），只去掉两样
  * 东西：键盘高亮的瞬时类，以及「最近使用」行右侧那枚来源 —— 需求是来源不写在
@@ -293,8 +440,20 @@ function buildRow(row, showSource) {
   const main = item.querySelector(OPTION_MAIN_SELECTOR);
   if (main) {
     if (row.recent) {
+      // 最近使用那一组把来源写在右侧；这里换成宿主在同一模型的分组行上画的
+      // 那套 meta（推理 / 视觉徽标 + 上下文读数）。缓存里没有就先空着，探测
+      // 完成后重建这一行。
       const meta = main.querySelector(META_SELECTOR);
-      if (meta) meta.remove();
+      const cached = caps().get(row.key);
+      if (cached) {
+        const holder = document.createElement("span");
+        holder.innerHTML = cached;
+        const replacement = holder.firstElementChild;
+        if (replacement && meta) meta.replaceWith(replacement);
+        else if (replacement) main.append(replacement);
+      } else if (meta) {
+        meta.remove();
+      }
     }
     if (showSource && row.provider) main.setAttribute(PROVIDER_ATTR, row.provider);
     // 图标和名称贴在一起：宿主给 main 的列间距是 8px，直接塞进去会离得太远，
@@ -357,7 +516,8 @@ function renderView(list) {
   building = true;
   const previous = childByClass(list, VIEW_CLASS);
   if (previous) previous.remove();
-
+  // 先收一遍宿主已经画出来的能力标记，再建视图：最近使用那几行的 meta 从缓存里取。
+  harvestCaps(list);
   const rows = readRows(list);
   const view = document.createElement("div");
   view.className = VIEW_CLASS;
@@ -548,7 +708,13 @@ function bindMenu(element) {
     });
   }
 
+  // 最近使用那几行缺能力标记时，先在隐藏状态下把探测跑完，再让人看见内容。
+  const list = element.querySelector(LIST_SELECTOR);
+  const pending = list ? missingCapRows(list) : [];
+  if (pending.length) element.setAttribute(PROBING_ATTR, "true");
+
   sync();
+  if (pending.length && list) void probeCaps(list);
   void refreshGrouping();
 }
 
