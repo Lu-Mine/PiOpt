@@ -279,10 +279,10 @@ function renderMotion() {
   elements.motionOverride.checked = config.override;
   elements.motionDisabled.checked = config.disabled;
 
-  // 强度、速度与「跟随系统减弱」只改这一层写出去的动效规则，所以它们是「覆盖
-  // 宿主动画」的二级内容：父项关掉就收起。「完全禁用动画」是同级开关，它开着
-  // 时这一层整体不可用——覆盖宿主动画连同三个二级项一起禁用，样式按控件的
-  // disabled 状态自己变灰，不再额外写一句说明。
+  // 强度、速度与「跟随系统减弱」只改这一层写出去的动效规则，所以它们是「动画
+  // 优化」的二级内容：父项关掉就收起。「完全禁用动画」是同级开关，它开着时这
+  // 一层整体不可用——动画优化连同三个二级项一起禁用，样式按控件的 disabled
+  // 状态自己变灰，不再额外写一句说明。
   setSub(elements.motionOverrideSub, config.override);
   elements.motionOverride.disabled = config.disabled;
   for (const input of [elements.intensity, elements.speed, elements.followReduced]) {
