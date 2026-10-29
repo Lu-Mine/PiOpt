@@ -499,3 +499,93 @@ test("release accepts occupants from the old root during a migration", async () 
     fs.rmSync(tmpState, { recursive: true, force: true });
   }
 });
+
+// ---- stage 2: self-bootstrapped credentials --------------------------------
+
+test("secret store seals values and never writes plaintext", async t => {
+  const secrets = require("../features/gateway/secrets.js");
+  const os = require("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-sec-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const store = secrets.createStore({
+    dataDir: async () => dir,
+    protect: async text => Buffer.from(text).toString("base64").split("").reverse().join(""),
+    unprotect: async sealed => Buffer.from(sealed.split("").reverse().join(""), "base64").toString(),
+    random: () => "r".repeat(64),
+  });
+  assert.equal(await store.get("managementKey"), null);
+  assert.equal(await store.getOrCreate("managementKey"), "r".repeat(64));
+  await store.set("wbPanelPassword", "plain-secret-value");
+  const raw = fs.readdirSync(dir, { recursive: true })
+    .map(name => path.join(dir, String(name)))
+    .filter(file => fs.statSync(file).isFile())
+    .map(file => fs.readFileSync(file, "utf8"))
+    .join("\n");
+  assert.equal(raw.includes("plain-secret-value"), false);
+  assert.equal(raw.includes("r".repeat(64)), false);
+
+  const reopened = secrets.createStore({
+    dataDir: async () => dir,
+    unprotect: async sealed => Buffer.from(sealed.split("").reverse().join(""), "base64").toString(),
+  });
+  assert.equal(await reopened.get("wbPanelPassword"), "plain-secret-value");
+});
+
+test("wb2api rotates off the factory password once, then only the sealed one is tried", { skip: process.platform !== "win32" }, async t => {
+  const os = require("node:os");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-wb-"));
+  const gatewayRoot = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-root-"));
+  t.after(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    fs.rmSync(gatewayRoot, { recursive: true, force: true });
+    delete global.pi;
+  });
+  global.pi = {
+    plugin: {
+      getSettings: async () => ({ gatewayRoot }),
+      getDataPath: async () => dataDir,
+    },
+  };
+  let current = "admin";
+  const tried = [];
+  let lastAuth = "";
+  const handler = async (request, response) => {
+    const body = request.method === "POST" ? await readBody(request) : {};
+    if (request.url === "/panel/login") {
+      tried.push(body.password);
+      return body.password === current ? json(response, { ok: true, token: `t-${current}` }) : json(response, { error: { message: "bad" } }, 401);
+    }
+    if (request.url === "/panel/password") {
+      if (body.current !== current || String(body.new).length < 4) return json(response, {}, 401);
+      current = body.new;
+      return json(response, { ok: true, token: `t-${current}` });
+    }
+    if (request.url === "/v8/management/config") {
+      lastAuth = request.headers.authorization || "";
+      return json(response, {});
+    }
+    return json(response, { ok: true });
+  };
+
+  const first = await mockServices(t, handler);
+  await first.wbRequest("/accounts");
+  assert.deepEqual(tried, ["admin"]);
+  assert.notEqual(current, "admin");
+  assert.match(current, /^[0-9a-f]{64}$/);
+  const sealedFile = fs.readFileSync(path.join(dataDir, "gateway-runtime", "secrets.json"), "utf8");
+  assert.equal(sealedFile.includes(current), false);
+
+  // A fresh load (new process) must log in with the sealed password only.
+  tried.length = 0;
+  const second = await mockServices(t, handler);
+  await second.wbRequest("/accounts");
+  assert.deepEqual(tried, [current]);
+
+  // The generated management key is only sent to a gateway we own.
+  await second.secretStore.set("managementKey", "k-generated-123456");
+  second.setOwnership(() => true);
+  await second.cpRequest("/config");
+  assert.equal(lastAuth, "Bearer k-generated-123456");
+  second.setOwnership(() => false);
+  await assert.rejects(second.cpRequest("/config"), /缺少管理密钥/);
+});

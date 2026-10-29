@@ -3,6 +3,17 @@
 const fs = require("fs");
 const path = require("path");
 const data = require("./data.js");
+const secrets = require("./secrets.js");
+
+// Credentials the plugin generated itself, DPAPI-sealed in its data folder.
+const store = secrets.createStore();
+// Set by index.js: true while the gateway on 8317 is a child we spawned, i.e.
+// one that was started with our MANAGEMENT_PASSWORD. A gateway someone else
+// started never sees that key, and sending it there would only earn 401s.
+let ownsGateway = () => false;
+function setOwnership(fn) {
+  ownsGateway = typeof fn === "function" ? fn : () => false;
+}
 const paths = require("./paths.js");
 
 const CP_BASE = "http://127.0.0.1:8317";
@@ -35,6 +46,10 @@ const BCRYPT_KEY = /^\$2[aby]\$/;
 // CLIProxyAPI 启动时会把 config.yaml 里的明文管理密钥哈希后回写，哈希无法反推明文，
 // 直接拿去请求必然 401；连续失败会让管理接口按 IP 临时封禁，所以绝不能把哈希当密钥发出去。
 async function localManagementKey() {
+  if (ownsGateway()) {
+    const generated = await store.get("managementKey");
+    if (generated) return generated;
+  }
   const settings = await readSettings();
   const configured = typeof settings.gatewayManagementKey === "string" ? settings.gatewayManagementKey.trim() : "";
   if (configured) return configured;
@@ -49,7 +64,8 @@ async function localManagementKey() {
   }
 }
 
-// 取密钥顺序：插件设置里的明文 > config.yaml 里尚未被哈希的明文。
+// 取密钥顺序：插件自己起的网关用插件生成的密钥 > 插件设置里的明文 >
+// config.yaml 里尚未被哈希的明文（只为外部启动的旧实例保留，作最后兜底）。
 async function cpAuth() {
   return { managementKey: await localManagementKey() };
 }
@@ -202,17 +218,53 @@ async function antigravityQuota(force = false) {
   }));
 }
 
-// wb2api 的口令不需要用户填：先试默认口令，失败再试历史保存的那一个。
+// wb2api ships with a default panel password. It is used exactly once, to log
+// in and rotate to a random one; after that only the sealed value is tried.
+const WB_FACTORY_PASSWORD = "admin";
+
+// Login candidates, each tagged with whether it still needs rotating.
 async function wbCandidates() {
-  const settings = await readSettings();
-  const saved = settings.gatewayConnections && settings.gatewayConnections.wb || {};
-  return [...new Set(["admin", String(saved.password || "")].filter(Boolean))];
+  const list = [];
+  const stored = await store.get("wbPanelPassword");
+  if (stored) list.push({ password: stored, rotate: false });
+  const pending = await store.get("wbPanelPasswordPending");
+  if (pending) list.push({ password: pending, rotate: false, promote: true });
+  if (!stored) {
+    const settings = await readSettings();
+    const saved = settings.gatewayConnections && settings.gatewayConnections.wb || {};
+    if (saved.password) list.push({ password: String(saved.password), rotate: true });
+    list.push({ password: WB_FACTORY_PASSWORD, rotate: true });
+  }
+  const seen = new Set();
+  return list.filter(item => !seen.has(item.password) && seen.add(item.password));
+}
+
+// Replace a default or legacy password with a random sealed one. The new value
+// is sealed as "pending" before the change is sent, so a failed or interrupted
+// rotation can never leave the panel on a password we do not hold.
+async function wbRotate(token, current) {
+  const next = store.random();
+  try {
+    await store.set("wbPanelPasswordPending", next);
+  } catch {
+    return token; // cannot persist it, so do not change it
+  }
+  const response = await fetch(WB_BASE + "/panel/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Panel-Token": token },
+    body: JSON.stringify({ current, new: next }),
+    signal: AbortSignal.timeout(10000),
+  }).catch(() => null);
+  const result = response ? await response.json().catch(() => ({})) : {};
+  if (!response || !response.ok) return token;
+  await store.set("wbPanelPassword", next).catch(() => {});
+  return result.token || token;
 }
 
 async function wbAuth() {
   if (wbSession) return wbSession;
   let lastError = null;
-  for (const password of await wbCandidates()) {
+  for (const { password, rotate, promote } of await wbCandidates()) {
     const response = await fetch(WB_BASE + "/panel/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -222,6 +274,8 @@ async function wbAuth() {
     const result = await response.json().catch(() => ({}));
     if (response.ok && result.token) {
       wbSession = result.token;
+      if (promote) await store.set("wbPanelPassword", password).catch(() => {});
+      if (rotate) wbSession = await wbRotate(result.token, password);
       return wbSession;
     }
     lastError = new Error(result.error && result.error.message || "wb2api 面板口令不匹配或服务未就绪");
@@ -394,6 +448,8 @@ async function wbAction(payload) {
 }
 
 module.exports = {
+  secretStore: store,
+  setOwnership,
   CP_BASE,
   WB_BASE,
   readSettings,

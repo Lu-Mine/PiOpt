@@ -217,7 +217,7 @@ function createRuntime(deps = {}) {
       fd = fs.openSync(path.join(ctx.logDir, `${spec.name}.log`), "a");
       const child = d.spawn(spec.cmd, spec.args, {
         cwd: spec.cwd,
-        env: process.env,
+        env: { ...process.env, ...((ctx.childEnv && ctx.childEnv[spec.name]) || {}) },
         stdio: ["ignore", fd, fd],
         windowsHide: true,
       });

@@ -29,6 +29,19 @@ const runtime = require("./runtime.js");
 const TOOL_NAMES = ["gateway_status", "gateway_restart", "gateway_logs"];
 
 const rt = runtime.createRuntime();
+services.setOwnership(() => rt.alive("gateway"));
+
+// The management key goes to cli-proxy-api as MANAGEMENT_PASSWORD, so it never
+// lands in config.yaml and is never hashed there. Measured on 2026-10-30: with
+// an empty secret-key the env key alone enables the management routes.
+async function childEnv() {
+  try {
+    return { gateway: { MANAGEMENT_PASSWORD: await services.secretStore.getOrCreate("managementKey") } };
+  } catch (error) {
+    lastError = `管理密钥不可用: ${error && error.message ? error.message : error}`;
+    return {};
+  }
+}
 let lastError = "";
 
 async function context() {
@@ -51,6 +64,7 @@ async function context() {
     stateDir,
     logDir: stateDir,
     probeEnabled: settings.gatewayProbeEnabled !== false,
+    childEnv: await childEnv(),
     ports: undefined,
   };
 }
