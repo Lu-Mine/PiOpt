@@ -81,7 +81,9 @@ test("Antigravity percentages use five-hour buckets and the three requested grou
 test("API keys support add, label and delete with hashed ids", async t => {
   let keys = ["sk-original-123456"];
   const writes = [];
+  const copied = [];
   global.pi = {
+    clipboard: { async writeText(text) { copied.push(text); } },
     plugin: {
       settings: { gatewayManagementKey: "test-management-key" },
       async getSettings() { return this.settings; },
@@ -112,8 +114,11 @@ test("API keys support add, label and delete with hashed ids", async t => {
   const overview = await service.overview();
   const view = overview.keys.find(key => key.id === added.id);
   assert.equal(view.label, "笔记本");
-  assert.equal(view.key, "sk-new-key-123456");
+  assert.equal(view.key, undefined);
+  assert.ok(!JSON.stringify(overview.keys).includes("sk-new-key-123456"));
   assert.match(view.mask, /…/);
+  await service.keyAction({ action: "copy", id: added.id });
+  assert.deepEqual(copied, ["sk-new-key-123456"]);
   await service.keyAction({ action: "delete", id: added.id });
   assert.deepEqual(keys, ["sk-original-123456"]);
   assert.equal(writes.length, 2);
@@ -229,4 +234,17 @@ test("gateway page keeps only the requested sections and sticky process status",
   const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
   assert.ok(manifest.permissions.includes("shell.openExternal"));
   assert.equal(new Set(manifest.permissions).size, manifest.permissions.length);
+});
+
+test("gateway_logs only reads whitelisted component logs inside LOG_DIR", async () => {
+  const gateway = require("../features/gateway/index.js");
+  const { resolveLogFile } = gateway._internals;
+  const dir = path.join(root, "tmp-logs");
+  assert.equal(resolveLogFile("supervisor", dir), path.join(dir, "supervisor.log"));
+  for (const bad of ["../../x", "..\\..\\x", "gateway/../../x", "C:/Windows/win", "", "other"]) {
+    assert.equal(resolveLogFile(bad, dir), null, bad);
+  }
+  const result = await gateway.tools.gateway_logs.execute({ component: "../../x" });
+  assert.equal(result.ok, false);
+  assert.equal(result.text, undefined);
 });

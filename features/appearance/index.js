@@ -548,7 +548,7 @@ async function onGlass(channel, payload) {
       } catch {
         /* 没有数据目录说明这张图不是我们存的 */
       }
-      const owned = Boolean(dataDir) && target.startsWith(dataDir) && basename(target).startsWith(DATA_PREFIX);
+      const owned = ownsWallpaper(dataDir, target);
       const next = {
         ...glassConfig,
         recent: glassConfig.recent.filter((entry) => entry.path !== target),
@@ -626,6 +626,16 @@ async function onPanelInvoke(channel, payload = {}) {
   throw new Error(`Unsupported panel action: ${channel}`);
 }
 
+// A wallpaper is ours only when it sits directly in the data dir with our prefix.
+// path.relative rejects siblings such as "<dataDir>-evil/wallpaper.x".
+function ownsWallpaper(dataDir, target) {
+  if (!dataDir || !target) return false;
+  const nodePath = require("node:path");
+  const rel = nodePath.relative(nodePath.resolve(dataDir), nodePath.resolve(target));
+  if (!rel || rel.startsWith("..") || nodePath.isAbsolute(rel) || /[\\/]/.test(rel)) return false;
+  return rel.startsWith(DATA_PREFIX);
+}
+
 module.exports = {
   onLoad,
   onUnload,
@@ -636,6 +646,7 @@ module.exports = {
   // here, so the stylesheet can never carry only one of the two layers.
   refreshTheme: applyTheme,
   _wallpaperProblem: wallpaperProblem,
+  _ownsWallpaper: ownsWallpaper,
   _getMotionConfig: () => motionConfig,
   _getGlassConfig: () => glassConfig,
 };

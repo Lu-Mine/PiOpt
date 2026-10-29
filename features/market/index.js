@@ -258,6 +258,10 @@ async function prepareOne({ id, version, force = false, locale = 'zh-CN' }) {
       },
     });
 
+    if (result.verified !== true) {
+      throw new downloader.DownloadError(core.FAILURE.INTEGRITY, result.verifyDetail || 'package was not verified against the catalog');
+    }
+
     Object.assign(job, {
       status: 'ready',
       lastError: null,

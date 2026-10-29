@@ -234,7 +234,7 @@
       const name = fieldInput(state.drafts[`label-${key.id}`] ?? key.label, "备注名", value => { state.drafts[`label-${key.id}`] = value; }, { aria: "密钥备注名" });
       name.addEventListener("change", () => runAction(`label-${key.id}`, "gateway.keys", { action: "label", id: key.id, label: name.value }, "备注已保存", false));
       row.append(name, el("code", "gw-key-mask", key.mask));
-      row.append(actionButton("复制", "copy", () => copy(key.key), { aria: "复制 API Key" }));
+      row.append(actionButton("复制", "copy", () => runAction(`copy-key-${key.id}`, "gateway.keys", { action: "copy", id: key.id }, "已复制", false), { aria: "复制 API Key" }));
       row.append(actionButton("", "trash", () => confirmAction("删除这个 API Key？客户端将无法继续用它访问。", () => runAction(`delete-key-${key.id}`, "gateway.keys", { action: "delete", id: key.id }, "API Key 已删除")), { aria: "删除 API Key", danger: true }));
       box.append(row);
     }

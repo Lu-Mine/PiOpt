@@ -92,7 +92,6 @@ async function keyOverview() {
     : {};
   return keys.map(key => ({
     id: data.keyId(key),
-    key,
     mask: data.maskKey(key),
     label: String(labels[data.keyId(key)] || ""),
   }));
@@ -126,6 +125,13 @@ async function keyAction(payload) {
     await cpRequest("/config/access/api-keys", { method: "PUT", body: [...keys, value] });
     await saveKeyLabel(data.keyId(value), payload.label);
     return { ok: true, id: data.keyId(value) };
+  }
+  if (action === "copy") {
+    const keys = await clientKeys();
+    const key = keys.find(item => data.keyId(item) === payload.id);
+    if (!key) throw new Error("密钥已不存在");
+    await pi.clipboard.writeText(key);
+    return { ok: true };
   }
   if (action === "delete") {
     const keys = await clientKeys();

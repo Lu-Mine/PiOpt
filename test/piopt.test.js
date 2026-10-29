@@ -319,3 +319,28 @@ test("the host's window controls follow the panel's own light/dark tokens", () =
   assert.match(light, /--ds-text-primary: #1a1c1f;/);
   assert.match(light, /--ds-bg-primary: #fff(?:fff)?;/);
 });
+
+test("downloads without a catalog sha256 are refused, not silently accepted", async () => {
+  const downloader = require("../features/market/downloader.js");
+  const sha = "a".repeat(64);
+  assert.equal(downloader.verify({ sha256: sha, sizeBytes: 10 }, {}).ok, false);
+  assert.equal(downloader.verify({ sha256: sha, sizeBytes: 10 }, { sizeBytes: 10 }).ok, false);
+  assert.equal(downloader.verify({ sha256: sha, sizeBytes: 10 }, { sizeBytes: 10, shasum: sha }).ok, true);
+  assert.equal(downloader.verify({ sha256: sha, sizeBytes: 10 }, { sizeBytes: 10, shasum: "b".repeat(64) }).ok, false);
+  await assert.rejects(
+    downloader.preparePackage({ id: "local.demo", version: "1.0.0", entry: { version: "1.0.0", sizeBytes: 10 } }),
+    error => error.code === "INTEGRITY",
+  );
+});
+
+test("forgetWallpaper ownership rejects prefix-sharing sibling folders", () => {
+  const feature = require("../features/appearance/index.js");
+  const owns = feature._ownsWallpaper;
+  const dir = path.resolve("C:/data/piopt");
+  assert.equal(owns(dir, path.join(dir, "wallpaper.abc.png")), true);
+  assert.equal(owns(dir, path.resolve("C:/data/piopt-evil/wallpaper.abc.png")), false);
+  assert.equal(owns(dir, path.join(dir, "..", "wallpaper.abc.png")), false);
+  assert.equal(owns(dir, path.join(dir, "sub", "wallpaper.abc.png")), false);
+  assert.equal(owns(dir, path.join(dir, "photo.png")), false);
+  assert.equal(owns("", path.join(dir, "wallpaper.abc.png")), false);
+});

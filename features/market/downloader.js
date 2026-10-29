@@ -432,7 +432,7 @@ async function hashFile(file) {
 
 /**
  * Compare a file against catalog metadata.
- * `ok` is null when the catalog gave nothing to compare against.
+ * Without a catalog sha256 the package cannot be verified, so `ok` is false.
  */
 function verify({ sha256, sizeBytes }, entry) {
   const expectedSha = typeof entry?.shasum === 'string' && /^[0-9a-f]{64}$/i.test(entry.shasum) ? entry.shasum.toLowerCase() : null;
@@ -443,10 +443,10 @@ function verify({ sha256, sizeBytes }, entry) {
   if (expectedSha && sha256.toLowerCase() !== expectedSha) {
     return { ok: false, code: core.FAILURE.INTEGRITY, detail: `sha256 ${sha256.slice(0, 12)}… ≠ catalog ${expectedSha.slice(0, 12)}…` };
   }
-  if (expectedSize === null && !expectedSha) {
-    return { ok: null, code: null, detail: 'the catalog carries no sizeBytes or shasum for this version' };
+  if (!expectedSha) {
+    return { ok: false, code: core.FAILURE.INTEGRITY, detail: 'the catalog carries no sha256 for this version, so it cannot be verified' };
   }
-  return { ok: true, code: null, detail: expectedSha ? 'size and sha256 match the catalog' : 'size matches the catalog' };
+  return { ok: true, code: null, detail: expectedSize !== null ? 'size and sha256 match the catalog' : 'sha256 matches the catalog' };
 }
 
 /** Re-hash an already downloaded package. */
@@ -511,6 +511,9 @@ async function preparePackage(options) {
   const expectedSize = typeof entry.sizeBytes === 'number' ? entry.sizeBytes : null;
   if (expectedSize !== null && expectedSize > core.MAX_PACKAGE_BYTES) {
     throw new DownloadError(core.FAILURE.TOO_LARGE, `catalog size ${core.humanBytes(expectedSize)} exceeds the host limit`);
+  }
+  if (typeof entry.shasum !== 'string' || !/^[0-9a-f]{64}$/i.test(entry.shasum)) {
+    throw new DownloadError(core.FAILURE.INTEGRITY, `${id}@${version} has no sha256 in the catalog; refusing an unverifiable package`);
   }
 
   const jobId = `${id}@${version}`;

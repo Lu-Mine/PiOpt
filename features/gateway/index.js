@@ -29,6 +29,15 @@ const LOG_DIR = path.join(GATEWAY_DIR, "bin", "logs");
 const SUPERVISOR_LOG = path.join(LOG_DIR, "supervisor.log");
 
 const TOOL_NAMES = ["gateway_status", "gateway_restart", "gateway_logs"];
+const LOG_COMPONENTS = ["supervisor", "gateway", "workbuddy"];
+
+// Only the known component logs, and only inside LOG_DIR. Returns null otherwise.
+function resolveLogFile(component, logDir = LOG_DIR) {
+  if (!LOG_COMPONENTS.includes(component)) return null;
+  const base = path.resolve(logDir);
+  const file = path.resolve(base, `${component}.log`);
+  return file.startsWith(base + path.sep) ? file : null;
+}
 
 let child = null;
 let lastError = "";
@@ -160,7 +169,8 @@ const tools = {
     execute: async args => {
       const component = typeof args?.component === "string" && args.component.trim() ? args.component.trim() : "supervisor";
       const lines = Number.isFinite(args?.lines) && args.lines > 0 ? Math.min(400, Math.floor(args.lines)) : 40;
-      const file = path.join(LOG_DIR, `${component}.log`);
+      const file = resolveLogFile(component);
+      if (!file) return { ok: false, component, error: `component 只能是 ${LOG_COMPONENTS.join("|")}` };
       return { component, path: file, text: readTail(file, lines) };
     },
   },
@@ -256,5 +266,5 @@ module.exports = {
   onUnload,
   onPanelInvoke,
   tools,
-  _internals: { startSupervisor, stopSupervisor, statusPayload, parseSupervisorLog, BIN },
+  _internals: { startSupervisor, stopSupervisor, statusPayload, parseSupervisorLog, resolveLogFile, BIN },
 };
