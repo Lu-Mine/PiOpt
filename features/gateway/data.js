@@ -82,8 +82,17 @@ const QUOTA_GROUPS = [
   { id: "argon", name: "Argon 4", match: /argon/i },
 ];
 
+// Argon is tested first: Google names it "Gemini 4 Argon", which would
+// otherwise match the Gemini group.
+const MATCH_ORDER = ["argon", "gemini", "claude-gpt"];
+
 function quotaCategory(group) {
-  const text = `${group.displayName || ""} ${group.description || ""}`;
+  const name = String(group.displayName || "");
+  const text = `${name} ${group.description || ""}`;
+  for (const id of MATCH_ORDER) {
+    const category = QUOTA_GROUPS.find(item => item.id === id);
+    if (category.match.test(name)) return category;
+  }
   return QUOTA_GROUPS.find(category => category.match.test(text)) || null;
 }
 

@@ -589,3 +589,64 @@ test("wb2api rotates off the factory password once, then only the sealed one is 
   second.setOwnership(() => false);
   await assert.rejects(second.cpRequest("/config"), /缺少管理密钥/);
 });
+
+// ---- stage 4: quota through the gateway's own api-call proxy -----------------
+test("quota goes through /v0/management/api-call, caches 5 min and keeps last good data", async t => {
+  global.pi = { plugin: { getSettings: async () => ({ gatewayManagementKey: "test-management-key" }) } };
+  let calls = 0;
+  let failB = false;
+  const bodies = [];
+  const groups = [
+    { displayName: "Gemini Models", buckets: [{ window: "5h", remainingFraction: 1 }, { window: "weekly", remainingFraction: 0.9 }] },
+    { displayName: "Claude and GPT models", buckets: [{ window: "5h", remainingFraction: 0.5 }] },
+    { displayName: "Gemini 4 Argon", buckets: [{ window: "weekly", remainingFraction: 0.2 }] },
+  ];
+  const service = await mockServices(t, async (request, response) => {
+    if (request.url === "/v0/management/auth-files") {
+      return json(response, { files: [
+        { provider: "antigravity", email: "a@example.com", auth_index: 1, project_id: "p-a" },
+        { provider: "antigravity", email: "b@example.com", auth_index: 2, project_id: "p-b" },
+        { provider: "antigravity", email: "off@example.com", auth_index: 3, disabled: true },
+        { provider: "codex", email: "c@example.com", auth_index: 4 },
+      ] });
+    }
+    if (request.url === "/v0/management/api-call") {
+      calls += 1;
+      const body = await readBody(request);
+      bodies.push(body);
+      if (failB && body.authIndex === "2") return json(response, { status_code: 500, body: "" });
+      return json(response, { status_code: 200, body: JSON.stringify({ groups }) });
+    }
+    json(response, {}, 404);
+  });
+  t.after(() => { delete global.pi; });
+
+  const first = await service.antigravity({ force: true });
+  assert.equal(first.ok, true);
+  assert.equal(first.failed, 0);
+  assert.ok(first.updatedAt > 0);
+  assert.deepEqual(first.groups.map(group => [group.id, group.percent, group.accounts]), [
+    ["gemini", 100, 2], ["claude-gpt", 50, 2], ["argon", 20, 2],
+  ]);
+  assert.equal(calls, 2, "one request per enabled antigravity account");
+  for (const body of bodies) {
+    assert.equal(body.header.Authorization, "Bearer $TOKEN$", "the gateway substitutes the token");
+    assert.match(body.url, /retrieveUserQuotaSummary$/);
+  }
+
+  const cached = await service.antigravity();
+  assert.equal(calls, 2, "a fresh round is reused instead of asking Google again");
+  assert.equal(cached.updatedAt, first.updatedAt);
+
+  failB = true;
+  const partial = await service.antigravity({ force: true });
+  assert.equal(partial.ok, true);
+  assert.equal(partial.failed, 1);
+  assert.deepEqual(partial.groups.map(group => group.accounts), [2, 2, 2], "a failed account keeps its last good summary");
+});
+
+test("services.js no longer reads auth files or calls Google itself", () => {
+  const source = fs.readFileSync(path.join(root, "features/gateway/services.js"), "utf8");
+  assert.equal(/readAuthFiles|access_token|accessToken/.test(source), false);
+  assert.equal(/fetch\(\s*["'`]https:\/\/[^"'`]*googleapis/.test(source), false);
+});

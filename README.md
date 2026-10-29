@@ -31,7 +31,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 ## AI 网关
 
-一页三段，顶上是一条常驻（sticky）的运行状态条：网关是否在跑、守护进程 PID 与已运行时长、刷新与重启网关。它滚动时不动，其余内容在下面滚。
+一页三段，顶上是一条常驻（sticky）的运行状态条：网关是否在跑、网关进程 PID 与已运行时长、刷新与重启网关；网关由别的程序启动时显示「复用已有实例」，按钮变成「接管」，还在用 `~/ai-gateway` 时多一个「迁移到插件目录」。它滚动时不动，其余内容在下面滚。
 
 | 区块 | 内容 |
 |---|---|
@@ -41,9 +41,10 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 几条实现上的边界：
 
-- **凭据全自动**：CLIProxyAPI 的管理密钥直接读本机 `config.yaml` 的 `management.secret-key`；wb2api 用面板默认口令自动登录、失败再试历史保存的那个。两者都不需要、也没有地方让用户手填；读不到就如实显示「缺少管理密钥」。 |
+- **进程由插件托管**：插件进程直接启动 `python wb_proxy.py`（8318）与 `cli-proxy-api.exe`（8317），不经过任何外部守护进程或自启脚本。启动前先探测端口，已有实例就复用；子进程 pid 记在 `gateway-runtime/run.json`，插件崩溃后下次加载会核对进程路径再收回残留。正常卸载时结束两个进程树；插件 reload 会让网关重启一次。
+- **凭据自举**：CLIProxyAPI 的管理密钥由插件随机生成，用 Windows DPAPI 加密存在 `gateway-runtime/secrets.json`，启动时以 `MANAGEMENT_PASSWORD` 环境变量注入，不写进 `config.yaml`。wb2api 第一次登录时用出厂口令登入并立刻改成随机值，同样加密保存，之后只用保存的口令。外部启动的旧实例才会退回读取 `config.yaml` 里尚未哈希的明文。
 - **备注名存本地**：API Key 的备注按密钥 sha256 前 16 位索引，存在插件设置里，不写回 CLIProxyAPI 配置；增删是直接 PUT 整个 `access.api-keys` 数组。
-- **取不到就说取不到**：Antigravity 配额来自 `retrieveUserQuotaSummary`，网络不通时显示「暂无配额数据」，不会画成 0%。
+- **配额由网关代查**：Antigravity 配额走网关自带的 `/v0/management/api-call`，请求里只放 `$TOKEN$` 占位，由网关在自己进程里换成真实 token，PiOpt 不读 `auth/*.json`、不直连 Google。面板打开或手动刷新时查一次，之后每 5 分钟最多查一轮，关闭面板就不再请求；某个账号失败时保留它上一次成功的数据，并在「更新于 HH:mm」后注明失败数。取不到时显示「暂无配额」，不会画成 0%。
 - **只读看板**：用量全部来自 wb2api 的 `/usage/analytics`、`/usage/timeseries`、`/usage/recent`，图表是原生 SVG，没有图表库。
 - 已删除的旧能力不再保留入口：Clash 出海通道、积分自动化触发、独立模型页、面板内嵌日志都已从界面与代码里移除；`gateway_status` / `gateway_restart` / `gateway_logs` 三个 agent 工具照旧可用。
 
@@ -247,6 +248,7 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 
 - 只写自己的数据目录：`~/.pi-desktop/plugins/data/local.piopt/`（市场可在设置里改）。
 - 市场功能不安装、不卸载、不启用/禁用、不改 `registry.json`、不启动任何进程。
+- 网关功能只启动网关自己的两个子进程，网关文件放在 `data/local.piopt/gateway/`（可用设置 `gatewayRoot` 改），日志、pid 与加密凭据放在 `data/local.piopt/gateway-runtime/`。它只请求本机 `127.0.0.1:8317/8318`；查进程与结束进程只用系统自带的 `powershell`（`Get-CimInstance`、`Get-NetTCPConnection`）与 `taskkill`，并且只结束核对过可执行路径的网关进程。
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
 - 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token，除自己数据目录里那张用户选的背景图外不访问文件与网络；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
@@ -278,7 +280,7 @@ PiOpt/
 │  ├─ behavior/             行为：聊天框模型浮窗始终展开与排列方式
 │  │  ├─ index.js           设置的唯一所有者、面板 RPC、宿主窗口的读取入口
 │  │  └─ model-picker.js    `provider` / `name` 两种排列方式的形状与默认值
-│  └─ gateway/              AI 网关：进程守护 + 三段页面的数据通道
+│  └─ gateway/              AI 网关：子进程托管（runtime）、迁移、DPAPI 凭据、端口探测 + 三段页面的数据通道
 │     ├─ index.js           进程探测/重启/日志、面板 RPC、浏览器打开放行
 │     ├─ services.js        CLIProxyAPI v8 管理接口、wb2api 面板会话、用量与配额
 │     └─ data.js            账号/凭证/模型归一化、号池合计、三组配额聚合

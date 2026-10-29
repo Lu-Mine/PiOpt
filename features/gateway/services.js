@@ -21,7 +21,6 @@ const WB_BASE = "http://127.0.0.1:8318";
 const MGMT = "/v8/management";
 const CP_PROVIDERS = ["antigravity", "claude", "codex", "gemini"];
 const WB_PROVIDERS = ["intl", "cn"];
-const quotaCache = new Map();
 let wbSession = null;
 
 async function readSettings() {
@@ -84,7 +83,7 @@ async function cpRequest(pathname, options = {}) {
   headers.Authorization = `Bearer ${auth.managementKey}`;
   const body = options.body === undefined ? undefined : JSON.stringify(options.body);
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const response = await fetch(CP_BASE + MGMT + pathname, {
+  const response = await fetch(CP_BASE + (options.base || MGMT) + pathname, {
     method: options.method || "GET",
     headers,
     body,
@@ -175,47 +174,6 @@ async function cpModels() {
   });
   if (!response.ok) throw new Error(`模型列表 HTTP ${response.status}`);
   return data.modelRows(await response.json());
-}
-
-function readAuthFiles(authDir) {
-  let names = [];
-  try { names = fs.readdirSync(authDir).filter(name => name.endsWith(".json")); } catch { return []; }
-  return names.map(name => {
-    try {
-      const doc = JSON.parse(fs.readFileSync(path.join(authDir, name), "utf8"));
-      return {
-        name,
-        email: String(doc.email || name.replace(/\.json$/, "")),
-        accessToken: String(doc.access_token || ""),
-      };
-    } catch { return null; }
-  }).filter(Boolean);
-}
-
-async function antigravityQuota(force = false) {
-  const now = Date.now();
-  return Promise.all(readAuthFiles(path.join(await gatewayRoot(), "auth")).map(async account => {
-    const cached = quotaCache.get(account.email);
-    if (!force && cached && now - cached.at < 60000) return { email: account.email, summary: cached.summary };
-    let summary = cached ? cached.summary : null;
-    if (account.accessToken) {
-      try {
-        const response = await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${account.accessToken}`,
-            "Content-Type": "application/json",
-            "User-Agent": "antigravity/hub/2.23.0 darwin/arm64",
-          },
-          body: "{}",
-          signal: AbortSignal.timeout(ANTIGRAVITY_TIMEOUT),
-        });
-        if (response.ok) summary = await response.json();
-      } catch { /* 保留上一份成功快照 */ }
-    }
-    quotaCache.set(account.email, { at: now, summary });
-    return { email: account.email, summary };
-  }));
 }
 
 // wb2api ships with a default panel password. It is used exactly once, to log
@@ -357,16 +315,115 @@ async function overview() {
   return out;
 }
 
-// Antigravity 的配额接口要走 Google 域，慢且常不可达；单独一条通道，页面先出结构。
-async function antigravity() {
-  try {
-    return { ok: true, groups: data.aggregateAntigravity(readAuthFiles(path.join(await gatewayRoot(), "auth")), await antigravityQuota()) };
-  } catch (error) {
-    return { ok: false, groups: [], error: publicError(error) };
-  }
+// Antigravity quota goes through the gateway's own api-call proxy: PiOpt sends
+// the account's auth_index and a $TOKEN$ placeholder, the gateway fills in the
+// token inside its own process and calls Google. No token ever reaches PiOpt.
+const MGMT_V0 = "/v0/management";
+const QUOTA_URLS = [
+  "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+  "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary",
+  "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+];
+const QUOTA_HEADERS = {
+  Authorization: "Bearer $TOKEN$",
+  "Content-Type": "application/json",
+  "User-Agent": "antigravity/hub/2.23.0 darwin/arm64",
+};
+const QUOTA_TTL_MS = 5 * 60 * 1000;
+
+// Last good summary per account, so one failed round never blanks the panel.
+const quotaState = { at: 0, groups: [], accounts: [], failed: 0, error: "", inflight: null };
+const lastSummary = new Map();
+
+async function antigravityAccounts() {
+  const result = await cpRequest("/auth-files", { base: MGMT_V0 });
+  const files = Array.isArray(result.files) ? result.files : [];
+  return files
+    .filter(file => String(file.provider || file.type || "").includes("antigravity") && !file.disabled)
+    .map(file => ({
+      email: String(file.email || file.name || ""),
+      authIndex: file.auth_index ?? file.authIndex,
+      projectId: String(file.project_id || file.projectId || ""),
+    }))
+    .filter(account => account.email && account.authIndex !== undefined && account.authIndex !== null);
 }
 
-const ANTIGRAVITY_TIMEOUT = 5000;
+async function accountQuota(account) {
+  let lastError = "";
+  for (const url of QUOTA_URLS) {
+    try {
+      const reply = await cpRequest("/api-call", {
+        base: MGMT_V0,
+        method: "POST",
+        timeout: 15000,
+        body: {
+          authIndex: String(account.authIndex),
+          method: "POST",
+          url,
+          header: QUOTA_HEADERS,
+          data: JSON.stringify({ project: account.projectId }),
+        },
+      });
+      const status = Number(reply.status_code || 0);
+      let body = reply.body;
+      if (typeof body === "string") {
+        try { body = JSON.parse(body); } catch { body = null; }
+      }
+      if (status >= 200 && status < 300 && body && Array.isArray(body.groups)) return body;
+      lastError = `HTTP ${status || "?"}`;
+    } catch (error) {
+      lastError = publicError(error);
+    }
+  }
+  throw new Error(lastError || "配额不可用");
+}
+
+async function refreshQuota() {
+  const accounts = await antigravityAccounts();
+  let failed = 0;
+  let error = "";
+  await Promise.all(accounts.map(async account => {
+    try {
+      lastSummary.set(account.email, await accountQuota(account));
+    } catch (failure) {
+      failed += 1;
+      error = publicError(failure);
+    }
+  }));
+  const summaries = accounts
+    .filter(account => lastSummary.has(account.email))
+    .map(account => ({ email: account.email, summary: lastSummary.get(account.email) }));
+  Object.assign(quotaState, {
+    at: Date.now(),
+    groups: data.aggregateAntigravity(accounts, summaries),
+    accounts: accounts.map(account => account.email),
+    failed,
+    error,
+  });
+}
+
+// force: query now (panel opened or refresh pressed). Otherwise the cached
+// round is reused until it is five minutes old. One round at a time.
+async function antigravity({ force = false } = {}) {
+  const fresh = quotaState.at && Date.now() - quotaState.at < QUOTA_TTL_MS;
+  if (force || !fresh) {
+    if (!quotaState.inflight) {
+      quotaState.inflight = refreshQuota()
+        .catch(error => { quotaState.error = publicError(error); quotaState.failed = -1; })
+        .finally(() => { quotaState.inflight = null; });
+    }
+    await quotaState.inflight;
+  }
+  const ok = quotaState.failed !== -1 && quotaState.failed < Math.max(1, quotaState.accounts.length);
+  return {
+    ok,
+    groups: quotaState.groups,
+    updatedAt: quotaState.at || null,
+    failed: Math.max(0, quotaState.failed),
+    error: quotaState.error || null,
+  };
+}
+
 
 function rangeQuery(range) {
   const now = Math.floor(Date.now() / 1000);

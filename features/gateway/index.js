@@ -249,7 +249,7 @@ async function onPanelInvoke(channel, payload = {}) {
     case "gateway.usage":
       return services.usage(payload.range);
     case "gateway.quota":
-      return services.antigravity();
+      return services.antigravity({ force: Boolean(payload && payload.force) });
     case "gateway.open":
       if (payload.kind === "panel") {
         const url = localHttpUrl(payload.url);

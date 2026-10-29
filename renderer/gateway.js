@@ -398,6 +398,14 @@
       ag.append(row);
     }
     if (!groups.length) ag.append(el("p", "gw-empty", state.quotaLoading ? "读取中" : "暂无配额"));
+    const quota = state.quota || {};
+    if (quota.updatedAt) {
+      const time = new Date(quota.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+      const note = quota.failed ? `更新于 ${time} · ${quota.failed} 个账号读取失败` : `更新于 ${time}`;
+      const meta = el("p", "gw-empty", note);
+      if (quota.error) meta.title = quota.error;
+      ag.append(meta);
+    }
     const pool = state.data.pool || { remain: 0, total: 0, used: 0 };
     const wb = el("article", "gw-quota-card");
     wb.append(el("h3", "", "号池积分"));
@@ -695,10 +703,10 @@
     render();
   }
 
-  async function loadQuota() {
+  async function loadQuota(force) {
     state.quotaLoading = true;
-    try { state.quota = await invoke("gateway.quota"); }
-    catch (error) { state.quota = { ok: false, groups: [], error: errorText(error) }; }
+    try { state.quota = await invoke("gateway.quota", { force: Boolean(force) }); }
+    catch (error) { state.quota = { ...(state.quota || { groups: [] }), ok: false, error: errorText(error) }; }
     finally { state.quotaLoading = false; }
     render();
   }
@@ -712,7 +720,7 @@
       state.status = status;
       state.error = "";
       render();
-      loadQuota();
+      loadQuota(manual);
       await loadUsage(state.range, true);
     } catch (error) { state.error = errorText(error); }
     finally { state.busy = false; render(); }
