@@ -26,6 +26,9 @@ const path = require("node:path");
 
 const BRANDS = [
   // 彩色原图
+  // Claude 用自家那朵菊花，不是 Anthropic 的 A 标；两个都收着，名字里带 claude、
+  // sonnet、opus、haiku 的一律先吃到菊花。
+  { id: "claude", file: "claude-color.svg" },
   { id: "gemini", file: "gemini-color.svg" },
   { id: "deepseek", file: "deepseek-color.svg" },
   { id: "zhipu", file: "zhipu-color.svg" },

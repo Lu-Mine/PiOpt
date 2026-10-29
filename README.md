@@ -193,7 +193,7 @@ const css = `${motion.buildThemeCss(motionLayer, base)}${glassLayer}`;
 - **排列方式在浮窗里切换**：搜索框右侧那颗按钮，点一下按供应商分组，再点一下按名称排序。面板的行为视图只念当前值，不放第二个开关——同一个设置有两处入口，迟早会不一致。
 - **按供应商**：最近使用过的模型回到各自供应商那一组（宿主展开时它们被单独放在最上面），供应商名称那行不再压一块底色，滚动到它下面就是普通的一行小标题。
 - **按名称**：全部模型平铺，按显示名排序；每个选项下面另起一行居左的淡色小字写着来源。最近使用过的模型原本把来源写在右侧，两种模式下都不再那样显示。
-- **品牌图标**：每个模型前面一枚 14px 的彩色品牌标（lobe-icons，随包内置、不联网）。匹配先看模型名与 id（`claude`、`gpt`、`glm`、`gemini`…），再看供应商名 —— OpenRouter、Azure 这类转售商下面跑的仍显示模型自家的标。两个都认不出时画供应商首字母的彩块，所以没上表的新模型、新服务也不会空着。加品牌只需在 `tools/build-model-icons.js` 的表里加一行，再重新生成 `renderer/model-logos/icons.mjs`。
+- **品牌图标**：每个模型前面一枚 14px 的彩色品牌标（lobe-icons，随包内置、不联网）。Claude 系（`claude`/`sonnet`/`opus`/`haiku`）用自家那朵橙色菊花而不是 Anthropic 的 A 标，混元用那颗蓝球（供应商写「腾讯混元」也认）。匹配先看模型名与 id（`claude`、`gpt`、`glm`、`gemini`…），再看供应商名 —— OpenRouter、Azure 这类转售商下面跑的仍显示模型自家的标。两个都认不出时画供应商首字母的彩块，所以没上表的新模型、新服务也不会空着。加品牌只需在 `tools/build-model-icons.js` 的表里加一行，再重新生成 `renderer/model-logos/icons.mjs`。
 
 设置存在插件 settings 的 `modelPicker` 键里。宿主窗口的 `renderer/model-picker.mjs` 每次打开浮窗都经 `plugin.call` 读一次，按钮点击则立刻写回去，改完不用重启。
 

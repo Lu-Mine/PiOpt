@@ -215,11 +215,17 @@ test("the brand icon table ships inside the plugin and is safe to inline", async
   const ids = Object.keys(icons.ICONS);
   // 常见几家必须覆盖；新增品牌在 tools/build-model-icons.js 的表里加一行再生成。
   for (const id of [
-    "anthropic", "openai", "gemini", "deepseek", "zhipu", "qwen", "kimi",
-    "minimax", "mistral", "meta", "openrouter", "doubao", "azure",
+    "claude", "anthropic", "openai", "gemini", "deepseek", "zhipu", "qwen", "kimi",
+    "minimax", "mistral", "meta", "openrouter", "doubao", "hunyuan", "azure",
   ]) {
     assert.ok(ids.includes(id), id);
   }
+  // Claude 是自家那朵菊花，Anthropic 是 A 标：两个图标不能是同一张图。
+  assert.match(icons.ICONS.claude, /M4\.709 15\.955/);
+  assert.doesNotMatch(icons.ICONS.claude, /M13\.827 3\.52/);
+  assert.match(icons.ICONS.anthropic, /M13\.827 3\.52/);
+  // 混元是那颗蓝球。
+  assert.match(icons.ICONS.hunyuan, /<circle[^>]*#0055E9/);
   for (const [id, svg] of Object.entries(icons.ICONS)) {
     assert.ok(svg.startsWith("<svg"), id);
     assert.ok(svg.endsWith("</svg>"), id);
@@ -237,12 +243,18 @@ test("the popup picks an icon by model name first, then by provider", () => {
   const source = read("renderer/model-picker.mjs");
   assert.match(source, /import \{ ICONS \} from "\.\/model-logos\/icons\.mjs";/);
   assert.match(source, /const FAMILIES = \[/);
-  // 先比模型名、再比供应商名：OpenRouter 上的 claude 也该显示 Anthropic 的标。
+  // 先比模型名、再比供应商名：OpenRouter 上的 claude 也该显示 Claude 的标。
   assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(model\)\) return family\.icon;/);
   assert.match(source, /for \(const family of FAMILIES\) if \(family\.test\.test\(provider\)\) return family\.icon;/);
+  // Claude 的菊花排在 Anthropic 的 A 标前面：名字里带 claude/sonnet/opus/haiku 都先吃菊花。
+  const claudeRule = source.indexOf('icon: "claude"');
+  const anthropicRule = source.indexOf('icon: "anthropic"');
+  assert.ok(claudeRule > 0 && anthropicRule > claudeRule, "claude 规则必须在 anthropic 之前");
   // 匹配是按名字里的关键字族做的，未来同族的新版本（gpt-6、claude-5…）照样命中。
-  assert.match(source, /claude\|anthropic\|sonnet\|opus\|haiku/);
+  assert.match(source, /claude\|sonnet\|opus\|haiku/);
   assert.match(source, /gemini\|gemma\|bard\|palm\|google/);
+  // 中文供应商名（腾讯混元）也要命中，否则只能看到首字母块。
+  assert.match(source, /hunyuan\|tencent\|混元\|腾讯/);
   // 认不出来就画供应商首字母，新服务上线也不至于空着。
   assert.match(source, /classList\.add\("piopt-mp-logo-letter"\)/);
   assert.match(source, /--piopt-logo/);
