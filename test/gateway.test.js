@@ -413,3 +413,89 @@ test("takeover refuses an unknown port owner and replaces a verified one", async
   assert.ok(oursFake.killed.includes(4343));
   assert.ok(oursFake.spawned.some(item => item.cmd.endsWith("cli-proxy-api.exe")));
 });
+
+// ---- stage 3: migration --------------------------------------------------
+function fakeGateway(base) {
+  const put = (rel, text) => {
+    const file = path.join(base, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+  };
+  put("cliproxy/cli-proxy-api.exe", "exe-bytes");
+  put("cliproxy/config.yaml", "remote-management:\n  auth-dir: C:/old/ai-gateway/auth\nport: 8317\n");
+  put("cliproxy/config.example.yaml", "example");
+  put("cliproxy/gateway.log", "log");
+  put("cliproxy/static/management.html", "<html></html>");
+  put("cliproxy/plugins/windows/amd64/workbuddy.dll", "dead");
+  put("auth/a.json", "{}");
+  put("auth/logs/big.log", "log");
+  put("workbuddy/wb_proxy.py", "print(1)");
+  put("workbuddy/accounts/x.json", "{}");
+  put("workbuddy/__pycache__/wb.pyc", "cache");
+  put("bin/ai-gateway-mcp.exe", "old");
+}
+
+test("migration copies only runtime files, verifies them and rewrites auth-dir", async t => {
+  const os = require("node:os");
+  const migrate = require("../features/gateway/migrate.js");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-migrate-"));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const src = path.join(tmp, "ai-gateway");
+  const dest = path.join(tmp, "data", "gateway");
+  fakeGateway(src);
+
+  const rels = migrate.planFiles(src).map(file => file.rel.split(path.sep).join("/")).sort();
+  assert.deepEqual(rels, [
+    "auth/a.json",
+    "cliproxy/cli-proxy-api.exe",
+    "cliproxy/config.yaml",
+    "cliproxy/static/management.html",
+    "workbuddy/accounts/x.json",
+    "workbuddy/wb_proxy.py",
+  ]);
+
+  const phases = [];
+  const result = await migrate.migrate({ src, dest, onProgress: p => phases.push(p.phase) });
+  assert.equal(result.ok, true);
+  assert.equal(result.files, 6);
+  assert.equal(phases[0], "copy");
+  assert.equal(phases[phases.length - 1], "done");
+  assert.equal(fs.existsSync(`${dest}.partial`), false);
+  assert.equal(fs.readFileSync(path.join(dest, "cliproxy", "cli-proxy-api.exe"), "utf8"), "exe-bytes");
+  const config = fs.readFileSync(path.join(dest, "cliproxy", "config.yaml"), "utf8");
+  assert.ok(config.includes(`auth-dir: ${path.join(dest, "auth").split(path.sep).join("/")}`), config);
+  assert.ok(config.includes("port: 8317"));
+  // the source is a copy source, never touched
+  assert.ok(fs.readFileSync(path.join(src, "cliproxy", "config.yaml"), "utf8").includes("C:/old/ai-gateway/auth"));
+
+  await assert.rejects(migrate.migrate({ src, dest }), /不覆盖/);
+  await assert.rejects(migrate.migrate({ src: path.join(tmp, "nowhere"), dest: path.join(tmp, "d2") }), /缺少/);
+  assert.equal(fs.existsSync(path.join(tmp, "d2.partial")), false);
+});
+
+test("release accepts occupants from the old root during a migration", async () => {
+  const runtime = require("../features/gateway/runtime.js");
+  const killed = [];
+  const oldRoot = path.join(root, "old-root");
+  const newRoot = path.join(root, "new-root");
+  const rt = runtime.createRuntime({
+    probeGateway: async () => ({ gateway: true, workbuddy: false }),
+    portOwners: async () => [4242],
+    inspectPid: async () => ({ exe: path.join(oldRoot, "cliproxy", "cli-proxy-api.exe"), cmdline: "" }),
+    legacySupervisors: async () => [],
+    killTree: async pid => { killed.push(pid); },
+    waitPortsClosed: async () => true,
+  });
+  const tmpState = path.join(root, "tmp-release-state");
+  const ctx = { root: newRoot, stateDir: tmpState, logDir: tmpState, probeEnabled: true };
+  try {
+    const refused = await rt.release(ctx);
+    assert.equal(refused.ok, false);
+    assert.deepEqual(killed, []);
+    const released = await rt.release({ ...ctx, altRoots: [oldRoot] });
+    assert.equal(released.ok, true);
+    assert.deepEqual(killed, [4242]);
+  } finally {
+    fs.rmSync(tmpState, { recursive: true, force: true });
+  }
+});

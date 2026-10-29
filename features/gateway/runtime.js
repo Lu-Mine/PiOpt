@@ -321,11 +321,19 @@ function createRuntime(deps = {}) {
     return { mode, components, lastError: lastError || null };
   }
 
-  // Replace instances someone else started (the old supervisor, the autostart
-  // script) with our own. Every port owner is checked first; one unknown
-  // process aborts the whole takeover before anything is killed.
-  async function takeover(ctx) {
+  // Every root an occupant may legitimately come from: the current one plus,
+  // during a migration, the one we are moving away from.
+  function rootsOf(ctx) {
+    return [ctx.root, ...(Array.isArray(ctx.altRoots) ? ctx.altRoots : [])].filter(Boolean);
+  }
+
+  // Stop everything that is this gateway: our own children, verified foreign
+  // occupants of the ports, and any old supervisor under a known root. Every
+  // port owner is checked first; one unknown process aborts before anything
+  // is killed.
+  async function release(ctx) {
     const listening = await d.probeGateway(ctx.ports);
+    const roots = rootsOf(ctx);
     const targets = [];
     for (const spec of specsFor(ctx.root, ctx.ports)) {
       if (alive(spec.name) || !listening[spec.key]) continue;
@@ -333,14 +341,16 @@ function createRuntime(deps = {}) {
       if (!pids.length) return { ok: false, error: `查不到占用端口 ${spec.port} 的进程，未接管。` };
       for (const pid of pids) {
         const info = await d.inspectPid(pid);
-        if (!matchesSpec(info, spec)) {
+        const known = roots.some(root => matchesSpec(info, specsFor(root, ctx.ports).find(item => item.name === spec.name)));
+        if (!known) {
           const who = info && info.exe ? info.exe : `pid ${pid}`;
           return { ok: false, error: `端口 ${spec.port} 被其他程序占用（${who}），不是这套网关，未接管。` };
         }
         targets.push({ name: spec.name, pid });
       }
     }
-    const legacy = await d.legacySupervisors(ctx.root);
+    const legacy = [];
+    for (const root of roots) legacy.push(...(await d.legacySupervisors(root)));
     for (const sup of legacy) {
       log(ctx, `结束旧 supervisor pid=${sup.pid}`);
       await d.killTree(sup.pid);
@@ -349,11 +359,20 @@ function createRuntime(deps = {}) {
       log(ctx, `接管：结束外部启动的 ${target.name} pid=${target.pid}`);
       await d.killTree(target.pid);
     }
+    const stopped = await stop(ctx);
     if (!(await d.waitPortsClosed(ctx.ports))) {
-      return { ok: false, error: "外部实例的端口未在 8 秒内释放，未重新启动。" };
+      return { ok: false, error: "网关端口未在 8 秒内释放。" };
     }
+    return { ok: true, stopped, takenOver: targets.map(target => target.name), legacyStopped: legacy.map(sup => sup.pid) };
+  }
+
+  // Replace instances someone else started (the old supervisor, the autostart
+  // script) with our own.
+  async function takeover(ctx) {
+    const released = await release(ctx);
+    if (!released.ok) return released;
     const started = await start(ctx, { skipProbe: true });
-    return { ...started, takenOver: targets.map(target => target.name), legacyStopped: legacy.map(sup => sup.pid) };
+    return { ...started, takenOver: released.takenOver, legacyStopped: released.legacyStopped };
   }
 
   async function restart(ctx) {
@@ -366,7 +385,7 @@ function createRuntime(deps = {}) {
     return { stopped, ...(await start(ctx, { skipProbe: true })) };
   }
 
-  return { start, stop, status, restart, takeover, reap, alive, log, _children: children };
+  return { start, stop, status, restart, takeover, release, reap, alive, log, _children: children };
 }
 
 module.exports = {

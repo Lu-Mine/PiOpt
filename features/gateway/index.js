@@ -19,6 +19,8 @@
  */
 
 const fs = require("fs");
+const path = require("path");
+const migration = require("./migrate.js");
 const services = require("./services.js");
 const probe = require("./probe.js");
 const paths = require("./paths.js");
@@ -42,6 +44,10 @@ async function context() {
   return {
     root: picked.root,
     rootSource: picked.source,
+    dataDir,
+    // After a migration the old install may still be running; its processes
+    // count as ours for takeover.
+    altRoots: picked.source === "legacy" ? [] : [paths.legacyRoot()],
     stateDir,
     logDir: stateDir,
     probeEnabled: settings.gatewayProbeEnabled !== false,
@@ -90,6 +96,45 @@ async function restartGateway(ctx) {
   const result = await rt.restart(c);
   lastError = result.error || "";
   return result;
+}
+
+// Copy the gateway into <data>/gateway once. The old install is never
+// touched: stop it, copy and verify, start from the copy. Any failure starts
+// the old install again so the gateway never stays down.
+let migrationJob = null;
+
+function migrationState() {
+  return migrationJob ? { ...migrationJob } : { phase: "idle" };
+}
+
+async function startMigration() {
+  if (migrationJob && ["stopping", "copy", "starting"].includes(migrationJob.phase)) return { ok: true, ...migrationState() };
+  const ctx = await context();
+  if (ctx.rootSource !== "legacy") return { ok: false, error: "网关已不在旧目录，无需迁移。" };
+  if (!ctx.dataDir) return { ok: false, error: "拿不到插件数据目录，无法迁移。" };
+  const src = ctx.root;
+  const dest = path.join(ctx.dataDir, "gateway");
+  migrationJob = { phase: "stopping", done: 0, total: 0, startedAt: Date.now() };
+  (async () => {
+    const released = await rt.release(ctx);
+    if (!released.ok) throw new Error(released.error);
+    await migration.migrate({ src, dest, onProgress: info => Object.assign(migrationJob, info) });
+    migrationJob.phase = "starting";
+    const next = await context();
+    const started = await startGateway(next);
+    if (!started.ok) throw new Error(started.error || "新目录启动失败");
+    migrationJob = { ...migrationJob, phase: "done", root: next.root, finishedAt: Date.now() };
+  })().catch(async error => {
+    const text = error && error.message ? error.message : String(error);
+    rt.log(ctx, `迁移失败: ${text}`);
+    migrationJob = { ...migrationJob, phase: "failed", error: text, finishedAt: Date.now() };
+    try {
+      await startGateway(await context());
+    } catch {
+      /* status shows what is still down */
+    }
+  });
+  return { ok: true, ...migrationState() };
 }
 
 const tools = {
@@ -213,6 +258,10 @@ async function onPanelInvoke(channel, payload = {}) {
       return services.wbAction(payload);
     case "gateway.restart":
       return restartGateway();
+    case "gateway.migrate":
+      return startMigration();
+    case "gateway.migrateStatus":
+      return migrationState();
     case "gateway.logs":
       return tools.gateway_logs.execute(payload);
     default:
@@ -225,5 +274,5 @@ module.exports = {
   onUnload,
   onPanelInvoke,
   tools,
-  _internals: { rt, context, startGateway, statusPayload, restartGateway },
+  _internals: { rt, context, startGateway, statusPayload, restartGateway, startMigration, migrationState },
 };

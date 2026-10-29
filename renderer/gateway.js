@@ -169,8 +169,11 @@
     const actions = el("div", "gw-status-actions");
     actions.append(
       actionButton(state.busy ? "刷新中" : "刷新", "refresh", () => load(true), { disabled: state.busy }),
-      actionButton(status.mode === "reused" ? "接管" : "重启", "bolt", restart, { disabled: state.actionBusy === "restart" }),
+      actionButton(status.mode === "reused" ? "接管" : "重启", "bolt", restart, { disabled: state.actionBusy === "restart" || migrating() }),
     );
+    if (status.rootSource === "legacy" || migrating()) {
+      actions.prepend(actionButton(migrating() ? migrationText() : "迁移到插件目录", "refresh", migrateGateway, { disabled: migrating() }));
+    }
     bar.append(actions);
     return bar;
   }
@@ -713,6 +716,42 @@
       await loadUsage(state.range, true);
     } catch (error) { state.error = errorText(error); }
     finally { state.busy = false; render(); }
+  }
+
+  function migrating() {
+    return Boolean(state.migration && ["stopping", "copy", "starting"].includes(state.migration.phase));
+  }
+
+  function migrationText() {
+    const job = state.migration || {};
+    if (job.phase === "copy" && job.total) return `迁移中 ${Math.floor((job.done / job.total) * 100)}%`;
+    return job.phase === "starting" ? "启动新目录" : "停止旧实例";
+  }
+
+  async function migrateGateway() {
+    if (migrating()) return;
+    if (!window.confirm("把网关复制到插件数据目录并从那里启动？期间网关会停几十秒，旧目录 ~/ai-gateway 不会被改动。")) return;
+    try {
+      const result = await invoke("gateway.migrate");
+      if (!result.ok) throw new Error(result.error || "迁移失败");
+      state.migration = result;
+      state.error = "";
+      render();
+      pollMigration();
+    } catch (error) { state.error = errorText(error); render(); }
+  }
+
+  async function pollMigration() {
+    try { state.migration = await invoke("gateway.migrateStatus"); }
+    catch (error) { state.migration = { phase: "failed", error: errorText(error) }; }
+    if (migrating()) {
+      render();
+      setTimeout(pollMigration, 700);
+      return;
+    }
+    if (state.migration && state.migration.phase === "failed") state.error = `迁移失败，仍使用旧目录：${state.migration.error}`;
+    else if (state.migration && state.migration.phase === "done") state.flash = "已迁移到插件目录";
+    await load(true);
   }
 
   async function restart() {
