@@ -404,7 +404,11 @@ label.settings-row { cursor: pointer; }
   line-height: var(--leading-body);
 }
 
-/* 图标画在图片上，所以用固定浅色圆形底，不跟随界面明暗。 */
+/*
+ * 删除图标浮在照片上，配色不跟随界面表面色：深色主题半透明黑底白叉，浅色
+ * 主题在文件末尾换成白底深叉。两种主题下它都只出现在照片上，所以底不与
+ * --ds-* 表面色对齐。
+ */
 .wallpaper-remove {
   position: absolute;
   top: 4px;
@@ -416,15 +420,24 @@ label.settings-row { cursor: pointer; }
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
-  background: color-mix(in oklab, #000000 55%, transparent);
-  color: #ffffff;
+  --remove-fill: color-mix(in oklab, #000000 55%, transparent);
+  --remove-ink: #ffffff;
+  --remove-edge: transparent;
+  background: var(--remove-fill);
+  color: var(--remove-ink);
+  box-shadow: inset 0 0 0 1px var(--remove-edge);
   opacity: 0;
   cursor: pointer;
   transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
 }
 .wallpaper-card:hover .wallpaper-remove,
 .wallpaper-card:focus-within .wallpaper-remove { opacity: 1; }
-.wallpaper-remove:hover { background: color-mix(in oklab, var(--ds-error) 78%, #000000); }
+/* 悬停时两种主题都落到同一个红底白叉，表示这一下是删除。 */
+.wallpaper-remove:hover {
+  background: color-mix(in oklab, var(--ds-error) 82%, #000000);
+  color: #ffffff;
+  box-shadow: none;
+}
 .wallpaper-remove:focus-visible {
   opacity: 1;
   outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
@@ -518,3 +531,10 @@ label.settings-row { cursor: pointer; }
 
 /* 填充方式的说明文字跟着当前选项走。 */
 .glass-fit-hint { color: var(--ds-text-muted); }
+
+/* 浅色主题的删除图标：白底深叉，加一圈细线，压在浅色照片上也立得住。 */
+:root[data-base="light"] .wallpaper-remove {
+  --remove-fill: color-mix(in oklab, #ffffff 84%, transparent);
+  --remove-ink: color-mix(in oklab, #101214 86%, transparent);
+  --remove-edge: color-mix(in oklab, #000000 12%, transparent);
+}
