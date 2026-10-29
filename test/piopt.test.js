@@ -143,17 +143,24 @@ test("renderer scripts expose an explicit boot hook and do not self-start", () =
 
 test("dependent settings sit under the option they depend on", () => {
   const html = read("renderer/index.html");
+  const js = read("renderer/appearance.js");
 
-  // Every second-level block names the row that owns it, and that row exists.
+  // Two blocks follow a parent row's state (motion override, glass switch). The
+  // photo block is always open: without a photo it still holds 「不使用」 and the
+  // recent list, so it must never collapse.
   const subs = [
     ...html.matchAll(
       /<div class="settings-sub" id="([a-z-]+)" data-trigger="([a-z-]+)" data-collapsed="(?:true|false)"/g
     ),
   ];
-  assert.equal(subs.length, 3);
+  assert.equal(subs.length, 2);
   for (const [, , trigger] of subs) {
     assert.match(html, new RegExp(`id="${trigger}"`), trigger);
   }
+  assert.match(html, /id="glass-wallpaper-sub" data-collapsed="false"/);
+  assert.doesNotMatch(html, /glass-wallpaper-clear/);
+  assert.match(js, /data-wallpaper-off/);
+  assert.doesNotMatch(js, /setSub\(elements\.glassWallpaperSub/);
 
   // The three motion rows only exist inside the override block; the base colour
   // is not affected by that switch, so it closes the block and stays first-level.
@@ -181,7 +188,6 @@ test("dependent settings sit under the option they depend on", () => {
 
   // Collapsing hides the block from the keyboard and tells assistive tech; the
   // switch that owns it also goes unavailable while animations are fully off.
-  const js = read("renderer/appearance.js");
 
   // The recent list is a thumbnail grid: 1:1 cards that apply on click, a remove
   // icon revealed on hover, and a confirmation before anything is deleted.
@@ -193,7 +199,6 @@ test("dependent settings sit under the option they depend on", () => {
   assert.match(js, /elements\.motionOverride\.disabled = config\.disabled;/);
   assert.match(js, /setSub\(elements\.motionOverrideSub, config\.override\)/);
   assert.match(js, /setSub\(elements\.glassEnabledSub, config\.enabled\)/);
-  assert.match(js, /setSub\(elements\.glassWallpaperSub, Boolean\(config\.wallpaper\)\)/);
   assert.match(read("renderer/appearance.css"), /\.settings-sub\[data-collapsed="true"\]/);
 
   // Thumbnails are drawn in the panel (the plugin process has no image decoder)

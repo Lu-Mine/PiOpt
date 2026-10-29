@@ -227,7 +227,6 @@ async function autoHints() {
 function setBusy(busy) {
   state.busy = busy;
   elements.pickButton.disabled = busy;
-  elements.clearButton.disabled = busy || !state.glass.wallpaper;
 }
 
 let toastTimer;
@@ -315,11 +314,12 @@ function renderGlass() {
   const config = state.glass;
   elements.glassToggle.checked = config.enabled;
 
-  // 模糊强度属于磨砂玻璃开关，填充方式属于背景图：父项没开、没图时就收起。
-  // 收起只是不可达，值原样留着，重新打开同一张图时填充方式照旧。
+  // 模糊强度属于磨砂玻璃开关。背景图那一段不再收起：没有图时它仍然要能点
+  // 「不使用」和最近使用。
   setSub(elements.glassEnabledSub, config.enabled);
-  setSub(elements.glassWallpaperSub, Boolean(config.wallpaper));
   elements.glassIntensity.disabled = !config.enabled;
+  // 没有图时填充方式没有可作用的对象：按钮禁用、行文字跟着淡下去。
+  elements.glassFitRow.dataset.empty = String(!config.wallpaper);
   for (const button of elements.glassFitButtons) button.disabled = !config.wallpaper;
 
   renderPressed("[data-glass-fit]", "glassFit", config.fit);
@@ -332,7 +332,6 @@ function renderGlass() {
   const name = (current && current.name) || basename(config.wallpaper);
   elements.wallpaperName.textContent = name || "未选择图片";
   elements.wallpaperName.dataset.empty = String(!name);
-  elements.clearButton.disabled = state.busy || !config.wallpaper;
 
   renderRecent();
   void fillMissingThumbs();
@@ -344,8 +343,17 @@ function renderGlass() {
  */
 function renderRecent() {
   const list = elements.recentList;
-  elements.recentGroup.hidden = state.recent.length === 0;
-  list.innerHTML = state.recent.map((entry) => {
+  // 第一张固定是「不使用」：这一段常开，即使没有背景图也能一键回到无图状态。
+  const off = !state.glass.wallpaper;
+  const offCard = `
+    <div class="wallpaper-card${off ? " is-current" : ""}">
+      <button type="button" class="wallpaper-apply" data-wallpaper-off
+        aria-pressed="${off}" aria-label="不使用背景图">
+        <span class="wallpaper-thumb is-off"></span>
+        <span class="wallpaper-name">不使用</span>
+      </button>
+    </div>`;
+  list.innerHTML = offCard + state.recent.map((entry) => {
     const current = entry.path === state.glass.wallpaper;
     const thumb = entry.thumb ? `<img src="${escapeAttr(entry.thumb)}" alt="" />` : "";
     const label = escapeAttr(entry.name);
@@ -684,8 +692,6 @@ function bindEvents() {
     const file = elements.fileInput.files && elements.fileInput.files[0];
     if (file) void uploadWallpaper(file);
   });
-  elements.clearButton.addEventListener("click", clearWallpaper);
-
   elements.recentList.addEventListener("click", (event) => {
     // 删除图标是卡片的兄弟节点而不是子节点，但先判删除更稳：卡片正被删除时
     // 不该顺手把这张图又应用一次。
@@ -694,11 +700,14 @@ function bindEvents() {
       void forgetRecent(forget.dataset.recentForget);
       return;
     }
+    if (event.target.closest("[data-wallpaper-off]")) {
+      void clearWallpaper();
+      return;
+    }
     const use = event.target.closest("[data-recent-use]");
     if (use) void useRecent(use.dataset.recentUse);
   });
-
-  // 缩略图是主进程用 nativeImage 画的；某个格式解码失败时只留文件名。
+  // 缩略图由面板画好存在条目里；某个格式解码失败时只留文件名。
   elements.recentList.addEventListener("error", (event) => {
     if (event.target instanceof HTMLImageElement) event.target.remove();
   }, true);
@@ -731,13 +740,12 @@ async function initialize() {
     glassWallpaperSub: byId("glass-wallpaper-sub"),
     glassFitButtons: Array.from(document.querySelectorAll("[data-glass-fit]")),
     glassIntensity: byId("glass-intensity"),
+    glassFitRow: byId("glass-fit-row"),
     glassIntensityValue: byId("glass-intensity-value"),
     wallpaperName: byId("glass-wallpaper-name"),
     pickButton: byId("glass-wallpaper-pick"),
-    clearButton: byId("glass-wallpaper-clear"),
     glassFitHint: byId("glass-fit-hint"),
     fileInput: byId("glass-wallpaper-file"),
-    recentGroup: byId("glass-recent"),
     recentList: byId("glass-recent-list"),
     confirm: byId("confirm"),
     confirmTitle: byId("confirm-title"),
