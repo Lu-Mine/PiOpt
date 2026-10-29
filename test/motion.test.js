@@ -82,8 +82,8 @@ test("unified motion language bridges host tokens and enforces symmetric round-t
   assert.match(css, /details::details-content\{[^}]*block-size var\(--pm-base\) var\(--pm-ease-symmetric\)/);
   assert.match(css, /\.sidebar\.is-entering\{animation:sidebar-in-pm var\(--pm-base\) var\(--pm-ease-symmetric\) backwards\}/);
   assert.match(css, /\.sidebar\.is-exiting,:root\[data-platform=win32\] \.sidebar\.is-exiting\{animation:sidebar-out-pm var\(--pm-base\) var\(--pm-ease-symmetric\) both\}/);
-  assert.match(css, /\.work-panel:not\(\.work-panel-pending\):not\(\[data-resizing=true\]\)\{animation:work-panel-in-pm var\(--pm-slow\) var\(--pm-ease-symmetric\) backwards;overflow:hidden\}/);
-  assert.match(css, /\.work-panel\.is-exiting\{animation:work-panel-out-pm calc\(var\(--pm-slow\) \* var\(--pm-exit-ratio\)\) var\(--pm-ease-symmetric\) both;overflow:hidden\}/);
+  assert.match(css, /\.work-panel:not\(\.work-panel-pending\):not\(\.is-exiting\):not\(\.is-exit-pending\):not\(\[data-resizing=true\]\)\{animation:work-panel-in-pm[^}]*backwards!important/);
+  assert.match(css, /\.work-panel\.work-panel\.is-exiting\{animation:work-panel-out-pm[^}]*both!important/);
 });
 
 test("reduced preset removes spatial movement and continuous motion", () => {

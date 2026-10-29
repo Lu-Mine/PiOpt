@@ -77,6 +77,7 @@ const MENU_OVERLAY_SELECTORS = [
   ".scope-compact-menu",
   ".sidebar-row-menu",
   ".sidebar-popover",
+  ".context-menu-submenu",
   ".context-menu",
 ];
 
@@ -648,11 +649,32 @@ function durationForOverlay(kind, tokens) {
   return tokens.fast;
 }
 
+let settingsCategory = "";
+let settingsAnimation = null;
+
+function syncSettingsCategory(tokens) {
+  const title = document.querySelector(".settings-content-enter .settings-section-title");
+  if (!title) { settingsCategory = ""; return; }
+  const category = title.textContent.trim();
+  if (category === settingsCategory) return;
+  settingsCategory = category;
+  const content = title.closest(".settings-content-enter");
+  if (settingsAnimation) settingsAnimation.cancel();
+  settingsAnimation = runAnimation(content,
+    [{ opacity: .55 }, { opacity: 1 }],
+    { duration: tokens.base, easing: tokens.easeSymmetric });
+}
+
 function handleOverlayOpened(el, tokens) {
   const kind = classifyOverlay(el);
   if (!kind) return;
   const sig = overlaySignature(el);
   const fullDuration = durationForOverlay(kind, tokens);
+  if (el.hasAttribute("data-piopt-mp-probing")) return;
+  const box = el.getBoundingClientRect();
+  if (box.width > 0 && box.height > 0) {
+    rectSnapshots.set(el, { top: box.top, left: box.left, width: box.width, height: box.height });
+  }
 
   let startProgress = 0;
   const outgoing = activeOverlayGhosts.get(sig);
@@ -866,6 +888,11 @@ function syncChromePanel(el, kind, tokens) {
   let currentWidth = direction === "in" ? 0 : targetWidth;
 
   // Case A: Reversing an already-running sidebar collapse ghost when re-opening!
+  const workGhost = isWorkPanel && activeFloatGhosts.get("work-panel-exit");
+  if (workGhost && direction === "in") {
+    currentWidth = workGhost.fromWidth * (1 - flightProgress(workGhost, tokens.bezier));
+    workGhost.cleanup();
+  }
   if (!isWorkPanel && direction === "in" && activeSidebarGhost) {
     const p = flightProgress(activeSidebarGhost, tokens.bezier);
     currentWidth = activeSidebarGhost.fromWidth * (1 - p);
@@ -890,6 +917,7 @@ function syncChromePanel(el, kind, tokens) {
     el.style.setProperty(propFrom, `${roundPx(currentWidth)}px`);
     el.style.setProperty(propShift, `${shift}px`);
     el.style.animationDuration = `${duration}ms`;
+    el.style.setProperty("animation-duration", `${duration}ms`, "important");
   } else {
     el.style.removeProperty(propFrom);
     el.style.removeProperty(propShift);
@@ -922,7 +950,7 @@ function syncChromePanel(el, kind, tokens) {
 // If speed < 0.8x makes `--pm-base` exceed PI-Desktop's hardcoded 240ms sidebar
 // fallback timer, React unmounts `.sidebar.is-exiting` mid-slide. Finish the
 // remaining width smoothly without touching opacity (frosted-glass safe).
-function handleSidebarPrematureUnmount(el, parent, nextSibling, tokens) {
+function handleSidebarPrematureUnmount(el, parent, nextSibling, tokens, workPanel = false) {
   if (!parent || parent.isConnected === false) return;
   const flight = panelFlights.get(el);
   if (!flight || flight.direction !== "out") return;
@@ -930,38 +958,44 @@ function handleSidebarPrematureUnmount(el, parent, nextSibling, tokens) {
   const remainingWidth = flight.fromWidth * (1 - p);
   if (remainingWidth <= 4) return;
 
-  if (activeSidebarGhost) activeSidebarGhost.cleanup();
+  const previousGhost = workPanel ? activeFloatGhosts.get("work-panel-exit") : activeSidebarGhost;
+  if (previousGhost) previousGhost.cleanup();
   const ghost = sanitizeClone(el);
   ghost.classList.remove("is-entering", "is-exiting");
   ghost.style.overflow = "hidden";
   if (nextSibling && nextSibling.parentNode === parent) parent.insertBefore(ghost, nextSibling);
+  else if (workPanel) parent.appendChild(ghost);
   else parent.prepend(ghost);
 
-  const ratio = clamp(remainingWidth / (flight.targetWidth || remainingWidth), 0.12, 1);
-  const duration = Math.max(24, Math.round(tokens.base * ratio));
+  const duration = flight.duration;
+  const elapsed = clamp(nowMs() - flight.startTime, 0, duration);
   let cleaned = false;
   const record = {
     ghost,
-    fromWidth: remainingWidth,
-    startTime: nowMs(),
+    fromWidth: flight.fromWidth,
+    startTime: flight.startTime,
     duration,
     cleanup() {
       if (cleaned) return;
       cleaned = true;
       if (activeSidebarGhost === record) activeSidebarGhost = null;
+      if (workPanel && activeFloatGhosts.get("work-panel-exit") === record) activeFloatGhosts.delete("work-panel-exit");
       ghost.remove();
     },
   };
-  activeSidebarGhost = record;
-  runAnimation(
+  if (workPanel) activeFloatGhosts.set("work-panel-exit", record);
+  else activeSidebarGhost = record;
+  const continuation = runAnimation(
     ghost,
     [
-      { flexBasis: `${roundPx(remainingWidth)}px`, width: `${roundPx(remainingWidth)}px`, transform: "translateX(0px)" },
-      { flexBasis: "0px", width: "0px", transform: `translateX(${roundPx(-tokens.distancePanel)}px)` },
+      { flexBasis: `${roundPx(flight.fromWidth)}px`, width: `${roundPx(flight.fromWidth)}px`, transform: `translateX(${roundPx((1 - flight.fromWidth / flight.targetWidth) * tokens.distancePanel * (workPanel ? 1 : -1))}px)` },
+      { flexBasis: "0px", width: "0px", transform: `translateX(${roundPx(tokens.distancePanel * (workPanel ? 1 : -1))}px)` },
     ],
     { duration, easing: tokens.easeSymmetric },
     () => record.cleanup()
   );
+  // Continue the original curve at the host's cutoff, preserving time and velocity.
+  if (continuation) continuation.currentTime = elapsed;
 }
 
 function roundPx(value) {
@@ -991,6 +1025,7 @@ function processMutations(records) {
     for (const node of record.addedNodes) if (isElement(node) && !isGhost(node)) batchAdded.add(node);
     for (const node of record.removedNodes) if (isElement(node) && !isGhost(node)) batchRemoved.add(node);
   }
+  syncSettingsCategory(tokens);
 
   for (const record of records) {
     if (record.type === "attributes" && record.attributeName === "class") {
@@ -1000,11 +1035,10 @@ function processMutations(records) {
         syncChromePanel(target, "work-panel", tokens);
       } else if (target.classList.contains("sidebar")) {
         syncChromePanel(target, "sidebar", tokens);
-      } else if (target.classList.contains("is-open") && matches(target, ALL_PORTAL_SELECTOR)) {
-        handleOverlayOpened(target, tokens);
-      } else if (!target.classList.contains("is-open") && matches(target, ALL_PORTAL_SELECTOR)) {
-        // Stateful menu/popover stayed in DOM and removed `.is-open`: record clean state.
-        activeOverlayEntrances.delete(target);
+      } else if (matches(target, ALL_PORTAL_SELECTOR)) {
+        const wasOpen = String(record.oldValue || "").split(/\s+/).includes("is-open");
+        if (target.classList.contains("is-open") && !wasOpen) handleOverlayOpened(target, tokens);
+        // Keep the incoming flight until removal: it is needed for a quick dismissal.
       }
       continue;
     }
@@ -1027,6 +1061,10 @@ function processMutations(records) {
       if (!isElement(node) || isGhost(node)) continue;
       if (batchRemoved.has(parent) || parent.isConnected === false) continue;
 
+      if (node.classList && node.classList.contains("work-panel")) {
+        handleSidebarPrematureUnmount(node, parent, record.nextSibling, tokens, true);
+        continue;
+      }
       if (node.classList && node.classList.contains("sidebar")) {
         handleSidebarPrematureUnmount(node, parent, record.nextSibling, tokens);
         continue;
@@ -1088,6 +1126,8 @@ export function mountMotionRuntime() {
       childList: true,
       subtree: true,
       attributes: true,
+      attributeOldValue: true,
+      characterData: true,
       attributeFilter: ["class"],
     });
   }
@@ -1115,6 +1155,9 @@ export function unmountMotionRuntime() {
   activeExpands = new WeakMap();
   activeOverlayEntrances = new WeakMap();
   panelFlights = new WeakMap();
+  settingsCategory = "";
+  if (settingsAnimation) settingsAnimation.cancel();
+  settingsAnimation = null;
   lastSidebarSnap = null;
   if (layer) {
     layer.remove();

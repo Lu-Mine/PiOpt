@@ -406,8 +406,14 @@ details[open]::details-content{block-size:auto;opacity:1}
 :is(.composer-image-preview,.generated-image-viewer)[open]{animation:pm-dialog-in var(--pm-base) var(--pm-ease-out) backwards}
 /* Layer 4: Frosted-safe panels & sidebars (no opacity keyframes on ancestors of backdrop-filter). */
 :is(.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) backwards}
-.work-panel:not(.work-panel-pending):not([data-resizing=true]){animation:work-panel-in-pm var(--pm-slow) var(--pm-ease-symmetric) backwards;overflow:hidden}
-.work-panel.is-exiting{animation:work-panel-out-pm calc(var(--pm-slow) * var(--pm-exit-ratio)) var(--pm-ease-symmetric) both;overflow:hidden}
+.work-panel:not(.work-panel-pending):not(.is-exiting):not(.is-exit-pending):not([data-resizing=true]){animation:work-panel-in-pm var(--pm-slow) var(--pm-ease-symmetric) backwards!important}
+.work-panel.work-panel.is-exiting{animation:work-panel-out-pm var(--pm-slow) var(--pm-ease-symmetric) both!important;overflow:hidden}
+/* Keep the Todo panel measurable while the enclosing grid collapses. The host
+   hides this panel immediately, otherwise its intrinsic height becomes zero. */
+.dock:not(.is-expanded) .dock-panel[hidden]:has(.todo-dock-list){display:block!important;pointer-events:none}
+.dock:not(.is-expanded) .dock-content{pointer-events:none}
+.dock-panel:not([hidden]){animation:pm-fade-in var(--pm-fast) var(--pm-ease-symmetric) backwards}
+@starting-style{.context-menu.is-open{opacity:0}}
 .sidebar.is-entering{animation:sidebar-in-pm var(--pm-base) var(--pm-ease-symmetric) backwards}
 .sidebar.is-exiting,:root[data-platform=win32] .sidebar.is-exiting{animation:sidebar-out-pm var(--pm-base) var(--pm-ease-symmetric) both}
 :is([data-side=left],.drawer-left){animation:pm-panel-left-in var(--pm-slow) var(--pm-ease-out) backwards}
@@ -424,6 +430,8 @@ details[open]::details-content{block-size:auto;opacity:1}
 :is(.toast,.update-notice,.chat-error-notice,.backend-banner,.p-notice){animation:pm-toast-in var(--pm-base) var(--pm-ease-out) backwards}
 .toast.closing{animation:toast-out-pm var(--pm-base) var(--pm-ease-symmetric) forwards}
 :is(.error-message,[role=alert][data-severity=error]){animation:pm-error-nudge var(--pm-fast) var(--pm-ease-out) backwards}
+/* Settings containers are reused across category changes; the runtime owns the fade. */
+.settings-content,.settings-content-enter{animation:none}
 ${spinRule}
 ${pulseRule}
 ${skeletonRule}
