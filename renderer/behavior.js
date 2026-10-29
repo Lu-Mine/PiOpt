@@ -1,19 +1,17 @@
 /*
- * 行为视图：聊天框模型浮窗的展开与排列。
+ * 行为视图：聊天框模型浮窗的排列方式（只读）。
  *
- * 这一屏只写一个值——浮窗的排列方式。真正改写浮窗的代码活在宿主窗口里
- * （renderer/model-picker.mjs）：它每次打开浮窗时经 plugin.call 读同一个设置，
- * 所以这里存下去就是全部，不需要通知谁。预览模式（没有 pluginBridge）下用和
- * 主进程同一套默认值，保证脱离宿主也能点。
+ * 排列方式在浮窗里切换——搜索框右侧那颗按钮，点一下换一种。这里只把当前的值
+ * 读出来给使用者看，不提供第二个入口：同一个设置有两处开关，迟早会不一致。
  */
 (function () {
   "use strict";
 
   const CHANNEL = "behavior.modelPicker";
-  const GROUPINGS = ["provider", "name"];
   const DEFAULT_CONFIG = { grouping: "provider" };
+  const GROUPING_COPY = { provider: "按供应商", name: "按名称" };
 
-  const state = { config: { ...DEFAULT_CONFIG }, busy: false, error: "" };
+  const state = { config: { ...DEFAULT_CONFIG }, error: "" };
   const elements = {};
 
   function byId(id) {
@@ -25,52 +23,26 @@
       return window.pluginBridge.invoke(channel, payload);
     }
     if (channel === `${CHANNEL}.getState`) {
-      return { config: { ...state.config }, groupings: [...GROUPINGS] };
-    }
-    if (channel === `${CHANNEL}.setGrouping`) {
-      return { ok: true, config: { grouping: payload.grouping }, groupings: [...GROUPINGS] };
+      return { config: { ...state.config }, groupings: Object.keys(GROUPING_COPY) };
     }
     throw new Error(`Unknown preview channel: ${channel}`);
   }
 
   function render() {
-    for (const button of document.querySelectorAll("[data-model-grouping]")) {
-      button.setAttribute("aria-pressed", String(button.dataset.modelGrouping === state.config.grouping));
+    const grouping = state.config.grouping;
+    if (elements.grouping) {
+      elements.grouping.textContent = GROUPING_COPY[grouping] || GROUPING_COPY.provider;
     }
     if (!elements.status) return;
     elements.status.textContent = state.error;
     elements.status.hidden = !state.error;
   }
 
-  async function setGrouping(value) {
-    if (state.busy || !GROUPINGS.includes(value) || value === state.config.grouping) return;
-    const previous = state.config.grouping;
-    state.config = { ...state.config, grouping: value };
-    state.error = "";
-    state.busy = true;
-    render();
-    try {
-      const result = await invoke(`${CHANNEL}.setGrouping`, { grouping: value });
-      if (result && result.config) state.config = { ...DEFAULT_CONFIG, ...result.config };
-    } catch (error) {
-      // 写不进去就退回上一次的选择：界面不该留着一个没保存的值。
-      state.config = { ...state.config, grouping: previous };
-      state.error = (error && error.message) || "设置没能保存。";
-    } finally {
-      state.busy = false;
-      render();
-    }
-  }
-
-  function bind() {
-    for (const button of document.querySelectorAll("[data-model-grouping]")) {
-      button.addEventListener("click", () => void setGrouping(button.dataset.modelGrouping));
-    }
-  }
-
   async function boot() {
-    Object.assign(elements, { status: byId("behavior-status") });
-    bind();
+    Object.assign(elements, {
+      grouping: byId("behavior-grouping"),
+      status: byId("behavior-status"),
+    });
     render();
     try {
       const result = await invoke(`${CHANNEL}.getState`);

@@ -129,19 +129,54 @@ test("the rewrite clones host rows instead of moving them", () => {
   // 宿主自己会重渲染这棵子树；把它的节点搬到别处，下一次 insertBefore 就找不到参照。
   assert.match(source, /row\.option\.cloneNode\(true\)/);
   assert.doesNotMatch(source, /\.insertBefore\(/);
-  // 原生按钮只被读取（title / 文本 / 类名），不会被搬动或删掉。
-  // 点击克隆按钮只是转交给原生按钮，选中模型仍走宿主自己的逻辑。
+  assert.doesNotMatch(source, /row\.option\.remove\(\)/);
+  // 点击克隆行只是转交给原生按钮，选中模型仍走宿主自己的逻辑。
   assert.match(source, /row\.option\.click\(\)/);
   // 宿主的折叠入口（其他模型）只点一次，随后被样式藏掉。
   assert.match(source, /aria-expanded/);
+});
+
+test("最近使用的行不再把来源写在右边", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 最近使用那一组的 meta 就是来源文本：克隆时整块摘掉。
+  assert.match(source, /if \(row\.recent\) \{/);
+  assert.match(source, /meta\.remove\(\)/);
+  // 按名称时来源改由下方那行淡字承担（CSS 里用 data-piopt-mp-provider 画）。
+  assert.match(source, /::after\{content:attr\(\$\{PROVIDER_ATTR\}\)/);
+  assert.match(source, /flex:1 0 100%/);
+});
+
+test("按供应商时最近使用的模型回到自己的分组、标题不再压底色", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 分组视图把最近使用过的行按名称插回对应的供应商桶里。
+  assert.match(source, /insertSorted\(bucketFor\(row\.provider\), row\)/);
+  assert.match(source, /function providerOrder\(list\)/);
+  // 分组标题沿用宿主的类名，但把它的底色与模糊一起清掉。
+  assert.match(
+    source,
+    /\.composer-model-group-label\{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none\}/
+  );
+});
+
+test("切换按钮长在搜索框右侧，点一下换一种排列", () => {
+  const source = read("renderer/model-picker.mjs");
+  assert.match(source, /const SWITCH_CLASS = "piopt-mp-switch";/);
+  assert.match(source, /search\.append\(button\)/);
+  assert.match(source, /setGrouping\(grouping === "provider" \? "name" : "provider"\)/);
+  // 按钮上的字跟随宿主 locale。
+  assert.match(source, /function copyOf\(\)/);
+  assert.match(source, /document\.documentElement\.lang/);
+  // 搜索框里要给按钮腾位置：输入框可收缩。
+  assert.match(source, /\.composer-model-search input\{flex:1 1 auto;min-width:0\}/);
 });
 
 test("the injected rules key off the attributes the module writes", () => {
   const source = read("renderer/model-picker.mjs");
   for (const attribute of [
     "data-piopt-mp-expanded",
-    "data-piopt-mp-mode",
     "data-piopt-mp-searching",
+    "data-piopt-mp-layout",
+    "data-piopt-mp-provider",
   ]) {
     assert.ok(source.includes(attribute), attribute);
   }
@@ -150,9 +185,21 @@ test("the injected rules key off the attributes the module writes", () => {
     source,
     /\.composer-model-menu\[\$\{EXPANDED_ATTR\}\] \.composer-model-list > \.\$\{COLLAPSE_CLASS\}\{display:none\}/
   );
-  // 平铺时原生分组让位，搜索时反过来 —— 不能靠 revert 把宿主自己的 display 也抹掉。
-  assert.ok(source.includes(':not([${SEARCH_ATTR}="true"])'), "平铺规则按搜索属性让位");
+  // 自建视图让位给宿主搜索结果，但不用 revert 抹掉宿主自己的 display。
+  assert.ok(source.includes(':not([${SEARCH_ATTR}="true"])'), "自建视图按搜索属性让位");
   assert.doesNotMatch(source, /display:revert/);
+});
+
+test("the behavior view boots from one hook and only reports the value", () => {
+  const view = read("renderer/behavior.js");
+  assert.match(view, /window\.PiOptBehavior = \{ boot \}/);
+  assert.match(view, /const CHANNEL = "behavior\.modelPicker";/);
+  // 排列方式在浮窗里切换：面板不写，避免同一个设置有两个开关。
+  assert.doesNotMatch(view, /setGrouping/);
+  assert.match(view, /GROUPING_COPY/);
+  // 与外观视图一致：脚本只导出 boot，不自己跑起来。
+  assert.equal(view.trimEnd().endsWith("})();"), true);
+  assert.doesNotMatch(view, /\bboot\(\);\s*$/m);
 });
 
 test("the entry mounts the popup rewrite with its own lifecycle", () => {
@@ -161,14 +208,4 @@ test("the entry mounts the popup rewrite with its own lifecycle", () => {
   assert.match(entry, /MODEL_PICKER_CSS,/);
   assert.match(entry, /await mountModelPicker\(pi\)/);
   assert.match(entry, /unmountModelPicker\(\)/);
-});
-
-test("the behavior view boots from one hook and writes that one value", () => {
-  const view = read("renderer/behavior.js");
-  assert.match(view, /window\.PiOptBehavior = \{ boot \}/);
-  assert.match(view, /const CHANNEL = "behavior\.modelPicker";/);
-  assert.match(view, /const GROUPINGS = \["provider", "name"\];/);
-  // 与外观视图一致：脚本只导出 boot，不自己跑起来。
-  assert.equal(view.trimEnd().endsWith("})();"), true);
-  assert.doesNotMatch(view, /\bboot\(\);\s*$/m);
 });

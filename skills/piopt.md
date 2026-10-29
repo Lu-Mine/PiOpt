@@ -15,11 +15,15 @@ them: they are panel settings.
   with a recent list). They are one feature because they write one runtime
   theme; the view is one page, the sections are not separate panels. Each
   section has a 重置 button with a confirm step.
-- **行为 (behavior)** — one setting: the chat composer's model popup. It always
-  lists every model (the host's height limits are untouched) and can be grouped
-  by provider or sorted flat by model name. The write happens in the host
-  window (`renderer/model-picker.mjs`), the setting lives in the plugin's
-  `modelPicker` key; it applies the next time the popup opens.
+- **行为 (behavior)** — the chat composer's model popup. It always lists every
+  model (the host's height limits are untouched); the button at the right of the
+  popup's search field toggles grouping by provider and flat sorting by name.
+  Provider grouping puts recently used models back under their provider and
+  drops the group label's background; name sorting adds a faint source line
+  under each option. The switch lives in the host window
+  (`renderer/model-picker.mjs`) and writes the plugin's `modelPicker` key; the
+  panel's 行为 view only reports the current value, so do not tell the user to
+  change it there.
 - **AI 网关 (gateway)** — one page in three sections (连接 / 上游 / 用量) under a
   pinned status bar: what both local panels expose and how to reach them, which
   accounts and credentials feed them, and how much has actually been used.

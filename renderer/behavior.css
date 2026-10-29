@@ -1,8 +1,8 @@
 /*
  * PiOpt 行为：只画这一屏用到的版式。
  *
- * 外观那一屏的版式（workspace / settings-group / settings-row / segmented）是
- * 用 @scope 锁在 #view-appearance 里的，这里按同一套语言重画自己用到的几行，
+ * 外观那一屏的版式（workspace / settings-group / settings-row）是用 @scope 锁在
+ * #view-appearance 里的，这里按同一套语言重画自己用到的几行，
  * 两屏因此不会互相污染，也不必为两行样式引第二套令牌。
  */
 
@@ -114,40 +114,13 @@ h1 {
   gap: 8px;
 }
 
-/* ------------------------------------------------------------- 分段控件 */
+/* --------------------------------------------------------------- 只读值 */
 
-.segmented {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--radius-2xs);
-  background: var(--ds-bg-inset);
-}
-
-.segmented button {
-  appearance: none;
-  min-width: 0;
-  height: var(--ds-control-sm);
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-3xs);
-  background: transparent;
+/* 值不是可点的控件：它只是把浮窗里那颗按钮当前选中的排列方式念出来。 */
+.behavior-value {
   color: var(--ds-text-secondary);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-medium);
-  line-height: 1;
-  white-space: nowrap;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-out),
-    color var(--motion-duration-fast) var(--motion-ease-out);
-}
-.segmented button:hover { color: var(--ds-text-primary); }
-.segmented button[aria-pressed="true"] {
-  background: var(--ds-raised);
-  color: var(--ds-text-primary);
-  box-shadow: var(--ds-raised-shadow), 0 0 0 1px var(--ds-border-subtle);
+  font-size: var(--text-sm-plus);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 保存失败时这一行才出现；平时它不占位置。 */

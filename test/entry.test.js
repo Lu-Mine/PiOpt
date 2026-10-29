@@ -234,7 +234,7 @@ test("the entry mounts right after the host's plugin button and leaves on unload
     // The mount itself asks the plugin for the popup grouping; only the click
     // below is the entry's own call.
     assert.ok(calls.some((call) => call.payload.method === "modelPickerState"));
-    assert.equal(doc.head.querySelector("[data-piopt-entry-style]").textContent.includes("piopt-mp-flat"), true);
+    assert.equal(doc.head.querySelector("[data-piopt-entry-style]").textContent.includes("piopt-mp-view"), true);
     calls.length = 0;
 
     const event = { preventDefault() {}, stopPropagation() {} };

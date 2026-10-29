@@ -1,42 +1,68 @@
 // PiOpt — the chat composer's model popup, rewritten inside the host window.
 //
 // PI-Desktop's popup lists the three most recent models first and folds every
-// other model behind an 「其他模型」 toggle (`ComposerPermissionPicker` in the
-// host bundle). This module changes exactly that: 全部模型始终展开（限高仍是宿主
-// 自己的 max-height，这里不碰），并且可以按供应商分组，或按模型名称平铺排序。
+// other model behind an 「其他模型」 toggle. This module changes exactly that:
+// 全部模型始终展开（限高仍是宿主自己的 max-height，这里不碰），排列方式在搜索
+// 框右侧的按钮上一键切换 —— 点一下按供应商分组，再点一下按名称排序。
 //
-// 做法只有两条：
-//   1. 点一次宿主自己的「其他模型」入口，把其余分组放出来，然后把入口藏掉；
-//   2. 「按名称」时把原生分组隐藏，用克隆出来的按钮铺一份排序好的平铺列表 ——
-//      点击克隆按钮只是转交给原生按钮（display:none 不影响 .click()），所以选中
-//      模型走的仍是宿主自己的逻辑，React 的节点树一个都没被搬动。
+// 做法：
+//   1. 点一次宿主自己的「其他模型」入口把其余分组放出来，随后把入口藏掉；
+//   2. 原生列表整体让位，用克隆出来的按钮自建一份视图：
+//      · 按供应商：最近使用过的模型还回各自供应商那一组，分组标题不压底色；
+//      · 按名称：全部模型平铺，每个选项下面另起一行淡色的来源。
 //
-// 之所以不重排 React 的节点：宿主在搜索、方向键高亮、模型异步加载时都会重新
-// 渲染这棵子树，搬动别人的节点会让它下一次 insertBefore 找不到参照。
+// 克隆按钮的点击一律转交给对应的原生按钮（display:none 不影响 .click()），
+// 所以选中模型走的仍是宿主自己的逻辑，React 的节点树一个都没被搬动或删除 ——
+// 宿主在搜索、方向键高亮、模型异步加载时都会重渲染这棵子树，搬动别人的节点会
+// 让它下一次 insertBefore 找不到参照。
 
 const MENU_SELECTOR = ".composer-model-menu";
 const LIST_SELECTOR = ".composer-model-list";
 const GROUP_SELECTOR = ".composer-model-group";
 const GROUP_LABEL_SELECTOR = ".composer-model-group-label";
 const OPTION_SELECTOR = ".composer-model-option";
+const OPTION_MAIN_SELECTOR = ".composer-model-option-main";
+const META_SELECTOR = ".composer-model-option-meta";
 const LABEL_SELECTOR = ".composer-model-label";
+const SEARCH_SELECTOR = ".composer-model-search";
 const SEARCH_INPUT_SELECTOR = ".composer-model-search input";
+const EMPTY_SELECTOR = ".composer-model-empty";
 const COLLAPSE_CLASS = "composer-menu-entry";
-const FLAT_CLASS = "piopt-mp-flat";
-const MODE_ATTR = "data-piopt-mp-mode";
+const VIEW_CLASS = "piopt-mp-view";
+const SWITCH_CLASS = "piopt-mp-switch";
 const SEARCH_ATTR = "data-piopt-mp-searching";
 const EXPANDED_ATTR = "data-piopt-mp-expanded";
+const LAYOUT_ATTR = "data-piopt-mp-layout";
+const PROVIDER_ATTR = "data-piopt-mp-provider";
+const ITEM_ATTR = "data-piopt-mp-item";
 const GROUPINGS = ["provider", "name"];
 const DEFAULT_GROUPING = "provider";
 const SYNC_DELAY_MS = 40;
 
-// Injected with the entry stylesheet: both rules only apply to menus this module
-// has already touched, so an unmodified popup keeps the host's own look.
+// 切换按钮上的两个字：宿主界面跟随 locale，这里也跟随。
+const COPY = {
+  zh: { provider: "供应商", name: "名称", toName: "点击改为按名称排序", toProvider: "点击改为按供应商分组" },
+  en: { provider: "Provider", name: "Name", toName: "Switch to sorting by name", toProvider: "Switch to grouping by provider" },
+};
+
+// Injected with the entry stylesheet. Every rule is scoped to a menu this module
+// has already touched, so an untouched popup keeps the host's own look.
 export const MODEL_PICKER_CSS = [
+  /* 「其他模型」是折叠入口，展开后就没用了：藏掉它，收起这条路也一起消失。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-list > .${COLLAPSE_CLASS}{display:none}`,
-  /* 平铺时原生分组整组让位，搜索时再把它们放回来（搜索结果由宿主自己筛）。 */
-  `.composer-model-menu[${MODE_ATTR}="name"]:not([${SEARCH_ATTR}="true"]) .composer-model-list > *:not(.${FLAT_CLASS}){display:none}`,
-  `.composer-model-menu[${MODE_ATTR}="name"][${SEARCH_ATTR}="true"] .${FLAT_CLASS}{display:none}`,
+  /* 原生列表让位给自建视图；搜索时反过来（搜索结果由宿主自己筛）。 */
+  `.composer-model-menu[${EXPANDED_ATTR}]:not([${SEARCH_ATTR}="true"]) .composer-model-list > *:not(.${VIEW_CLASS}){display:none}`,
+  `.composer-model-menu[${EXPANDED_ATTR}][${SEARCH_ATTR}="true"] .${VIEW_CLASS}{display:none}`,
+  /* 供应商名称不再压一块底色：滚动到上面时就是普通的一行小标题。 */
+  `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-group-label{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none}`,
+  /* 搜索框把右侧让给切换按钮。 */
+  `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-search input{flex:1 1 auto;min-width:0}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}{flex:none;height:20px;margin-left:auto;padding:0 7px;border:1px solid var(--ds-border-subtle);border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 7%,transparent);color:var(--ds-text-muted);font:inherit;font-size:var(--text-xs);line-height:1;cursor:pointer;transition:color var(--motion-duration-fast) var(--motion-ease-out),background var(--motion-duration-fast) var(--motion-ease-out)}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}:hover{background:color-mix(in oklab,var(--ds-text-primary) 13%,transparent);color:var(--ds-text-primary)}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${SWITCH_CLASS}:focus-visible{outline:2px solid color-mix(in oklab,var(--ds-focus) 55%,transparent);outline-offset:1px}`,
+  /* 按名称：来源另起一行、居左、比次要文字再淡一档。 */
+  `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main{flex-wrap:wrap}`,
+  `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
 ].join("\n");
 
 let host = null;
@@ -64,6 +90,10 @@ function isElement(node) {
   return Boolean(node) && node.nodeType === 1;
 }
 
+function closestOf(node, selector) {
+  return isElement(node) && typeof node.closest === "function" ? node.closest(selector) : null;
+}
+
 function childByClass(parent, className) {
   if (!parent) return null;
   for (const child of parent.children) {
@@ -73,20 +103,35 @@ function childByClass(parent, className) {
 }
 
 /**
+ * 我们自己挂/摘的节点（自建视图、切换按钮）。
+ *
+ * 观察者盯着整个浮窗，这两个节点的增删也必须忽略，否则一次重建会引出下一次重建。
+ */
+function isOurs(record) {
+  if (record.type !== "childList") return false;
+  const nodes = [...record.addedNodes, ...record.removedNodes];
+  if (!nodes.length) return false;
+  return nodes.every((node) => isElement(node)
+    && node.classList
+    && (node.classList.contains(VIEW_CLASS) || node.classList.contains(SWITCH_CLASS)));
+}
+
+/**
  * 一行原生按钮的模型身份。
  *
  * 最近使用那一组的 title 是「供应商 · 模型 id」，供应商要自己拆出来；供应商分组
- * 里的 title 只有模型 id，供应商就是分组标题。身份用来去重（同一个模型只在平铺
- * 列表里出现一次）和稳定排序的兜底键。
+ * 里的 title 只有模型 id，供应商就是分组标题。身份用来去重（同一个模型只出现一
+ * 次）、把最近使用过的模型还回分类，以及把宿主的键盘高亮映射到自建行上。
  */
 function identityOf(option, groupLabel) {
   const title = String(option.getAttribute("title") || "");
   const at = title.indexOf(" · ");
-  const provider = at > 0 ? title.slice(0, at) : groupLabel;
-  const modelId = at > 0 ? title.slice(at + 3) : title;
+  const recent = at > 0;
+  const provider = recent ? title.slice(0, at) : groupLabel;
+  const modelId = recent ? title.slice(at + 3) : title;
   // 分隔符用 US（单元分隔符）而不是 NUL：NUL 在属性值里会被序列化替换掉，
-  // 这个键要先写进 `data-piopt-mp-item` 再读回来比对。
-  return { provider, modelId, key: `${provider}\u001f${modelId.toLowerCase()}` };
+  // 这个键要先写进 data-piopt-mp-item 再读回来比对。
+  return { provider, modelId, recent, key: `${provider}\u001f${modelId.toLowerCase()}` };
 }
 
 function compareRows(left, right) {
@@ -99,12 +144,14 @@ function compareRows(left, right) {
   return left.key < right.key ? -1 : left.key > right.key ? 1 : 0;
 }
 
-/** 原生列表里出现的每一个模型，按身份去重后的平铺行。 */
+/** 原生列表里的每一个模型，按身份去重后的行。 */
 function readRows(list) {
   const rows = [];
   const seen = new Set();
   for (const option of list.querySelectorAll(OPTION_SELECTOR)) {
-    const group = typeof option.closest === "function" ? option.closest(GROUP_SELECTOR) : null;
+    // 自建视图里的按钮也是 .composer-model-option，不能把它们当成原生行。
+    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
+    const group = closestOf(option, GROUP_SELECTOR);
     const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
     const identity = identityOf(option, groupLabel);
     if (seen.has(identity.key)) continue;
@@ -112,56 +159,179 @@ function readRows(list) {
     rows.push({
       option,
       key: identity.key,
+      provider: identity.provider,
+      modelId: identity.modelId,
+      recent: identity.recent,
       label: textOf(option.querySelector(LABEL_SELECTOR)) || identity.modelId,
     });
   }
   return rows;
 }
 
-// Our own DOM writes must not feed the observer back into another rebuild.
-function dropRecords() {
-  if (listObserver) listObserver.takeRecords();
+/** 原生分组的顺序（最近使用那一组不算供应商）。 */
+function providerOrder(list) {
+  const order = [];
+  for (const group of list.querySelectorAll(GROUP_SELECTOR)) {
+    const option = group.querySelector(OPTION_SELECTOR);
+    if (!option) continue;
+    if (String(option.getAttribute("title") || "").indexOf(" · ") > 0) continue;
+    const label = textOf(group.querySelector(GROUP_LABEL_SELECTOR));
+    if (label && !order.includes(label)) order.push(label);
+  }
+  return order;
 }
 
-// --------------------------------------------------------------------- build
-
-function clearFlat(list) {
-  const flat = childByClass(list, FLAT_CLASS);
-  if (!flat) return;
-  building = true;
-  flat.remove();
-  dropRecords();
-  building = false;
+function insertSorted(bucket, row) {
+  const at = bucket.findIndex((existing) => compareRows(row, existing) < 0);
+  if (at === -1) bucket.push(row);
+  else bucket.splice(at, 0, row);
 }
 
-function buildFlat(list) {
+// ------------------------------------------------------------------- rendering
+
+/**
+ * 一行自建选项。克隆保留宿主的样子（标签、徽标、上下文读数、对勾），只去掉两样
+ * 东西：键盘高亮的瞬时类，以及「最近使用」行右侧那枚来源 —— 需求是来源不写在
+ * 右边，按名称时它改由下方那行淡字承担。
+ */
+function buildRow(row, showSource) {
+  const item = row.option.cloneNode(true);
+  item.removeAttribute("data-model-index");
+  if (item.classList) item.classList.remove("kb-active");
+  item.setAttribute(ITEM_ATTR, row.key);
+  const main = item.querySelector(OPTION_MAIN_SELECTOR);
+  if (main) {
+    if (row.recent) {
+      const meta = main.querySelector(META_SELECTOR);
+      if (meta) meta.remove();
+    }
+    if (showSource && row.provider) main.setAttribute(PROVIDER_ATTR, row.provider);
+  }
+  item.addEventListener("click", (event) => {
+    event.preventDefault();
+    // 克隆行只是原生按钮的替身：真正的点击交给隐藏着的原生按钮，选中模型
+    // 仍然完全由宿主的 React 逻辑完成。
+    if (typeof row.option.click === "function") row.option.click();
+  });
+  return item;
+}
+
+function buildGroup(label, rows, showSource) {
+  const group = document.createElement("div");
+  group.className = "composer-model-group";
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", label);
+  const heading = document.createElement("div");
+  heading.className = "composer-model-group-label";
+  heading.textContent = label;
+  group.append(heading);
+  for (const row of rows) group.append(buildRow(row, showSource));
+  return group;
+}
+
+/**
+ * 按供应商：每个供应商一组，顺序沿用宿主；最近使用过的模型按名称插回它所属的
+ * 那一组（分组不存在时补一个同名分组）。
+ */
+function groupedView(rows, order) {
+  const buckets = new Map();
+  for (const label of order) buckets.set(label, []);
+  const bucketFor = (provider) => {
+    if (!buckets.has(provider)) buckets.set(provider, []);
+    return buckets.get(provider);
+  };
+  for (const row of rows) if (!row.recent) bucketFor(row.provider).push(row);
+  for (const row of rows) if (row.recent) insertSorted(bucketFor(row.provider), row);
+
+  const groups = [];
+  for (const [label, bucket] of buckets) {
+    if (!bucket.length) continue;
+    groups.push(buildGroup(label, bucket, false));
+  }
+  return groups;
+}
+
+function renderView(list) {
+  // 自己在原生列表里挂节点，这些改动不能反过来触发一次重建：先挂起观察者，
+  // 建完把这一批记录丢掉。
   building = true;
-  let flat = childByClass(list, FLAT_CLASS);
-  // 先清空再读：平铺按钮同样是 .composer-model-option，留着会被当成原生行。
-  if (flat) flat.textContent = "";
+  const previous = childByClass(list, VIEW_CLASS);
+  if (previous) previous.remove();
+
   const rows = readRows(list);
-  rows.sort(compareRows);
-  if (!flat) {
-    flat = document.createElement("div");
-    flat.className = FLAT_CLASS;
-    list.append(flat);
+  const view = document.createElement("div");
+  view.className = VIEW_CLASS;
+  view.setAttribute(LAYOUT_ATTR, grouping);
+
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "composer-model-empty";
+    empty.textContent = textOf(list.querySelector(EMPTY_SELECTOR));
+    view.append(empty);
+  } else if (grouping === "name") {
+    rows.sort(compareRows);
+    for (const row of rows) view.append(buildRow(row, true));
+  } else {
+    for (const group of groupedView(rows, providerOrder(list))) view.append(group);
   }
-  for (const row of rows) {
-    const item = row.option.cloneNode(true);
-    item.removeAttribute("data-model-index");
-    if (item.classList) item.classList.remove("kb-active");
-    item.setAttribute("data-piopt-mp-item", row.key);
-    item.addEventListener("click", (event) => {
-      event.preventDefault();
-      // The clone only stands in for the host's own button: the real click goes
-      // to the hidden original, so selection stays entirely React's business.
-      if (typeof row.option.click === "function") row.option.click();
-    });
-    flat.append(item);
-  }
-  dropRecords();
+
+  list.append(view);
+  if (listObserver) listObserver.takeRecords();
   building = false;
-  return rows.length;
+  syncHighlight(list);
+}
+
+// --------------------------------------------------------------------- switch
+
+function copyOf() {
+  const lang = (document.documentElement && document.documentElement.lang) || "";
+  return /^en\b/i.test(lang) ? COPY.en : COPY.zh;
+}
+
+/**
+ * 搜索框右侧的切换按钮：点一下换一种排列。
+ *
+ * 按钮挂在宿主那枚 `<label class="composer-model-search">` 里。React 只管它自己
+ * 的三个子节点（图标、读屏文案、输入框），多出来的一颗按钮不会被它收走。
+ */
+function syncSwitch(menuElement) {
+  const search = menuElement.querySelector(SEARCH_SELECTOR);
+  if (!search) return null;
+  let button = childByClass(search, SWITCH_CLASS);
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = SWITCH_CLASS;
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void setGrouping(grouping === "provider" ? "name" : "provider");
+    });
+    search.append(button);
+  }
+  const copy = copyOf();
+  button.textContent = copy[grouping];
+  const hint = grouping === "provider" ? copy.toName : copy.toProvider;
+  button.title = hint;
+  button.setAttribute("aria-label", `${copy[grouping]} · ${hint}`);
+  return button;
+}
+
+async function setGrouping(next) {
+  if (!GROUPINGS.includes(next) || next === grouping) return grouping;
+  grouping = next;
+  if (menu) {
+    syncSwitch(menu);
+    sync();
+  }
+  if (host && typeof host.dispatch === "function") {
+    try {
+      await host.dispatch("plugin.call", { method: "setModelPickerGrouping", args: { grouping: next } });
+    } catch {
+      // 存不进去也先把这一份用法留住：浮窗已经按新方式排好了。
+    }
+  }
+  return grouping;
 }
 
 // ---------------------------------------------------------------------- sync
@@ -176,27 +346,18 @@ function sync() {
   if (!list) return;
 
   target.setAttribute(EXPANDED_ATTR, "true");
+  syncSwitch(target);
 
   // 宿主的折叠入口：点一次把它全部展开，然后它在 CSS 里被藏掉，用户不能再收起。
-  // 点击是异步生效的，所以这一轮先让原生列表照常显示，展开后的下一轮再平铺，
-  // 免得浮窗先空一下。
+  // 点击是异步生效的，这一轮先让原生列表照常显示，展开后的下一轮再建视图，免得
+  // 浮窗先空一下。
   const collapse = childByClass(list, COLLAPSE_CLASS);
   if (collapse && collapse.getAttribute("aria-expanded") === "false") {
-    target.removeAttribute(MODE_ATTR);
     if (typeof collapse.click === "function") collapse.click();
     return;
   }
 
-  // 搜索时由宿主自己筛结果，平铺列表让开，不跟它的过滤结果打架。
-  if (target.getAttribute(SEARCH_ATTR) === "true") return;
-
-  if (grouping === "name") {
-    target.setAttribute(MODE_ATTR, grouping);
-    buildFlat(list);
-  } else {
-    target.removeAttribute(MODE_ATTR);
-    clearFlat(list);
-  }
+  renderView(list);
 }
 
 function scheduleSync() {
@@ -208,26 +369,26 @@ function scheduleSync() {
 }
 
 /**
- * 把宿主的键盘高亮（`.kb-active`）抄到平铺列表上。
+ * 把宿主的键盘高亮（`.kb-active`）抄到自建行上。
  *
- * 方向键由宿主处理，它只会在原生按钮上换高亮；平铺列表里的按钮是克隆体，所以
- * 每次高亮变化都要跟着挪一下，否则按方向键时光标停在看不见的原生行上。
+ * 方向键由宿主处理，它只会在原生按钮上换高亮；自建行是克隆体，所以每次高亮
+ * 变化都要跟着挪一下，否则按方向键时光标停在看不见的原生行上。
  */
 function syncHighlight(list) {
-  const flat = childByClass(list, FLAT_CLASS);
-  if (!flat) return;
+  const view = childByClass(list, VIEW_CLASS);
+  if (!view) return;
   let activeKey = null;
   for (const option of list.querySelectorAll(`${OPTION_SELECTOR}.kb-active`)) {
-    // 平铺行也是 `.composer-model-option`，而且此刻正被同步；只看原生行，否则
-    // 移除高亮时会被自己的克隆体说服「还有人高亮着」。
-    if (typeof option.closest === "function" && option.closest(`.${FLAT_CLASS}`)) continue;
-    const group = typeof option.closest === "function" ? option.closest(GROUP_SELECTOR) : null;
+    // 自建行此刻正被同步，只看原生行，否则移除高亮时会被自己的克隆体说服
+    // 「还有人高亮着」。
+    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
+    const group = closestOf(option, GROUP_SELECTOR);
     const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
     activeKey = identityOf(option, groupLabel).key;
     break;
   }
-  for (const item of flat.children) {
-    const active = activeKey !== null && item.getAttribute("data-piopt-mp-item") === activeKey;
+  for (const item of view.querySelectorAll(`[${ITEM_ATTR}]`)) {
+    const active = activeKey !== null && item.getAttribute(ITEM_ATTR) === activeKey;
     if (item.classList) item.classList.toggle("kb-active", active);
     if (active && typeof item.scrollIntoView === "function") item.scrollIntoView({ block: "nearest" });
   }
@@ -246,8 +407,11 @@ function unbindMenu() {
   }
   if (menu) {
     const list = menu.querySelector(LIST_SELECTOR);
-    if (list) clearFlat(list);
-    menu.removeAttribute(MODE_ATTR);
+    const view = list ? childByClass(list, VIEW_CLASS) : null;
+    if (view) view.remove();
+    const search = menu.querySelector(SEARCH_SELECTOR);
+    const button = search ? childByClass(search, SWITCH_CLASS) : null;
+    if (button) button.remove();
     menu.removeAttribute(SEARCH_ATTR);
     menu.removeAttribute(EXPANDED_ATTR);
   }
@@ -262,9 +426,9 @@ function bindMenu(element) {
     listObserver = new MutationObserver((records) => {
       if (building) return;
       for (const record of records) {
+        if (isOurs(record)) continue;
         const node = record.target;
-        // 平铺列表是我们自己的节点，它的增删不该再触发一次重建。
-        if (isElement(node) && typeof node.closest === "function" && node.closest(`.${FLAT_CLASS}`)) continue;
+        if (closestOf(node, `.${VIEW_CLASS}`)) continue;
         // 只是键盘高亮换了一行：跟着挪一下，别整份重建。
         if (record.type === "attributes" && record.attributeName === "class") {
           syncHighlight(element.querySelector(LIST_SELECTOR));
@@ -295,7 +459,10 @@ async function refreshGrouping() {
     const next = state && state.config ? state.config.grouping : state && state.grouping;
     if (GROUPINGS.includes(next) && next !== grouping) {
       grouping = next;
-      if (menu) sync();
+      if (menu) {
+        syncSwitch(menu);
+        sync();
+      }
     }
   } catch {
     // 读不到就沿用上一次的排列方式，浮窗本身照常工作。
@@ -306,7 +473,7 @@ function onDocumentInput(event) {
   const target = event ? event.target : null;
   if (!menu || !isElement(target) || typeof target.closest !== "function") return;
   if (!target.closest(SEARCH_INPUT_SELECTOR)) return;
-  // 搜索由宿主自己筛：它一有查询就把平铺列表让开，把原生结果放回来。
+  // 搜索由宿主自己筛：一有查询就把自建视图让开，把原生结果放回来。
   if (String(target.value || "").trim()) menu.setAttribute(SEARCH_ATTR, "true");
   else {
     menu.removeAttribute(SEARCH_ATTR);
@@ -356,10 +523,12 @@ export function unmountModelPicker() {
 export const __internals = {
   MENU_SELECTOR,
   LIST_SELECTOR,
-  FLAT_CLASS,
-  MODE_ATTR,
+  VIEW_CLASS,
+  SWITCH_CLASS,
   SEARCH_ATTR,
   EXPANDED_ATTR,
+  LAYOUT_ATTR,
+  PROVIDER_ATTR,
   DEFAULT_GROUPING,
   GROUPINGS,
 };

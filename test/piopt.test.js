@@ -104,10 +104,10 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
   assert.equal(/<script>/.test(html), false, "inline scripts would share one global scope");
   assert.match(html, /id="view-market"/);
   assert.match(html, /id="view-appearance"/);
-  // 行为那一屏有自己的控件：模型浮窗的排列方式。
+  // 行为那一屏只念当前值：切换按钮在浮窗里，面板不再放第二个开关。
   assert.match(html, /id="view-behavior"[^>]*>\s*<main class="workspace">/);
-  assert.match(html, /data-model-grouping="provider"/);
-  assert.match(html, /data-model-grouping="name"/);
+  assert.match(html, /id="behavior-grouping"/);
+  assert.doesNotMatch(html, /data-model-grouping/);
   // One view, two sections: motion and the material are not separate panels.
   assert.match(html, /id="section-motion"/);
   assert.match(html, /id="section-glass"/);
