@@ -18,7 +18,7 @@ console.log(JSON.stringify({css:motion.buildThemeCss({speed:.4})+glass.buildGlas
 # Host 0.21 declarations involved in these regressions, including glass priority.
 HOST = '''
 [hidden]{display:none!important} body{margin:0}
-.shell{display:flex;height:500px;width:1000px}.main{flex:1;min-width:0}
+.shell,.app-chat-shell{display:flex;height:500px;width:1000px;overflow:hidden}.main{flex:1;min-width:0}
 .work-panel{flex:0 0 var(--work-panel-width);width:var(--work-panel-width);min-width:0;position:relative}
 .dock{width:400px;overflow:hidden}.dock-content{display:grid;grid-template-rows:0fr;opacity:0;transform:translateY(-4px)}
 .dock.is-expanded .dock-content{grid-template-rows:1fr;opacity:1;transform:none}
@@ -43,13 +43,19 @@ with sync_playwright() as p:
     page.add_style_tag(content=page.evaluate('motion.MOTION_RUNTIME_CSS'))
 
     # Work panel must beat the later glass animation:none!important rule.
-    page.evaluate('''() => {document.body.insertAdjacentHTML('beforeend', '<div class="shell"><main class="main"></main><aside class="work-panel" style="--work-panel-width:400px"></aside></div>')}''')
+    page.evaluate('''() => {document.body.insertAdjacentHTML('beforeend', '<div class="shell app-chat-shell"><main class="main"><div class="thread-content">Conversation</div></main><aside class="work-panel" style="--work-panel-width:400px"><div class="work-panel-main"><p>Long text stays on the same lines throughout the entire slide.</p></div></aside></div>')}''')
     assert page.locator('.work-panel').evaluate('(e)=>getComputedStyle(e).animationName') == 'work-panel-in-pm'
     page.wait_for_timeout(700)
     page.locator('.work-panel').evaluate('(e)=>e.classList.add("is-exiting")')
     assert page.locator('.work-panel').evaluate('(e)=>getComputedStyle(e).animationName') == 'work-panel-out-pm'
+    samples = page.evaluate('''async () => {const result=[];for(let i=0;i<8;i++){await new Promise(requestAnimationFrame);result.push({main:document.querySelector('.main').getBoundingClientRect().width,inner:document.querySelector('.work-panel-main').getBoundingClientRect().width,left:document.querySelector('.work-panel-main').getBoundingClientRect().left})}return result}''')
+    assert all(abs(s['inner']-400)<1 for s in samples), samples
+    assert all(samples[i]['main']<=samples[i+1]['main'] for i in range(len(samples)-1)), samples
+    assert samples[-1]['left']>samples[0]['left'], samples
     page.wait_for_timeout(220)
-    page.locator('.work-panel').evaluate('(e)=>e.remove()')
+    handoff = page.evaluate('''async () => {const old=document.querySelector('.work-panel');const before=old.getBoundingClientRect().width;old.remove();await Promise.resolve();const ghost=document.querySelector('[data-pm-ghost].work-panel');return {before,after:ghost.getBoundingClientRect().width,cssAnimations:ghost.getAnimations().filter(a=>a.animationName).length}}''')
+    assert abs(handoff['before']-handoff['after'])<4, handoff
+    assert handoff['cssAnimations']==0, handoff
     page.wait_for_timeout(10)
     assert page.locator('[data-pm-ghost].work-panel').count() == 1
     page.evaluate('''() => {document.querySelector('.shell').insertAdjacentHTML('beforeend','<aside class="work-panel" style="--work-panel-width:400px"></aside>')}''')
@@ -101,11 +107,18 @@ with sync_playwright() as p:
     page.wait_for_timeout(400)
     assert page.locator('[data-pm-ghost].context-menu').count() == 0
 
+    first_frame = page.evaluate('''() => {const el=document.createElement('div');el.className='composer-model-menu composer-model-thinking-menu is-open';el.innerHTML='<div>Native UI</div>';document.body.append(el);const visibility=getComputedStyle(el).visibility;el.remove();return visibility}''')
+    assert first_frame == 'hidden'
+    page.wait_for_timeout(10)
+    assert page.locator('[data-pm-ghost].composer-model-menu').count() == 0
     page.add_script_tag(content='(() => {' + PICKER + '\nwindow.picker = {mountModelPicker,unmountModelPicker};})()')
     page.evaluate('''() => {document.body.insertAdjacentHTML('beforeend', `<div class="composer-model-menu composer-model-thinking-menu is-open"><div class="composer-menu-root"><div class="composer-model-search"><input></div><div class="composer-model-list"><button class="composer-menu-entry" aria-expanded="false">Other models</button><div class="composer-model-group"><div class="composer-model-group-label">Provider</div><button class="composer-model-option" title="model-1"><span class="composer-model-option-main"><span class="composer-model-label">Model 1</span></span></button></div></div></div></div>`);return picker.mountModelPicker({dispatch:async()=>({config:{grouping:'provider'}})})}''')
     assert page.locator('.piopt-mp-view').count() == 0
-    assert page.locator('.composer-model-group').evaluate('(e)=>getComputedStyle(e).display') != 'none'
+    assert page.locator('.composer-model-menu').evaluate('(e)=>getComputedStyle(e).visibility') == 'hidden'
     page.locator('.composer-menu-entry').evaluate('(e)=>e.setAttribute("aria-expanded","true")')
+    page.wait_for_timeout(75)
+    assert page.locator('.composer-model-menu').evaluate('(e)=>e.getAnimations().some(a=>a.effect.getKeyframes().some(f=>f.transform && f.transform!=="none"))')
+    assert page.locator('.composer-model-search input').evaluate('(e)=>document.activeElement===e')
     page.wait_for_timeout(150)
     page.evaluate('window.stableView=document.querySelector(".piopt-mp-view")')
     page.wait_for_timeout(250)
@@ -114,6 +127,16 @@ with sync_playwright() as p:
     page.wait_for_timeout(120)
     assert page.evaluate('stableView===document.querySelector(".piopt-mp-view")')
     print('PASS model picker: no self-triggered rebuild or replay on class changes')
+    page.locator('.composer-model-menu').evaluate('(e)=>e.remove()')
+    page.wait_for_timeout(10)
+    assert page.locator('[data-pm-ghost].composer-model-menu').evaluate('(e)=>e.getAnimations().some(a=>a.effect.getKeyframes().some(f=>f.transform && f.transform!=="none"))')
+    page.wait_for_timeout(550)
+    assert page.locator('[data-pm-ghost].composer-model-menu').count() == 0
+    page.evaluate('''() => {const old=document.createElement('div');old.className='sidebar-floating-menu sidebar-row-menu';old.setAttribute('role','menu');old.addEventListener('keydown',e=>{if(e.key==='Escape'){window.oldMenuClosed=true;old.remove()}});document.body.append(old);document.querySelector('.main').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))}''')
+    assert page.evaluate('window.oldMenuClosed===true')
+    assert page.locator('.sidebar-floating-menu').count() == 0
+    assert page.locator('[data-pm-ghost].sidebar-row-menu').count() == 0
+    print('PASS context menu exclusivity: new chat context request closes sidebar host state')
     assert not errors, errors
     page.evaluate('picker.unmountModelPicker();motion.unmountMotionRuntime()')
     browser.close()

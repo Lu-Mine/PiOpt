@@ -58,6 +58,8 @@ const COPY = {
 // has already touched, so an untouched popup keeps the host's own look.
 export const MODEL_PICKER_CSS = [
   /* 探测某个模型的能力时把内容藏起来（布局不动，浮窗坐标不抖）。 */
+  `.composer-model-menu:not([data-piopt-mp-ready="true"]):not([data-pm-ghost]){opacity:0!important;visibility:hidden!important;pointer-events:none!important;animation:none!important;transition:none!important}`,
+  `.composer-model-menu[data-piopt-mp-ready="true"]{transform-origin:100% 100%;transition:none!important}`,
   `.composer-model-menu[${PROBING_ATTR}]{opacity:0!important;visibility:hidden!important;transition:none!important;animation:none!important}`,
   `.composer-model-menu[${PROBING_ATTR}] .composer-menu-root{visibility:hidden}`,
   /* 「其他模型」是折叠入口，展开后就没用了：藏掉它，收起这条路也一起消失。 */
@@ -692,6 +694,11 @@ function sync() {
   }
 
   renderView(list);
+  if (!target.hasAttribute(PROBING_ATTR) && target.getAttribute("data-piopt-mp-ready") !== "true") {
+    target.setAttribute("data-piopt-mp-ready", "true");
+    // Positioning has already completed while hidden; focus only our own search input.
+    target.querySelector(SEARCH_INPUT_SELECTOR)?.focus({ preventScroll: true });
+  }
 }
 
 function scheduleSync() {

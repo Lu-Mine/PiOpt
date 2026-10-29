@@ -30,6 +30,7 @@ export const MOTION_RUNTIME_CSS = [
   `[${LAYER_ATTR}]{position:fixed;inset:0;z-index:2147483640;pointer-events:none;overflow:hidden}`,
   `[${GHOST_ATTR}]{pointer-events:none!important;user-select:none!important;-webkit-user-select:none!important}`,
   `[${GHOST_ATTR}], [${GHOST_ATTR}] *{animation:none!important;transition:none!important}`,
+  `[data-pm-superseded="true"]{visibility:hidden!important;pointer-events:none!important}`,
 ].join("\n");
 
 // Inline disclosures unmounted by React on collapse.
@@ -235,6 +236,9 @@ function sanitizeClone(source) {
   clone.setAttribute(GHOST_ATTR, "true");
   clone.setAttribute("aria-hidden", "true");
   clone.inert = true;
+  // Inline priority beats host component selectors that also use !important.
+  // WAAPI effects below remain active; CSS entry keyframes must never replay on a ghost.
+  clone.style.setProperty("animation", "none", "important");
   const strip = (el) => {
     if (!isElement(el)) return;
     el.removeAttribute("id");
@@ -269,6 +273,7 @@ function overlaySignature(el) {
 }
 
 function classifyOverlay(el) {
+  if (matches(el, ".composer-model-menu")) return "model-picker";
   if (matches(el, ".plugins-sheet-layer,.plugins-reviews-layer,.mcpm-overlay,.sklm-overlay")) return "sheet-layer";
   if (matches(el, ".search-overlay")) return "search-layer";
   if (matches(el, ".overlay,.plugins-modal-backdrop,.composer-image-preview,.generated-image-viewer")) return "dialog-layer";
@@ -287,6 +292,7 @@ const REQUIRES_OPEN_CLASS = new Set(
 );
 
 function wasVisiblyOpen(el, snap) {
+  if (matches(el, ".composer-model-menu") && el.getAttribute("data-piopt-mp-ready") !== "true") return false;
   if (el.hasAttribute && el.hasAttribute("data-piopt-mp-probing")) return false;
   for (const cls of REQUIRES_OPEN_CLASS) {
     if (el.classList && el.classList.contains(cls) && !el.classList.contains("is-open")) {
@@ -628,11 +634,13 @@ function overlayKeyframes(kind, tokens, progressFrom = 0, progressTo = 1) {
       { opacity: roundAlpha(progressTo) },
     ];
   }
-  if (kind === "popover") {
-    const y0 = lerp(tokens.distanceXs, 0, progressFrom);
-    const y1 = lerp(tokens.distanceXs, 0, progressTo);
-    const s0 = lerp(tokens.scaleSubtle, 1, progressFrom);
-    const s1 = lerp(tokens.scaleSubtle, 1, progressTo);
+  if (kind === "popover" || kind === "model-picker") {
+    const distance = kind === "model-picker" ? tokens.distanceMd : tokens.distanceXs;
+    const scale = kind === "model-picker" ? tokens.scaleFrom : tokens.scaleSubtle;
+    const y0 = lerp(distance, 0, progressFrom);
+    const y1 = lerp(distance, 0, progressTo);
+    const s0 = lerp(scale, 1, progressFrom);
+    const s1 = lerp(scale, 1, progressTo);
     return [
       { opacity: roundAlpha(progressFrom), transform: `translateY(${roundPx(y0)}px) scale(${roundScale(s0)})` },
       { opacity: roundAlpha(progressTo), transform: progressTo === 1 ? "none" : `translateY(${roundPx(y1)}px) scale(${roundScale(s1)})` },
@@ -646,6 +654,7 @@ function overlayKeyframes(kind, tokens, progressFrom = 0, progressTo = 1) {
 
 function durationForOverlay(kind, tokens) {
   if (kind === "dialog-layer" || kind === "search-layer" || kind === "sheet-layer") return tokens.slow;
+  if (kind === "model-picker") return tokens.base;
   return tokens.fast;
 }
 
@@ -659,10 +668,23 @@ function syncSettingsCategory(tokens) {
   if (category === settingsCategory) return;
   settingsCategory = category;
   const content = title.closest(".settings-content-enter");
+  const interrupted = settingsAnimation?.playState === "running";
+  const current = interrupted && typeof getComputedStyle === "function" ? getComputedStyle(content) : null;
+  const from = { opacity: current ? current.opacity : .65, transform: current ? current.transform : `translateY(${tokens.distanceSm}px)` };
   if (settingsAnimation) settingsAnimation.cancel();
   settingsAnimation = runAnimation(content,
-    [{ opacity: .55 }, { opacity: 1 }],
+    [from, { opacity: 1, transform: "none" }],
     { duration: tokens.base, easing: tokens.easeSymmetric });
+  for (const [index, block] of [...content.children].slice(0, 6).entries()) {
+    const previous = (block.getAnimations?.() || []).filter(a => a.id === "piopt-settings-reveal");
+    const style = previous.length && typeof getComputedStyle === "function" ? getComputedStyle(block) : null;
+    const start = { opacity: style ? style.opacity : .6, transform: style ? style.transform : `translateY(${tokens.distanceSm}px)` };
+    for (const animation of previous) animation.cancel();
+    const animation = runAnimation(block,
+      [start, { opacity: 1, transform: "none" }],
+      { duration: tokens.base, delay: previous.length ? 0 : Math.min(index * 18, 72), easing: tokens.easeSymmetric, fill: "backwards" });
+    if (animation) animation.id = "piopt-settings-reveal";
+  }
 }
 
 function handleOverlayOpened(el, tokens) {
@@ -671,6 +693,7 @@ function handleOverlayOpened(el, tokens) {
   const sig = overlaySignature(el);
   const fullDuration = durationForOverlay(kind, tokens);
   if (el.hasAttribute("data-piopt-mp-probing")) return;
+  if (matches(el, ".composer-model-menu") && el.getAttribute("data-piopt-mp-ready") !== "true") return;
   const box = el.getBoundingClientRect();
   if (box.width > 0 && box.height > 0) {
     rectSnapshots.set(el, { top: box.top, left: box.left, width: box.width, height: box.height });
@@ -694,7 +717,7 @@ function handleOverlayOpened(el, tokens) {
   activeOverlayEntrances.set(el, record);
 
   // If resuming from an interrupted dismissal, drive the element smoothly from `startProgress` to 1.
-  if (startProgress > 0.02) {
+  if (startProgress > 0.02 || matches(el, ".composer-model-menu")) {
     if (kind === "dialog-layer" || kind === "search-layer" || kind === "sheet-layer") {
       animateCompoundLayer(el, kind, tokens, startProgress, 1, record.duration);
     } else {
@@ -760,6 +783,7 @@ function animateCompoundLayer(root, kind, tokens, fromP, toP, duration, onDone) 
 }
 
 function handleOverlayRemoved(el, tokens) {
+  if (el.hasAttribute("data-pm-superseded")) return;
   const kind = classifyOverlay(el);
   if (!kind) return;
   const snap = rectSnapshots.get(el);
@@ -988,8 +1012,8 @@ function handleSidebarPrematureUnmount(el, parent, nextSibling, tokens, workPane
   const continuation = runAnimation(
     ghost,
     [
-      { flexBasis: `${roundPx(flight.fromWidth)}px`, width: `${roundPx(flight.fromWidth)}px`, transform: `translateX(${roundPx((1 - flight.fromWidth / flight.targetWidth) * tokens.distancePanel * (workPanel ? 1 : -1))}px)` },
-      { flexBasis: "0px", width: "0px", transform: `translateX(${roundPx(tokens.distancePanel * (workPanel ? 1 : -1))}px)` },
+      { flexBasis: `${roundPx(flight.fromWidth)}px`, width: `${roundPx(flight.fromWidth)}px`, ...(workPanel ? {} : {transform: `translateX(${roundPx((1 - flight.fromWidth / flight.targetWidth) * -tokens.distancePanel)}px)`}) },
+      { flexBasis: "0px", width: "0px", ...(workPanel ? {} : {transform: `translateX(${roundPx(-tokens.distancePanel)}px)`}) },
     ],
     { duration, easing: tokens.easeSymmetric },
     () => record.cleanup()
@@ -1026,9 +1050,8 @@ function processMutations(records) {
     for (const node of record.removedNodes) if (isElement(node) && !isGhost(node)) batchRemoved.add(node);
   }
   syncSettingsCategory(tokens);
-
   for (const record of records) {
-    if (record.type === "attributes" && record.attributeName === "class") {
+    if (record.type === "attributes" && (record.attributeName === "class" || record.attributeName === "data-piopt-mp-ready")) {
       const target = record.target;
       if (!isElement(target) || isGhost(target)) continue;
       if (target.classList.contains("work-panel")) {
@@ -1037,7 +1060,8 @@ function processMutations(records) {
         syncChromePanel(target, "sidebar", tokens);
       } else if (matches(target, ALL_PORTAL_SELECTOR)) {
         const wasOpen = String(record.oldValue || "").split(/\s+/).includes("is-open");
-        if (target.classList.contains("is-open") && !wasOpen) handleOverlayOpened(target, tokens);
+        const newlyOpened = record.attributeName === "data-piopt-mp-ready" ? record.oldValue !== "true" : !wasOpen;
+        if (target.classList.contains("is-open") && newlyOpened) handleOverlayOpened(target, tokens);
         // Keep the incoming flight until removal: it is needed for a quick dismissal.
       }
       continue;
@@ -1112,10 +1136,24 @@ function processMutations(records) {
 
 // ---------------------------------------------------------------- lifecycle
 
+function closePreviousContextMenus(event) {
+  const source = isElement(event.target) ? event.target : event.target?.parentElement;
+  for (const old of document.querySelectorAll(".sidebar-floating-menu,.context-menu:not(.context-menu-submenu)")) {
+    if (isGhost(old) || old.contains(source)) continue;
+    // Invoke the host's own state cleanup, rather than leaving a hidden live menu.
+    old.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    old.setAttribute("data-pm-superseded", "true");
+  }
+  for (const [key, record] of [...activeOverlayGhosts]) {
+    if (/menu/.test(key)) record.cleanup();
+  }
+}
+
 export function mountMotionRuntime() {
   if (typeof document === "undefined" || !document.documentElement) return;
   if (!listenersBound && typeof document.addEventListener === "function") {
     document.addEventListener("pointerdown", captureSnapshot, true);
+    document.addEventListener("contextmenu", closePreviousContextMenus, true);
     document.addEventListener("click", captureSnapshot, true);
     document.addEventListener("keydown", captureSnapshot, true);
     listenersBound = true;
@@ -1128,7 +1166,7 @@ export function mountMotionRuntime() {
       attributes: true,
       attributeOldValue: true,
       characterData: true,
-      attributeFilter: ["class"],
+      attributeFilter: ["class", "data-piopt-mp-ready"],
     });
   }
 }
@@ -1141,6 +1179,7 @@ export function unmountMotionRuntime() {
   if (listenersBound && typeof document !== "undefined" && typeof document.removeEventListener === "function") {
     document.removeEventListener("pointerdown", captureSnapshot, true);
     document.removeEventListener("click", captureSnapshot, true);
+    document.removeEventListener("contextmenu", closePreviousContextMenus, true);
     document.removeEventListener("keydown", captureSnapshot, true);
     listenersBound = false;
   }

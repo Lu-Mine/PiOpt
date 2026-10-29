@@ -408,6 +408,11 @@ details[open]::details-content{block-size:auto;opacity:1}
 :is(.drawer-content,[data-side=right]){animation:pm-panel-right-in var(--pm-slow) var(--pm-ease-out) backwards}
 .work-panel:not(.work-panel-pending):not(.is-exiting):not(.is-exit-pending):not([data-resizing=true]){animation:work-panel-in-pm var(--pm-slow) var(--pm-ease-symmetric) backwards!important}
 .work-panel.work-panel.is-exiting{animation:work-panel-out-pm var(--pm-slow) var(--pm-ease-symmetric) both!important;overflow:hidden}
+/* The flex allocation changes once per frame, but the sheet's content stays rigid.
+   Its left edge moves toward the viewport edge, carrying unchanged text with it. */
+.work-panel:not(.is-maximized):not([data-resizing=true])>.work-panel-main{flex:0 0 var(--work-panel-width);width:var(--work-panel-width);min-width:var(--work-panel-width)}
+.app-chat-shell:has(.work-panel) :is(.thread-content,.composer-stack,.home-stack-inner){transition:none!important}
+.app-chat-shell:has(.work-panel){overflow-x:clip}
 /* Keep the Todo panel measurable while the enclosing grid collapses. The host
    hides this panel immediately, otherwise its intrinsic height becomes zero. */
 .dock:not(.is-expanded) .dock-panel[hidden]:has(.todo-dock-list){display:block!important;pointer-events:none}
@@ -450,8 +455,8 @@ ${skeletonRule}
 @keyframes pm-toast-in{from{opacity:0;transform:translateY(calc(var(--pm-distance-sm) * -1)) scale(var(--pm-scale-subtle))}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes toast-out-pm{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(calc(var(--pm-distance-sm) * -1)) scale(var(--pm-scale-subtle))}}
 @keyframes pm-panel-right-in{from{transform:translateX(var(--pm-distance-panel))}to{transform:translateX(0)}}
-@keyframes work-panel-in-pm{from{flex-basis:var(--pm-wp-from,0px);width:var(--pm-wp-from,0px);transform:translateX(var(--pm-wp-shift,var(--pm-distance-panel)))}to{flex-basis:var(--work-panel-width);width:var(--work-panel-width);transform:translateX(0)}}
-@keyframes work-panel-out-pm{from{flex-basis:var(--pm-wp-from,var(--work-panel-width));width:var(--pm-wp-from,var(--work-panel-width));transform:translateX(var(--pm-wp-shift,0px))}to{flex-basis:0;width:0;transform:translateX(var(--pm-distance-panel))}}
+@keyframes work-panel-in-pm{from{flex-basis:var(--pm-wp-from,0px);width:var(--pm-wp-from,0px)}to{flex-basis:var(--work-panel-width);width:var(--work-panel-width)}}
+@keyframes work-panel-out-pm{from{flex-basis:var(--pm-wp-from,var(--work-panel-width));width:var(--pm-wp-from,var(--work-panel-width))}to{flex-basis:0;width:0}}
 @keyframes sidebar-in-pm{from{flex-basis:var(--pm-sb-from,0px);width:var(--pm-sb-from,0px);transform:translateX(var(--pm-sb-shift,calc(var(--pm-distance-panel) * -1)))}to{flex-basis:var(--ds-sidebar-width);width:var(--ds-sidebar-width);transform:translateX(0)}}
 @keyframes sidebar-out-pm{from{flex-basis:var(--pm-sb-from,var(--ds-sidebar-width));width:var(--pm-sb-from,var(--ds-sidebar-width));transform:translateX(var(--pm-sb-shift,0px))}to{flex-basis:0;width:0;transform:translateX(calc(var(--pm-distance-panel) * -1))}}
 @keyframes pm-panel-left-in{from{transform:translateX(calc(var(--pm-distance-panel) * -1))}to{transform:translateX(0)}}
