@@ -291,7 +291,7 @@ function fakeProcesses() {
       const child = new EventEmitter();
       child.pid = next++;
       child.exitCode = null;
-      spawned.push({ cmd, args, cwd: options.cwd, pid: child.pid });
+      spawned.push({ cmd, args, cwd: options.cwd, pid: child.pid, detached: options.detached === true });
       return child;
     },
     async killTree(pid) { killed.push(pid); },
@@ -382,6 +382,81 @@ test("reap after a crash kills only recorded pids that still match their spec", 
   const reaped = await reloaded.reap(base);
   assert.deepEqual(reaped, ["gateway"]);
   assert.deepEqual(second.killed, [gwPid]);
+});
+
+test("a development reload adopts the instance that is still serving", async t => {
+  const runtime = require("../features/gateway/runtime.js");
+  const server = await listen(() => {});
+  t.after(() => server.close());
+  const ports = { gateway: server.address().port, workbuddy: await freePort() };
+  const base = { ...tmpRoot(t, true), probeEnabled: true, ports };
+  const gwPid = 4242;
+
+  // What the previous load left on disk: a gateway pid that is still alive.
+  fs.mkdirSync(base.stateDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(base.stateDir, runtime.RUN_FILE),
+    JSON.stringify({
+      root: base.root,
+      children: {
+        gateway: { pid: gwPid, cmd: path.join(base.root, "cliproxy", "cli-proxy-api.exe"), startedAt: Date.now() - 90_000 },
+      },
+    }, null, 2)
+  );
+
+  const fake = fakeProcesses();
+  const reloaded = runtime.createRuntime({
+    ...fake,
+    portOwners: async () => [],
+    inspectPid: async pid => pid === gwPid
+      ? { exe: path.join(base.root, "cliproxy", "cli-proxy-api.exe"), cmdline: "" }
+      : null,
+  });
+  const ctx = { ...base, preserveRuntime: true };
+  const started = await reloaded.start(ctx);
+
+  assert.deepEqual(started.reaped, []);
+  assert.deepEqual(started.adopted, ["gateway"]);
+  assert.equal(fake.killed.includes(gwPid), false);
+  assert.deepEqual(started.started, ["wb2api"]);
+  // The gateway has to outlive the plugin process the host kills on reload.
+  assert.equal(fake.spawned[0].detached, true);
+
+  const state = await reloaded.status(ctx);
+  assert.equal(state.components.gateway.mode, "owned");
+  assert.equal(state.components.gateway.pid, gwPid);
+
+  // A reload hands the gateway over; a real unload still stops it.
+  await reloaded.stop(ctx);
+  assert.ok(fake.killed.includes(gwPid));
+});
+
+test("a development reload still reaps a recorded pid whose port went away", async t => {
+  const runtime = require("../features/gateway/runtime.js");
+  const ports = { gateway: await freePort(), workbuddy: await freePort() };
+  const base = { ...tmpRoot(t, true), probeEnabled: true, ports };
+  const gwPid = 5252;
+  fs.mkdirSync(base.stateDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(base.stateDir, runtime.RUN_FILE),
+    JSON.stringify({
+      root: base.root,
+      children: { gateway: { pid: gwPid, cmd: path.join(base.root, "cliproxy", "cli-proxy-api.exe") } },
+    }, null, 2)
+  );
+
+  const fake = fakeProcesses();
+  const reloaded = runtime.createRuntime({
+    ...fake,
+    portOwners: async () => [],
+    inspectPid: async pid => pid === gwPid
+      ? { exe: path.join(base.root, "cliproxy", "cli-proxy-api.exe"), cmdline: "" }
+      : null,
+  });
+  const started = await reloaded.start({ ...base, preserveRuntime: true });
+  assert.deepEqual(started.reaped, ["gateway"]);
+  assert.deepEqual(started.adopted, []);
+  assert.ok(fake.killed.includes(gwPid));
 });
 
 test("takeover refuses an unknown port owner and replaces a verified one", async t => {

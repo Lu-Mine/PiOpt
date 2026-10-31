@@ -31,6 +31,14 @@ const TOOL_NAMES = ["gateway_status", "gateway_restart", "gateway_logs"];
 const rt = runtime.createRuntime();
 services.setOwnership(() => rt.alive("gateway"));
 
+// A development plugin is loaded straight from its source folder and the host
+// hot-reloads it on every file event in that folder. The reload only
+// re-assembles the plugin, so it must not take the gateway with it: a
+// development load neither stops its children on unload nor reaps the ones the
+// previous load left behind — it adopts them and keeps the ports serving.
+// Packaged installs keep the original behaviour and stop what they started.
+const DEVELOPMENT = !/[\\/]plugins[\\/]installed[\\/]/i.test(__dirname);
+
 // The management key goes to cli-proxy-api as MANAGEMENT_PASSWORD, so it never
 // lands in config.yaml and is never hashed there. Measured on 2026-10-30: with
 // an empty secret-key the env key alone enables the management routes.
@@ -64,6 +72,7 @@ async function context() {
     stateDir,
     logDir: stateDir,
     probeEnabled: settings.gatewayProbeEnabled !== false,
+    preserveRuntime: DEVELOPMENT,
     childEnv: await childEnv(),
     ports: undefined,
   };
@@ -213,6 +222,7 @@ async function onUnload() {
       /* already gone */
     }
   }
+  if (DEVELOPMENT) return;
   try {
     await rt.stop(await context());
   } catch {

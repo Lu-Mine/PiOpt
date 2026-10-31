@@ -41,7 +41,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 几条实现上的边界：
 
-- **进程由插件托管**：插件进程直接启动 `python wb_proxy.py`（8318）与 `cli-proxy-api.exe`（8317），不经过任何外部守护进程或自启脚本。启动前先探测端口，已有实例就复用；子进程 pid 记在 `gateway-runtime/run.json`，插件崩溃后下次加载会核对进程路径再收回残留。正常卸载时结束两个进程树；插件 reload 会让网关重启一次。
+- **进程由插件托管**：插件进程直接启动 `python wb_proxy.py`（8318）与 `cli-proxy-api.exe`（8317），不经过任何外部守护进程或自启脚本。启动前先探测端口，已有实例就复用；子进程 pid 记在 `gateway-runtime/run.json`，插件崩溃后下次加载会核对进程路径再收回残留。打包安装的版本正常卸载时结束两个进程树，插件 reload 会让网关重启一次；开发版（宿主从源码目录加载、保存即热重载）则用分离进程启动，reload 时不停止也不回收，下一次加载按 pid 与端口认领回来，网关不中断。
 - **凭据自举**：CLIProxyAPI 的管理密钥由插件随机生成，用 Windows DPAPI 加密存在 `gateway-runtime/secrets.json`，启动时以 `MANAGEMENT_PASSWORD` 环境变量注入，不写进 `config.yaml`。wb2api 第一次登录时用出厂口令登入并立刻改成随机值，同样加密保存，之后只用保存的口令。外部启动的旧实例才会退回读取 `config.yaml` 里尚未哈希的明文。
 - **备注名存本地**：API Key 的备注按密钥 sha256 前 16 位索引，存在插件设置里，不写回 CLIProxyAPI 配置；增删是直接 PUT 整个 `access.api-keys` 数组。
 - **配额由网关代查**：Antigravity 配额走网关自带的 `/v0/management/api-call`，请求里只放 `$TOKEN$` 占位，由网关在自己进程里换成真实 token，PiOpt 不读 `auth/*.json`、不直连 Google。面板打开或手动刷新时查一次，之后每 5 分钟最多查一轮，关闭面板就不再请求；某个账号失败时保留它上一次成功的数据，并在「更新于 HH:mm」后注明失败数。取不到时显示「暂无配额」，不会画成 0%。
@@ -323,7 +323,8 @@ PiOpt/
 注意：
 
 - 开发期间请**禁用**已安装的 `local.pimarket` 与 `local.pi-modify`。PiOpt 复用了 `pimarket.open`、`pi-modify.open` 等命令 id，同时启用会出现重复命令，插件列表里也会多出一套旧的外观主题。
-- 面板是独立窗口，保存文件触发的重载会关闭当前面板，重新打开即可。
+- 面板是独立窗口，保存文件触发的重载会关闭当前面板，重新打开即可。开发版里网关与 wb2api 用分离进程启动，reload 不杀不重建：下一次加载会把仍在监听的实例认领回来（`gateway_status` 里 pid 与运行时长连续），只有手动重启网关才会换进程。
+- 开发版的托管方式有一个已知代价：插件被禁用或宿主退出时，分离启动的网关与 wb2api 不会跟着结束，而是留到下一次加载被认领（端口不释放）。需要立刻收工时用网关面板的重启按钮（先停再起），或结束 `cli-proxy-api.exe` / 带 `wb_proxy.py` 的 `python.exe`。
 - 入口按钮用的是 `renderer.extension`：它是权限项，宿主在授权变化后不会热更新，所以首次加载或改动权限后要重新加载一次插件（必要时重启）按钮才会出现。
 - 纯界面迭代可以先用浏览器打开 `renderer/index.html` 看布局：没有宿主 bridge 时会自动进入独立预览模式。
 

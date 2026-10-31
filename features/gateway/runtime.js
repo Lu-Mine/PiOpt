@@ -185,15 +185,23 @@ function createRuntime(deps = {}) {
     }
   }
 
+  // 认领来的实例没有 child 句柄（它是上一版插件启动的），只按记录的 pid 记账。
+  // 它的生死由下次 start 的 inspectPid/probe 复核，stop 时照样 taskkill。
   function alive(name) {
     const entry = children.get(name);
-    return Boolean(entry && !entry.exited && entry.child && entry.child.exitCode === null);
+    if (!entry || entry.exited) return false;
+    if (entry.adopted) return true;
+    return Boolean(entry.child && entry.child.exitCode === null);
   }
 
   // Kill what a previous, crashed load left behind. A recorded pid is only
   // killed when the live process still matches the spec it was started from,
   // so a recycled pid is never touched.
-  async function reap(ctx) {
+  //
+  // `keep` is the port map of a development hot reload: a matching pid whose
+  // port still answers is the previous load's instance, still serving. It is
+  // left running for `start` to adopt instead of being reaped and restarted.
+  async function reap(ctx, keep) {
     const run = readRun(ctx);
     const reaped = [];
     for (const spec of specsFor(run.root || ctx.root, ctx.ports)) {
@@ -202,12 +210,37 @@ function createRuntime(deps = {}) {
       const pid = Number(record.pid);
       const info = await d.inspectPid(pid);
       if (!matchesSpec(info, spec)) continue;
+      if (keep && keep[spec.key]) {
+        log(ctx, `${spec.name} pid=${pid} 仍在监听 ${spec.port}，留给本次加载认领`);
+        continue;
+      }
       log(ctx, `收回上次残留的 ${spec.name} pid=${pid}`);
       await d.killTree(pid);
       reaped.push(spec.name);
     }
     if (reaped.length) await d.waitPortsClosed(ctx.ports);
     return reaped;
+  }
+
+  // Take over the instance a previous load of this same plugin started: the
+  // pid is still recorded, still matches the spec, and its port answers.
+  async function adopt(ctx, spec, run) {
+    const record = run.children[spec.name];
+    if (!record) return null;
+    const pid = Number(record.pid);
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+    const info = await d.inspectPid(pid);
+    if (!matchesSpec(info, spec)) return null;
+    const entry = {
+      child: null,
+      pid,
+      startedAt: Number(record.startedAt) || d.now(),
+      spec,
+      exited: false,
+      adopted: true,
+    };
+    children.set(spec.name, entry);
+    return entry;
   }
 
   function spawnOne(ctx, spec) {
@@ -220,6 +253,11 @@ function createRuntime(deps = {}) {
         env: { ...process.env, ...((ctx.childEnv && ctx.childEnv[spec.name]) || {}) },
         stdio: ["ignore", fd, fd],
         windowsHide: true,
+        // A development reload kills this plugin process, and the host takes
+        // its whole process tree with it. Detaching keeps the gateway out of
+        // that tree so it keeps serving across a reload; the next load adopts
+        // it by its recorded pid. Packaged installs stay attached.
+        ...(ctx.preserveRuntime ? { detached: true } : {}),
       });
       const entry = { child, pid: child.pid, startedAt: d.now(), spec, exited: false };
       children.set(spec.name, entry);
@@ -255,17 +293,27 @@ function createRuntime(deps = {}) {
   }
 
   async function start(ctx, { skipProbe = false } = {}) {
-    const reaped = await reap(ctx);
-    const listening = skipProbe || !ctx.probeEnabled
-      ? { gateway: false, workbuddy: false }
-      : await d.probeGateway(ctx.ports);
-    const result = { ok: true, reaped, started: [], reused: [], already: [], errors: [] };
+    // A development reload has to know whether the previous load's processes
+    // are still serving, so it probes even when the user turned probing off.
+    const probed = ctx.probeEnabled || ctx.preserveRuntime
+      ? await d.probeGateway(ctx.ports)
+      : { gateway: false, workbuddy: false };
+    const listening = skipProbe || !ctx.probeEnabled ? { gateway: false, workbuddy: false } : probed;
+    const reaped = await reap(ctx, ctx.preserveRuntime && !skipProbe ? probed : null);
+    const run = readRun(ctx);
+    const result = { ok: true, reaped, started: [], adopted: [], reused: [], already: [], errors: [] };
     for (const spec of specsFor(ctx.root, ctx.ports)) {
       if (alive(spec.name)) {
         result.already.push(spec.name);
         continue;
       }
       if (listening[spec.key]) {
+        const taken = ctx.preserveRuntime && !skipProbe ? await adopt(ctx, spec, run) : null;
+        if (taken) {
+          result.adopted.push(spec.name);
+          log(ctx, `认领上一版启动的 ${spec.name} pid=${taken.pid}`);
+          continue;
+        }
         result.reused.push(spec.name);
         log(ctx, `${spec.name} 端口 ${spec.port} 已有实例在监听，复用，不另起`);
         continue;
