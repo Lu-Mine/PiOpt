@@ -146,6 +146,16 @@ test("最近使用的行不再把来源写在右边", () => {
   assert.match(source, /flex:1 0 100%/);
 });
 
+test("最近使用的选中行跟分组里的选中行长一个样", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 宿主只给分组里的选中行挂 active，那枚勾也只在这一路带 composer-model-check；
+  // 「最近使用」那一组的选中行两样都没有，于是选中时上下文读数停在淡色、勾停在
+  // 次要文字色。克隆行把这两个类补上，选中态在三种排列下才一致。
+  assert.match(source, /if \(item\.getAttribute\("aria-checked"\) === "true"\)/);
+  assert.match(source, /item\.classList\.add\("active"\)/);
+  assert.match(source, /check\.classList\.add\("composer-model-check"\)/);
+});
+
 test("分组视图把最近使用的模型并回分组，并按 A–Z 排序", () => {
   const source = read("renderer/model-picker.mjs");
   // 按供应商 / 按厂商共用一份分组视图：分组名排序、组内也排序。

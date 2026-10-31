@@ -491,6 +491,14 @@ function buildRow(row, showSource) {
   if (item.classList) item.classList.remove("kb-active");
   item.setAttribute(ITEM_ATTR, row.key);
   const main = item.querySelector(OPTION_MAIN_SELECTOR);
+  // 宿主只给分组里的选中行挂 active，那枚勾也只在这一路带 composer-model-check；
+  // 「最近使用」那一组的选中行两样都没有，于是选中时上下文读数停在淡色、勾停在
+  // 次要文字色。这里补齐，让三种排列下的选中行共用宿主同一套规则。
+  if (item.getAttribute("aria-checked") === "true") {
+    if (item.classList) item.classList.add("active");
+    const check = item.lastElementChild;
+    if (check && check !== main && check.classList) check.classList.add("composer-model-check");
+  }
   if (main) {
     if (row.recent) {
       // 最近使用那一组把来源写在右侧；这里换成宿主在同一模型的分组行上画的
