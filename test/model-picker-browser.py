@@ -188,6 +188,7 @@ with tempfile.TemporaryDirectory() as serve:
                 stuckTitleHeight: stuck ? stuck.firstElementChild.getBoundingClientRect().height : 0,
                 stuckTitleWidth: stuck ? stuck.firstElementChild.getBoundingClientRect().width : 0,
                 stuckTitleRadius: stuck ? getComputedStyle(stuck.firstElementChild).borderRadius : '',
+                stuckTitleShadow: stuck ? getComputedStyle(stuck.firstElementChild).boxShadow : '',
                 looseTitle: background(loose),
                 looseBackdrop: getComputedStyle(loose).backdropFilter,
                 nativeTitle: native ? getComputedStyle(native).backgroundColor : '',
@@ -224,6 +225,8 @@ assert "blur" in sticky["stuckBackdrop"], sticky
 assert sticky["stuckTitleWidth"] < sticky["stuckWidth"] - 40, sticky
 assert sticky["stuckTitleHeight"] < sticky["stuckHeight"] - 3, sticky
 assert sticky["stuckTitleRadius"] not in ("0px", ""), sticky
+# 小块要像一片压在列表上的浮层：有厚度（不透明底）、模糊和投影。
+assert sticky["stuckTitleShadow"] not in ("none", ""), sticky
 # 没吸顶的标题保持原来的样子：不压底色、不模糊。
 assert sticky["looseTitle"] in ("transparent", "rgba(0, 0, 0, 0)"), sticky
 assert sticky["looseBackdrop"] in ("none", ""), sticky
