@@ -44,7 +44,7 @@ html,body{margin:0;background:var(--ds-bg-primary);color:var(--ds-text-primary)}
 .composer-plus-item.kb-active{background:var(--ds-bg-hover)}
 .composer-plus-item.active.kb-active{background:var(--ds-bg-active)}
 .composer-model-check{flex:none;color:var(--ds-accent)!important}
-.composer-model-group-label{padding:4px 8px;color:var(--ds-text-muted);font-size:var(--text-xs-plus)}
+.composer-model-group-label{z-index:1;position:sticky;top:0;padding:6px 8px 2px;background:color-mix(in oklab,var(--ds-bg-elevated-opaque) 82%,transparent);-webkit-backdrop-filter:saturate(1.6) blur(40px);backdrop-filter:saturate(1.6) blur(40px);color:var(--ds-text-muted);font-size:var(--text-xs-plus);font-weight:600}
 .composer-model-search{height:28px;display:flex;align-items:center;padding:0 8px}
 """
 
@@ -143,6 +143,55 @@ with tempfile.TemporaryDirectory() as serve:
               };
             }"""
         )
+
+        # 第二段：分组标题只在吸顶时压底色，否则滚过去的行会从标题底下穿过去。
+        page.evaluate(
+            """() => {
+              document.querySelector('.composer-model-menu').remove();
+              const rows = (prefix) => Array.from({ length: 8 }, (_, i) =>
+                `<button type="button" role="menuitemradio" aria-checked="false" title="${prefix}-${i}" class="composer-plus-item composer-model-option"><span class="composer-model-option-main"><span class="composer-model-label">${prefix} ${i}</span><span class="composer-model-option-meta"><span class="composer-model-option-ctx">200K</span></span></span></button>`).join('');
+              const group = (label, prefix) => `<div class="composer-model-group" role="group" aria-label="${label}"><div class="composer-model-group-label">${label}</div>${rows(prefix)}</div>`;
+              document.body.insertAdjacentHTML('beforeend', `
+                <div class="composer-model-menu is-open">
+                  <div class="composer-menu-root">
+                    <div class="composer-model-search"><input></div>
+                    <div class="composer-model-list">
+                      <button class="composer-menu-entry" aria-expanded="true">Other models</button>
+                      ${group('Alpha', 'a')}${group('Beta', 'b')}${group('Gamma', 'c')}
+                    </div>
+                  </div>
+                </div>`);
+            }"""
+        )
+        page.wait_for_selector(".piopt-mp-view [data-piopt-mp-item]", state="attached", timeout=4000)
+        page.wait_for_timeout(300)
+        page.evaluate("() => { document.querySelector('.composer-model-list').scrollTop = 120; }")
+        page.wait_for_timeout(120)
+        sticky = page.evaluate(
+            """() => {
+              const list = document.querySelector('.composer-model-list');
+              const labels = [...document.querySelectorAll('.piopt-mp-view .composer-model-group-label')];
+              const listTop = list.getBoundingClientRect().top;
+              const stuck = labels.find((label) => Math.abs(label.getBoundingClientRect().top - listTop) < 1);
+              const loose = labels[labels.length - 1];
+              const background = (label) => getComputedStyle(label.firstElementChild).backgroundColor;
+              // 原生分组还在 DOM 里（视图显示时整组隐藏）：搜索时用宿主自己的标题底色。
+              const native = document.querySelector('.composer-model-list > .composer-model-group > .composer-model-group-label');
+              return {
+                scrollTop: list.scrollTop,
+                labels: labels.length,
+                stuck: !!stuck,
+                stuckTitle: stuck ? getComputedStyle(stuck.firstElementChild).backgroundColor : '',
+                stuckBackdrop: stuck ? getComputedStyle(stuck.firstElementChild).backdropFilter : '',
+                stuckHeight: stuck ? stuck.getBoundingClientRect().height : 0,
+                stuckTitleHeight: stuck ? stuck.firstElementChild.getBoundingClientRect().height : 0,
+                looseTitle: background(loose),
+                looseBackdrop: getComputedStyle(loose).backdropFilter,
+                nativeTitle: native ? getComputedStyle(native).backgroundColor : '',
+              };
+            }"""
+        )
+
         browser.close()
 
     server.shutdown()
@@ -162,3 +211,17 @@ assert state["wash"] not in ("", "rgba(0, 0, 0, 0)"), state
 assert state["otherCtx"] != WHITE, state
 assert state["otherWash"] in ("rgba(0, 0, 0, 0)", "transparent"), state
 print("PASS model picker: selected recent row keeps the host's active wash, white context and tick")
+print(json.dumps(sticky, ensure_ascii=False, indent=2))
+assert sticky["scrollTop"] > 0, sticky
+assert sticky["labels"] == 3, sticky
+# 吸顶的那一层与下面滚过去的行之间必须隔着一块底，且底要铺满整条标题。
+assert sticky["stuck"], sticky
+assert sticky["stuckTitle"] not in ("transparent", "rgba(0, 0, 0, 0)"), sticky
+assert "blur" in sticky["stuckBackdrop"], sticky
+assert abs(sticky["stuckTitleHeight"] - sticky["stuckHeight"]) < 1, sticky
+# 没吸顶的标题保持原来的样子：不压底色、不模糊。
+assert sticky["looseTitle"] in ("transparent", "rgba(0, 0, 0, 0)"), sticky
+assert sticky["looseBackdrop"] in ("none", ""), sticky
+# 原生分组标题仍用宿主自己的底色（搜索时显示的就是它）。
+assert sticky["nativeTitle"] not in ("transparent", "rgba(0, 0, 0, 0)", ""), sticky
+print("PASS model picker: group label only paints its own wash while stuck")
