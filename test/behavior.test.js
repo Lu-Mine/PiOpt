@@ -169,16 +169,18 @@ test("分组视图把最近使用的模型并回分组，并按 A–Z 排序", (
   assert.match(source, /return family \? family\.label : \(row\.provider \|\| row\.label\);/);
   assert.match(source, /for \(const group of groupedView\(rows, vendorOf\)\)/);
   assert.match(source, /for \(const group of groupedView\(rows, \(row\) => row\.provider \|\| row\.label\)\)/);
-  // 分组标题沿用宿主的类名：视图里去掉它的底色与模糊，只在吸顶时由内层文字块
-  // 补回一层，免得滚过去的行从标题底下穿过去、两层文字叠在一起。
+  // 分组标题沿用宿主的类名：视图里去掉底色与模糊，只在吸顶时给文字罩一枚圆角小块，
+  // 免得滚过去的行和标题叠在一起，也不拉一条整行的色带。
   assert.match(
     source,
-    /\.composer-model-menu\[\$\{EXPANDED_ATTR\}\] \.\$\{VIEW_CLASS\} \.composer-model-group-label\{padding:0;background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;container-type:scroll-state\}/
+    /\.composer-model-menu\[\$\{EXPANDED_ATTR\}\] \.\$\{VIEW_CLASS\} \.composer-model-group-label\{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;container-type:scroll-state\}/
   );
   assert.match(source, /const GROUP_TITLE_CLASS = "piopt-mp-group-title";/);
   assert.match(source, /title\.className = GROUP_TITLE_CLASS;/);
+  assert.match(source, /\.\$\{GROUP_TITLE_CLASS\}\{display:inline-block;padding:2px 6px;margin:-2px -6px;border-radius:6px\}/);
   assert.ok(source.includes("@container scroll-state(stuck: top)"));
 });
+
 
 test("排列方式在搜索框外面，三个选项点哪个是哪个", () => {
   const source = read("renderer/model-picker.mjs");

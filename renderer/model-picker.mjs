@@ -68,12 +68,12 @@ export const MODEL_PICKER_CSS = [
   /* 原生列表让位给自建视图；搜索时反过来（搜索结果由宿主自己筛）。 */
   `.composer-model-menu[${EXPANDED_ATTR}]:not([${SEARCH_ATTR}="true"]) .composer-model-list:has(>.${VIEW_CLASS}) > *:not(.${VIEW_CLASS}){display:none}`,
   `.composer-model-menu[${EXPANDED_ATTR}][${SEARCH_ATTR}="true"] .${VIEW_CLASS}{display:none}`,
-  /* 分组标题平常不压底色：滚动到上面时就是普通的一行小标题。但吸顶到列表顶部时，
-     滚过去的模型行会从标题底下穿过去，两层文字叠在一起看不见。标题里那层文字块
-     会在吸顶状态下补回菜单底色与模糊（scroll-state 容器查询），只在那时挡一层。 */
-  `.composer-model-menu[${EXPANDED_ATTR}] .${VIEW_CLASS} .composer-model-group-label{padding:0;background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;container-type:scroll-state}`,
-  `.${VIEW_CLASS} .${GROUP_TITLE_CLASS}{display:block;padding:6px 8px 2px}`,
-  `@container scroll-state(stuck: top){.${GROUP_TITLE_CLASS}{background:color-mix(in oklab,var(--ds-bg-elevated-opaque) 92%,transparent);-webkit-backdrop-filter:saturate(1.6) blur(30px);backdrop-filter:saturate(1.6) blur(30px)}}`,
+  /* 分组标题平常不压底色：滚动到上面时就是普通的一行小标题。吸顶到列表顶部后，
+     滚过去的模型行会从标题底下穿过去，两层文字叠在一起看不见。这时只给文字本身
+     罩一枚圆角小块（scroll-state 容器查询），既挡掉压字，又不会拉一条整行的色带。 */
+  `.composer-model-menu[${EXPANDED_ATTR}] .${VIEW_CLASS} .composer-model-group-label{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;container-type:scroll-state}`,
+  `.${VIEW_CLASS} .${GROUP_TITLE_CLASS}{display:inline-block;padding:2px 6px;margin:-2px -6px;border-radius:6px}`,
+  `@container scroll-state(stuck: top){.${GROUP_TITLE_CLASS}{background:color-mix(in oklab,var(--ds-bg-elevated-opaque) 94%,transparent);-webkit-backdrop-filter:saturate(1.2) blur(12px);backdrop-filter:saturate(1.2) blur(12px)}}`,
   /* 搜索框下面单独一条：三种排列方式，点哪个是哪个。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODES_CLASS}{display:flex;gap:2px;margin:0 3px 5px;padding:2px;border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 6%,transparent)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}{flex:1 1 0;min-width:0;height:20px;padding:0 6px;border:0;border-radius:var(--radius-full);background:transparent;color:var(--ds-text-muted);font:inherit;font-size:var(--text-xs);line-height:1;white-space:nowrap;cursor:pointer;transition:color var(--motion-duration-fast) var(--motion-ease-out),background var(--motion-duration-fast) var(--motion-ease-out)}`,

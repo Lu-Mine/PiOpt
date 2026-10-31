@@ -184,7 +184,10 @@ with tempfile.TemporaryDirectory() as serve:
                 stuckTitle: stuck ? getComputedStyle(stuck.firstElementChild).backgroundColor : '',
                 stuckBackdrop: stuck ? getComputedStyle(stuck.firstElementChild).backdropFilter : '',
                 stuckHeight: stuck ? stuck.getBoundingClientRect().height : 0,
+                stuckWidth: stuck ? stuck.getBoundingClientRect().width : 0,
                 stuckTitleHeight: stuck ? stuck.firstElementChild.getBoundingClientRect().height : 0,
+                stuckTitleWidth: stuck ? stuck.firstElementChild.getBoundingClientRect().width : 0,
+                stuckTitleRadius: stuck ? getComputedStyle(stuck.firstElementChild).borderRadius : '',
                 looseTitle: background(loose),
                 looseBackdrop: getComputedStyle(loose).backdropFilter,
                 nativeTitle: native ? getComputedStyle(native).backgroundColor : '',
@@ -214,11 +217,13 @@ print("PASS model picker: selected recent row keeps the host's active wash, whit
 print(json.dumps(sticky, ensure_ascii=False, indent=2))
 assert sticky["scrollTop"] > 0, sticky
 assert sticky["labels"] == 3, sticky
-# 吸顶的那一层与下面滚过去的行之间必须隔着一块底，且底要铺满整条标题。
+# 吸顶时只罩住文字本身：一个圆角小块，不拉成整行、也不盖满整条标题。
 assert sticky["stuck"], sticky
 assert sticky["stuckTitle"] not in ("transparent", "rgba(0, 0, 0, 0)"), sticky
 assert "blur" in sticky["stuckBackdrop"], sticky
-assert abs(sticky["stuckTitleHeight"] - sticky["stuckHeight"]) < 1, sticky
+assert sticky["stuckTitleWidth"] < sticky["stuckWidth"] - 40, sticky
+assert sticky["stuckTitleHeight"] < sticky["stuckHeight"] - 3, sticky
+assert sticky["stuckTitleRadius"] not in ("0px", ""), sticky
 # 没吸顶的标题保持原来的样子：不压底色、不模糊。
 assert sticky["looseTitle"] in ("transparent", "rgba(0, 0, 0, 0)"), sticky
 assert sticky["looseBackdrop"] in ("none", ""), sticky
