@@ -2,6 +2,9 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const remote = require("../features/remote/index.js");
 const { createRemoteServer, originAllowed, ASSETS } = require("../features/remote/server.js");
@@ -421,6 +424,7 @@ test("the phone's list marks a running session that is waiting, not every row", 
     },
     desktop: {
       invoke: async ({ operation, args }) => {
+        if (operation === "session/list") throw new Error("desktop channel unavailable");
         if (operation === "agent/pendingInteractive") {
           return args[0].sessionId === "s1" ? { asks: [{ question: "继续吗？" }] } : { asks: [] };
         }
@@ -438,5 +442,133 @@ test("the phone's list marks a running session that is waiting, not every row", 
     assert.equal(probed[1].waiting, undefined);
   } finally {
     global.pi = saved;
+  }
+});
+
+test("sessions are read through the desktop channel, not the plugin session api", async () => {
+  const saved = global.pi;
+  const calls = [];
+  const rows = [{ id: "s1", title: "从桌面通道来", updatedAt: "2026-11-01T10:00:00.000Z" }];
+  global.pi = {
+    desktop: {
+      invoke: async ({ operation }) => {
+        calls.push(operation);
+        if (operation === "session/list") return { sessions: rows };
+        throw new Error(`unexpected ${operation}`);
+      },
+    },
+    session: {
+      list: async () => {
+        throw new Error("missing permission: session.read.own");
+      },
+    },
+  };
+  try {
+    const sessions = await internals.listSessions({ limit: 10 });
+    assert.deepEqual(calls, ["session/list"]);
+    assert.equal(sessions.length, 1);
+    assert.equal(sessions[0].title, "从桌面通道来");
+  } finally {
+    global.pi = saved;
+  }
+});
+
+test("the plugin session api is still a fallback, and both failing names the reason", async () => {
+  const saved = global.pi;
+  global.pi = {
+    desktop: {
+      invoke: async () => {
+        throw new Error("desktop unavailable");
+      },
+    },
+    session: {
+      list: async () => [{ id: "s1", title: "退回插件 API" }],
+    },
+  };
+  try {
+    const sessions = await internals.listSessions({ limit: 10 });
+    assert.equal(sessions[0].title, "退回插件 API");
+  } finally {
+    global.pi = saved;
+  }
+
+  global.pi = {
+    desktop: {
+      invoke: async () => {
+        throw new Error("desktop unavailable");
+      },
+    },
+    session: {
+      list: async () => {
+        throw new Error("missing permission: session.read.own");
+      },
+    },
+  };
+  try {
+    await assert.rejects(() => internals.listSessions({ limit: 10 }), /desktop unavailable/);
+  } finally {
+    global.pi = saved;
+  }
+});
+
+test("a paired device survives a reload because it is a file, not a settings key", async () => {
+  const saved = global.pi;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-remote-"));
+  const savedDir = internals.state.dataDir;
+  const savedDevices = internals.state.devices;
+  const savedCode = internals.state.code;
+  global.pi = { plugin: { getSettings: async () => ({ remoteDevices: [] }) } };
+  try {
+    internals.state.dataDir = dir;
+    internals.state.devices = [];
+    internals.state.code = "123456";
+    const auth = internals.createAuth();
+    const device = auth.register("我的手机");
+
+    const file = internals.devicesFile();
+    assert.equal(file, path.join(dir, "remote-devices.json"));
+    const onDisk = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.equal(onDisk.length, 1);
+    assert.equal(onDisk[0].token, device.token);
+
+    // A reload clears the in-memory array and re-reads the file.
+    internals.state.devices = [];
+    await internals.loadDevices({});
+    assert.equal(internals.state.devices.length, 1);
+    assert.equal(internals.state.devices[0].name, "我的手机");
+
+    // And the token still authenticates after that reload.
+    const fresh = internals.createAuth();
+    assert.ok(fresh.verify(device.token));
+    assert.equal(fresh.verify("not-a-token"), null);
+  } finally {
+    global.pi = saved;
+    internals.state.dataDir = savedDir;
+    internals.state.devices = savedDevices;
+    internals.state.code = savedCode;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the settings-era device array is adopted once and never read again", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-legacy-"));
+  const savedDir = internals.state.dataDir;
+  const savedDevices = internals.state.devices;
+  try {
+    internals.state.dataDir = dir;
+    internals.state.devices = [];
+    await internals.loadDevices({ remoteDevices: [{ token: "legacy-token-1", name: "旧手机" }] });
+    assert.equal(internals.state.devices.length, 1);
+    assert.equal(internals.state.devices[0].name, "旧手机");
+    assert.ok(fs.existsSync(path.join(dir, "remote-devices.json")));
+
+    // A second load prefers the file over whatever settings still say.
+    internals.state.devices = [];
+    await internals.loadDevices({ remoteDevices: [] });
+    assert.equal(internals.state.devices.length, 1);
+  } finally {
+    internals.state.dataDir = savedDir;
+    internals.state.devices = savedDevices;
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

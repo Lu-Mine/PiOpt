@@ -21,6 +21,7 @@
     code: document.getElementById("code"),
     device: document.getElementById("device"),
     list: document.getElementById("list"),
+    listError: document.getElementById("list-error"),
     sessions: document.getElementById("sessions"),
     empty: document.getElementById("sessions-empty"),
     detail: document.getElementById("detail"),
@@ -113,6 +114,7 @@
   function showList() {
     el.gate.hidden = true;
     el.list.hidden = false;
+    el.listError.hidden = true;
     el.detail.hidden = true;
     el.composer.hidden = true;
     el.pending.hidden = true;
@@ -212,7 +214,19 @@
 
   async function loadSessions() {
     const payload = await call("/api/bootstrap");
+    el.listError.hidden = true;
     renderSessions(payload.sessions || []);
+  }
+
+  // A phone that paired successfully but cannot read anything is not unpaired:
+  // it stays on the list and says what went wrong, so the next attempt is a
+  // refresh rather than another round of pairing.
+  function showListError(message) {
+    showList();
+    el.sessions.replaceChildren();
+    el.empty.hidden = true;
+    el.listError.textContent = message;
+    el.listError.hidden = false;
   }
 
   // A stream keeps the list honest while the phone sits on it: a turn that
@@ -303,7 +317,11 @@
   async function loadSession() {
     if (!state.sessionId) return;
     const payload = await call(`/api/session/${encodeURIComponent(state.sessionId)}?limit=80`);
-    if (payload.session && payload.session.title) state.sessionTitle = payload.session.title;
+    // The list already knows a better title than the single-session call does
+    // (that one reports the user-set title, which is usually empty).
+    if (payload.session && payload.session.title && !state.sessionTitle) {
+      state.sessionTitle = payload.session.title;
+    }
     if (!el.detail.hidden) el.title.textContent = state.sessionTitle || "会话";
     renderMessages(payload.messages || []);
     renderPending(payload.pending);
@@ -469,7 +487,7 @@
       await enterApp();
     } catch (error) {
       if (error && error.handled) return;
-      showGate(error && error.message ? error.message : "连不上这台电脑");
+      showListError(error && error.message ? error.message : "连不上这台电脑");
     }
   }
 

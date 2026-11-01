@@ -10,9 +10,10 @@
  *   - a prompt sent to a session (write);
  *   - aborting a running turn (write).
  *
- * Everything reaches PI-Desktop through the plugin APIs the host already
- * grants (`pi.session.*` for reads, `pi.desktop.invoke` for the two writes),
- * so the phone holds no path into the host that the panel could not take.
+ * Everything reaches PI-Desktop through `pi.desktop.invoke` — the same desktop
+ * channel the panel uses — because the plugin session API is scoped to sessions
+ * the plugin created (`session.read.own`), and this plugin creates none. The
+ * phone therefore holds no path into the host that the panel could not take.
  * Approvals (permission prompts, pending plans) are deliberately absent: those
  * are `dangerous` operations the host confirms on screen, and a phone that
  * cannot show the screen must not be able to answer them.
@@ -24,6 +25,8 @@
 
 const os = require("os");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { createRemoteServer } = require("./server.js");
 
 const DEFAULT_PORT = 8790;
@@ -38,6 +41,10 @@ const state = {
   startedAt: 0,
   lastError: "",
   booted: false,
+  dataDir: "",
+  // One array is the truth while the plugin runs; the file below is how it
+  // survives a reload.
+  devices: [],
 };
 
 function randomCode() {
@@ -247,11 +254,26 @@ async function readPending(sessionId) {
 
 async function listSessions(options) {
   const limit = options && Number.isFinite(options.limit) ? options.limit : 60;
-  let raw;
+  // `pi.session.list` is gated on `session.read.own` — sessions this plugin
+  // created, of which there are none — so the phone reads the user's sessions
+  // through the same desktop channel the panel uses. That costs desktop.control,
+  // which this feature already holds to send prompts.
+  let raw = null;
+  let failure = null;
   try {
-    raw = await pi.session.list();
+    raw = await desktopInvoke("session/list", []);
   } catch (error) {
-    throw new Error(`读不到会话列表: ${error && error.message ? error.message : error}`);
+    failure = error;
+  }
+  if (!raw) {
+    try {
+      raw = await pi.session.list();
+    } catch (error) {
+      failure = failure || error;
+    }
+  }
+  if (!raw) {
+    throw new Error(`读不到会话列表: ${failure && failure.message ? failure.message : failure || "未知原因"}`);
   }
   const sessions = asArray(raw).map(normalizeSessionRow).filter(Boolean);
   sessions.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
@@ -263,7 +285,9 @@ async function listSessions(options) {
 }
 
 async function attachWaiting(sessions) {
-  const targets = sessions.filter((row) => row.running).slice(0, WAITING_PROBE_LIMIT);
+  // `running` from the desktop channel does not track an active turn, so probe
+  // the most recently touched sessions instead of only the "running" ones.
+  const targets = sessions.slice(0, WAITING_PROBE_LIMIT);
   await Promise.all(
     targets.map(async (row) => {
       const pending = await readPending(row.id).catch(() => null);
@@ -275,22 +299,112 @@ async function attachWaiting(sessions) {
   );
 }
 
+// ----------------------------------------------------------------- transcript
+
+// The desktop channel returns a session's metadata but not its messages — the
+// host keeps transcripts out of that surface on purpose. The transcript is the
+// session's own jsonl in the data folder, so this reads it with Node fs, the
+// same way the market feature reads the plugin registry: no host API is asked
+// for it and no new permission is claimed. Only the tail is read (the last
+// 256 KB, cached until the file's size changes) because a long session runs to
+// megabytes and the phone shows a few dozen turns.
+const TRANSCRIPT_WINDOW_BYTES = 256 * 1024;
+const TRANSCRIPT_CACHE_LIMIT = 40;
+const transcriptCache = new Map();
+
+function transcriptPaths(sessionId) {
+  const paths = [];
+  const fromEnv = String(process.env.PI_DESKTOP_DATA_DIR || "").trim();
+  if (fromEnv) paths.push(path.join(fromEnv, "sessions", `${sessionId}.jsonl`));
+  paths.push(path.join(os.homedir(), ".pi-desktop", "sessions", `${sessionId}.jsonl`));
+  return paths;
+}
+
+function parseTranscript(text) {
+  const rows = [];
+  for (const line of String(text).split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      rows.push(JSON.parse(trimmed));
+    } catch {
+      /* a half line at the window edge */
+    }
+  }
+  return normalizeMessages(rows);
+}
+
+function readTranscript(sessionId, limit) {
+  for (const file of transcriptPaths(sessionId)) {
+    let size = 0;
+    try {
+      size = fs.statSync(file).size;
+    } catch {
+      continue;
+    }
+    if (!Number.isFinite(size) || size <= 0) continue;
+
+    const cached = transcriptCache.get(sessionId);
+    if (cached && cached.size === size) return cached.messages.slice(-limit);
+
+    const window = Math.min(size, TRANSCRIPT_WINDOW_BYTES);
+    const offset = size - window;
+    let bytes = null;
+    try {
+      const fd = fs.openSync(file, "r");
+      try {
+        const buffer = Buffer.alloc(window);
+        bytes = buffer.subarray(0, fs.readSync(fd, buffer, 0, window, offset));
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      bytes = null;
+    }
+    if (!bytes || !bytes.length) continue;
+
+    let text = Buffer.from(bytes).toString("utf8");
+    if (offset > 0) {
+      // The window almost certainly starts mid-line.
+      const cut = text.indexOf("\n");
+      text = cut === -1 ? "" : text.slice(cut + 1);
+    }
+    const messages = parseTranscript(text);
+    if (transcriptCache.size >= TRANSCRIPT_CACHE_LIMIT) transcriptCache.clear();
+    transcriptCache.set(sessionId, { size, messages });
+    return messages.slice(-limit);
+  }
+  return [];
+}
+
 async function readSession(sessionId, options) {
   const limit = options && Number.isFinite(options.limit) ? options.limit : 80;
-  let bundle;
+  let bundle = null;
   try {
-    bundle = await pi.session.get(sessionId);
+    bundle = await desktopInvoke("session/get", [{ sessionId }]);
   } catch {
     bundle = null;
+  }
+  if (!bundle) {
+    try {
+      bundle = await pi.session.get(sessionId);
+    } catch {
+      bundle = null;
+    }
   }
   // The host may hang the transcript on the bundle, on `bundle.session`, or only
   // hand it out through listMessages, and those calls have taken different
   // argument shapes over time. Try them in order and keep whatever arrives: a
   // phone that shows the header with no messages beats an error page.
   let messages = [];
+  try {
+    messages = readTranscript(sessionId, limit);
+  } catch {
+    messages = [];
+  }
   for (const container of [bundle, bundle && bundle.session]) {
-    messages = normalizeMessages(container);
     if (messages.length) break;
+    messages = normalizeMessages(container);
   }
   if (!messages.length) {
     for (const shape of [{ sessionId, limit }, { sessionId }, { id: sessionId, limit }]) {
@@ -306,6 +420,12 @@ async function readSession(sessionId, options) {
     id: sessionId,
     title: "会话",
   };
+  // `session/get` reports the user-set title, which is usually empty; the list
+  // shows the derived one. Fall back to the first line of the preview so the
+  // phone's header says what the conversation is about.
+  if (!meta.title || meta.title === "未命名会话") {
+    meta.title = meta.preview ? meta.preview.slice(0, 40) : `会话 ${sessionId.slice(0, 8)}`;
+  }
   const pending = await readPending(sessionId);
   return {
     session: meta,
@@ -339,11 +459,81 @@ async function abortSession(sessionId) {
   return {};
 }
 
-// ------------------------------------------------------------- pairing state
+// ------------------------------------------------------------- device store
 
-function deviceList(settings) {
-  const devices = Array.isArray(settings && settings.remoteDevices) ? settings.remoteDevices : [];
-  return devices.filter((item) => item && typeof item.token === "string" && item.token);
+// Devices live in the plugin's own data folder, not in settings. A development
+// install restarts the plugin process on every file save, and an array in
+// settings is rewritten wholesale by whoever last called setSettings — either
+// one silently un-pairs every phone. The file is written atomically (temp +
+// rename) and, for pairing and removal, immediately.
+function devicesFile() {
+  return state.dataDir ? path.join(state.dataDir, "remote-devices.json") : "";
+}
+
+function sanitizeDevices(value) {
+  if (!Array.isArray(value)) return null;
+  return value
+    .filter((item) => item && typeof item.token === "string" && item.token)
+    .slice(0, MAX_DEVICES)
+    .map((item) => ({
+      token: item.token,
+      name: typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 40) : "手机",
+      createdAt: item.createdAt || new Date().toISOString(),
+      lastSeenAt: item.lastSeenAt || item.createdAt || null,
+    }));
+}
+
+function readDevicesFromDisk() {
+  const file = devicesFile();
+  if (!file) return null;
+  try {
+    return sanitizeDevices(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch {
+    return null;
+  }
+}
+
+function writeDevicesToDisk() {
+  const file = devicesFile();
+  if (!file) {
+    state.lastError = "拿不到插件数据目录，配对无法持久化";
+    return;
+  }
+  const temp = `${file}.tmp`;
+  try {
+    fs.writeFileSync(temp, `${JSON.stringify(state.devices, null, 2)}
+`, "utf8");
+    fs.renameSync(temp, file);
+  } catch (error) {
+    state.lastError = `设备列表写入失败: ${error && error.message ? error.message : error}`;
+  }
+}
+
+let deviceWriteTimer = null;
+
+function scheduleDeviceWrite() {
+  // Pairing and removal write at once; this only coalesces the lastSeenAt stamps
+  // that arrive with ordinary requests.
+  if (deviceWriteTimer) return;
+  deviceWriteTimer = setTimeout(() => {
+    deviceWriteTimer = null;
+    writeDevicesToDisk();
+  }, 3000);
+  if (typeof deviceWriteTimer.unref === "function") deviceWriteTimer.unref();
+}
+
+async function loadDevices(settings) {
+  const fromDisk = readDevicesFromDisk();
+  if (fromDisk) {
+    state.devices = fromDisk;
+    return state.devices;
+  }
+  // First load after this build: adopt whatever the settings-era version stored,
+  // then never read that key again.
+  const legacy = sanitizeDevices(settings && settings.remoteDevices);
+  state.devices = legacy || [];
+  if (legacy && legacy.length) writeDevicesToDisk();
+  return state.devices;
 }
 
 function maskToken(token) {
@@ -357,11 +547,11 @@ async function currentSettings() {
     settings,
     port: portFrom(settings),
     autostart: settings.remoteAutostart === true,
-    devices: deviceList(settings),
+    devices: state.devices || [],
   };
 }
 
-function createAuth(settingsRef) {
+function createAuth() {
   return {
     checkCode(code) {
       const expected = String(state.code || "");
@@ -378,31 +568,18 @@ function createAuth(settingsRef) {
         createdAt: new Date().toISOString(),
         lastSeenAt: new Date().toISOString(),
       };
-      const next = [device, ...settingsRef.devices].slice(0, MAX_DEVICES);
-      settingsRef.devices = next;
-      persistDevices(next).catch(() => {});
+      state.devices = [device, ...(state.devices || [])].slice(0, MAX_DEVICES);
+      writeDevicesToDisk();
       return device;
     },
     verify(token) {
-      const match = settingsRef.devices.find((item) => item.token === token);
+      const match = (state.devices || []).find((item) => item.token === token);
       if (!match) return null;
       match.lastSeenAt = new Date().toISOString();
+      scheduleDeviceWrite();
       return match;
     },
   };
-}
-
-let deviceWriteTimer = null;
-
-async function persistDevices(devices) {
-  // Pairing happens once per phone; a debounce keeps a burst of `verify`
-  // timestamps from writing settings on every request.
-  if (deviceWriteTimer) clearTimeout(deviceWriteTimer);
-  deviceWriteTimer = setTimeout(() => {
-    deviceWriteTimer = null;
-    writeSettings({ remoteDevices: devices }).catch(() => {});
-  }, 1500);
-  if (typeof deviceWriteTimer.unref === "function") deviceWriteTimer.unref();
 }
 
 // ------------------------------------------------------------------- surface
@@ -434,7 +611,7 @@ async function statusPayload() {
 async function startServer() {
   if (state.running) return statusPayload();
   const { port, settings } = await currentSettings();
-  const settingsRef = { devices: deviceList(settings) };
+  await loadDevices(settings);
   if (!state.code) state.code = randomCode();
   const server = createRemoteServer({
     host: "0.0.0.0",
@@ -447,7 +624,7 @@ async function startServer() {
         /* logging is best effort */
       }
     },
-    auth: createAuth(settingsRef),
+    auth: createAuth(),
     api: {
       sessions: (options) => listSessions(options),
       session: (sessionId, options) => readSession(sessionId, options),
@@ -522,6 +699,13 @@ const tools = {
 
 async function onLoad() {
   if (!state.code) state.code = randomCode();
+  if (!state.dataDir) {
+    try {
+      state.dataDir = await pi.plugin.getDataPath();
+    } catch {
+      state.dataDir = "";
+    }
+  }
   for (const name of TOOL_NAMES) {
     try {
       await pi.agent.registerTool({ name, ...tools[name] });
@@ -530,6 +714,7 @@ async function onLoad() {
     }
   }
   const settings = await readSettings();
+  await loadDevices(settings);
   if (settings.remoteAutostart === true) {
     // A hot reload restarts the plugin process, which drops the listening
     // socket. Coming back on the remembered choice is what keeps the phone
@@ -571,16 +756,14 @@ async function onPanelInvoke(channel, payload = {}) {
     }
     case "remote.revoke": {
       const token = typeof payload.token === "string" ? payload.token : "";
-      const settings = await readSettings();
-      const devices = deviceList(settings);
-      if (token === "*") {
-        await writeSettings({ remoteDevices: [] });
-      } else {
-        // The panel only ever sees a masked token, so revocation names the
-        // device by name + creation time instead.
-        const next = devices.filter((item) => !(item.name === payload.name && item.createdAt === payload.createdAt));
-        await writeSettings({ remoteDevices: next });
-      }
+      // The panel only ever sees a masked token, so revocation names the device
+      // by name + creation time instead.
+      state.devices = token === "*"
+        ? []
+        : (state.devices || []).filter(
+            (item) => !(item.name === payload.name && item.createdAt === payload.createdAt)
+          );
+      writeDevicesToDisk();
       return statusPayload();
     }
     default:
@@ -597,6 +780,11 @@ module.exports = {
     state,
     randomCode,
     lanAddresses,
+    createAuth,
+    loadDevices,
+    sanitizeDevices,
+    devicesFile,
+    writeDevicesToDisk,
     isPrivateV4,
     normalizeSessionRow,
     normalizeMessages,

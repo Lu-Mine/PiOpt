@@ -71,10 +71,14 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    view prints the question. It cannot answer any of it: `tool/resolvePermission`,
    `agent/askTool/resolve` and `plans/resolve` are `dangerous` and come back to a
    confirmation on the desktop. Do not promise remote approval.
-4. If the phone cannot reach the address, that is the Windows firewall or the
+4. A phone that keeps asking to pair, or one that pairs and then shows nothing, is
+   a data problem: devices must survive a plugin restart
+   (`<data>/remote-devices.json`), and the session list comes from the desktop
+   channel because the plugin session API only sees sessions the plugin created.
+5. If the phone cannot reach the address, that is the Windows firewall or the
    access point's client isolation — the plugin cannot fix either. Check that the
    address is a LAN one (`127.0.0.1` there means no usable interface was found).
-5. Changing the port restarts the gateway once; paired phones keep their tokens,
+6. Changing the port restarts the gateway once; paired phones keep their tokens,
    they only need the new address.
 
 ## Gateway: what the page does, and what it refuses to fake
