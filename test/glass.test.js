@@ -224,9 +224,13 @@ test("popups and the composer are frosted where a submenu cannot be re-anchored"
   assert.ok(declarations.includes("backdrop-filter:blur(var(--pg-blur-strong))"));
 
   // Every menu that may open a fixed submenu, and the composer (which owns the
-  // composer's own popups), takes it on a pseudo element instead.
+  // Menus that may open a submenu take the popup-strength blur, the composer the
+  // frame-strength one: it is the one large surface, and a 46px radius there buys
+  // no legibility.
+  assert.ok(declarations.includes(`:is(${glass.FROSTED_FRAMES.join(",")})::before{content:"";`));
+  assert.ok(declarations.includes(`${glass.FROSTED_SHELL}::before{content:"";`));
+  assert.ok(declarations.includes(`${glass.FROSTED_SHELL}::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;-webkit-backdrop-filter:blur(var(--pg-blur))`));
   const layered = [glass.FROSTED_SHELL, ...glass.FROSTED_FRAMES];
-  assert.ok(declarations.includes(`:is(${layered.join(",")})::before{content:"";`));
   for (const selector of layered) {
     // The element itself must stay filter-free, or the submenu it opens resolves
     // its viewport coordinates against the menu instead of the viewport.

@@ -130,7 +130,7 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
    模糊在"界面家具"与浮层上是安全的：宿主的浮层（右键菜单、二级菜单、通知、用量气泡等）都渲染在组件内部、用 `position: fixed` 加视口坐标，不是这些表面的后代，所以给侧栏、标题栏、工作面板、输入框磨砂都不会把弹层重新锚定。
 3. 内容区（`.main-pane`）只改底色不透明度，不加滤镜——它里面有 composer 等固定层，加 `backdrop-filter` 会改变它们的包含块。没有背景图时这一项是 100%，等于不改。
-4. 菜单、对话框、弹出层与聊天输入框用更强的模糊（`--pg-blur-strong`，轻薄 22px / 标准 38px / 厚重 59px）：它们本来就浮在活动内容之上，模糊在做实事而不是装饰颜色。浮层分两种画法（原因见下文"弹层与输入框"）：一层浮层把滤镜放在元素自己身上，可能打开二级菜单的那一层与聊天输入框把磨砂画在 `::before` 上。
+4. 菜单、对话框与弹出层用更强的模糊（`--pg-blur-strong`，轻薄 22px / 标准 38px / 厚重 59px），聊天输入框用与侧栏同一档的 `--pg-blur`：它们本来就浮在活动内容之上，模糊在做实事而不是装饰颜色；输入框是这一层里唯一的大面积表面，半径再大只是白烧 GPU。浮层分两种画法（原因见下文"弹层与输入框"）：一层浮层把滤镜放在元素自己身上，可能打开二级菜单的那一层与聊天输入框把磨砂画在 `::before` 上。
 
 ### 背景图
 
@@ -199,7 +199,7 @@ const css = `${motion.buildThemeCss(motionLayer, base)}${glassLayer}`;
 | 滤镜直接在元素上 | 不再打开任何浮层的“一层”弹窗：`.composer-model-menu`（含推理强度浮窗）、`.composer-autocomplete`、`.sidebar-submenu`、用量气泡、设置里的各类选择菜单 | 它自己就是滚动容器，只有把模糊放在元素上，列表滚动时磨砂才跟着走 |
 | 磨砂画在 `::before` 上 | 可能打开二级菜单的那一层（`.context-menu`、`.sidebar-row-menu`、`.composer-permission-menu`、`.composer-mode-menu`、`.agent-capability-menu` 等）与聊天输入框 | 伪元素不是任何节点的祖先，不会成为二级菜单的包含块；输入框里嵌着模型 / 权限 / 思考这些浮窗，直接加滤镜会把它们的视口坐标变成相对输入框的坐标 |
 
-两种画法的观感是同一份材质：同样读 `--pg-blur-strong` 与 `--pg-saturate`，填充都是 `--pg-overlay-alpha` 的半透明底。弹窗的底色与模糊顺序也不会歪：伪元素叠在元素底色之上，而底色是均匀色，`blur(α·底色 ⊕ 背后)` 与 `α·底色 over blur(背后)` 是同一个结果。
+两种画法的观感是同一份材质：弹层读 `--pg-blur-strong`、输入框读 `--pg-blur`，sat 都是 `--pg-saturate`，填充都是 `--pg-overlay-alpha` 的半透明底。弹窗的底色与模糊顺序也不会歪：伪元素叠在元素底色之上，而底色是均匀色，`blur(α·底色 ⊕ 背后)` 与 `α·底色 over blur(背后)` 是同一个结果。
 
 输入框是这一层里唯一被重画底色的宿主表面：它原本是不透明的 `--ds-bg-composer`（暗色主题下是 `--ds-bg-elevated-primary`），现在换成同色的 `--pg-overlay-alpha` 混色，背后才有东西可透；不支持 `backdrop-filter` 的环境退回宿主自己的实色。模型选择器原先在暗色主题下由宿主自带一层 40px 模糊，现在统一由这一层接管（`--pg-blur-strong`），浅色主题同样生效。
 

@@ -205,8 +205,9 @@ about the calls, only about the prefix.
    what keeps the frosting over its own scrollbar. A menu that may open a
    submenu, and the composer (whose own popups are descendants), takes it on
    `::before` — a pseudo element is nobody's ancestor, so a child keeps the
-   viewport as its frame. Both read `--pg-blur-strong` and
-   `--pg-overlay-alpha`, so they read as one material.
+   viewport as its frame. Both read `--pg-overlay-alpha` for the fill; popups
+   take `--pg-blur-strong`, the composer the frame's own `--pg-blur` because it
+   is the one large surface. They still read as one material.
    One limitation is deliberate: on a menu whose own list scrolls, the pseudo
    element scrolls with the content, so the frosting stays over the first
    screenful and the rest falls back to the translucent fill. Those menus hold

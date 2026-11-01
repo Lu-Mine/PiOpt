@@ -380,10 +380,18 @@ function buildGlassCss(input = {}, options = {}) {
   const popupFill =
     "background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;" +
     "border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent);";
+  // The composer is the one large surface: it takes the frame's own radius, not
+  // the popup one. A 46px blur over a 768px-wide box is a lot of pixels for no
+  // extra legibility, and at that size the softer radius reads better.
+  const shellBlur = surfaces
+    ? "-webkit-backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))!important;backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))!important"
+    : "";
+  const frostLayer = "content:\"\";position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;";
   const frosted = surfaces
     ? [
         `:is(${FROSTED_POPUPS.join(",")}){${popupFill}${blurStrong}}`,
-        `:is(${[FROSTED_SHELL, ...FROSTED_FRAMES].join(",")})::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;${blurStrong}}`,
+        `:is(${FROSTED_FRAMES.join(",")})::before{${frostLayer}${blurStrong}}`,
+        `${FROSTED_SHELL}::before{${frostLayer}${shellBlur}}`,
         `${FROSTED_SHELL}{background-color:color-mix(in oklab,var(--ds-bg-composer) var(--pg-overlay-alpha),transparent)!important;background-image:none!important}`,
       ].join("\n")
     : "";
