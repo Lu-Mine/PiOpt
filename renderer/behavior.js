@@ -9,7 +9,7 @@
 
   const CHANNEL = "behavior.modelPicker";
   const DEFAULT_CONFIG = { grouping: "provider" };
-  const GROUPING_COPY = { provider: "按供应商", vendor: "按厂商", name: "按名称" };
+  const GROUPING_COPY = { default: "默认", provider: "按供应商", vendor: "按厂商", name: "按名称" };
 
   const state = { config: { ...DEFAULT_CONFIG }, error: "" };
   const elements = {};

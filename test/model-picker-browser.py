@@ -85,6 +85,40 @@ DOM = f"""
 </div>
 """
 
+# 默认排列：宿主的顺序（最近使用那一组在最前，供应商组按它自己的顺序，组内也不排序）。
+# 组名与组内顺序都故意不是 A–Z 的顺序，一旦被重排这条断言就挂。
+DEFAULT_DOM = f"""
+<div class="composer-model-menu is-open">
+  <div class="composer-menu-root">
+    <div class="composer-model-search"><input></div>
+    <div class="composer-model-list">
+      <button class="composer-menu-entry" aria-expanded="true">Other models</button>
+      <div class="composer-model-group" role="group" aria-label="Recent">
+        <div class="composer-model-group-label">Recent</div>
+        <button type="button" role="menuitemradio" aria-checked="false" title="Alpha · model-a" class="composer-plus-item composer-model-option">
+          <span class="composer-model-option-main"><span class="composer-model-label">Model A</span><span class="composer-model-option-meta" title="Alpha">Alpha</span></span>
+        </button>
+      </div>
+      <div class="composer-model-group" role="group" aria-label="Zeta">
+        <div class="composer-model-group-label">Zeta</div>
+        <button type="button" role="menuitemradio" aria-checked="false" title="zeta-2" class="composer-plus-item composer-model-option">
+          <span class="composer-model-option-main"><span class="composer-model-label">Zeta 2</span></span>
+        </button>
+        <button type="button" role="menuitemradio" aria-checked="false" title="zeta-1" class="composer-plus-item composer-model-option">
+          <span class="composer-model-option-main"><span class="composer-model-label">Zeta 1</span></span>
+        </button>
+      </div>
+      <div class="composer-model-group" role="group" aria-label="Alpha">
+        <div class="composer-model-group-label">Alpha</div>
+        <button type="button" role="menuitemradio" aria-checked="false" title="model-b" class="composer-plus-item composer-model-option">
+          <span class="composer-model-option-main"><span class="composer-model-label">Model B</span><span class="composer-model-option-meta" title="model-b">{CACHED}</span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+"""
+
 WHITE = "rgb(255, 255, 255)"
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -196,6 +230,62 @@ with tempfile.TemporaryDirectory() as serve:
             }"""
         )
 
+        # 第三段：「默认」排列照搬宿主的顺序，最近使用那一组仍在最前面、并且补上来源。
+        page.evaluate(
+            """([dom]) => {
+              picker.unmountModelPicker();
+              document.querySelector('.composer-model-menu').remove();
+              document.body.insertAdjacentHTML('beforeend', dom);
+              window.mountReady = picker.mountModelPicker({dispatch: async () => ({config: {grouping: 'default'}})});
+            }""",
+            [DEFAULT_DOM],
+        )
+        page.wait_for_selector('.piopt-mp-view[data-piopt-mp-layout="default"]', state="attached", timeout=4000)
+        page.wait_for_timeout(300)
+        host_order = page.evaluate(
+            """() => {
+              const inView = (node) => !!node.closest('.piopt-mp-view');
+              const nativeRows = [...document.querySelectorAll('.composer-model-list .composer-model-option')].filter((row) => !inView(row));
+              const viewRows = [...document.querySelectorAll('.piopt-mp-view [data-piopt-mp-item]')];
+              const label = (row) => row.querySelector('.composer-model-label').textContent.trim();
+              const title = (row) => row.getAttribute('title') || '';
+              const source = (row) => getComputedStyle(row.querySelector('.composer-model-option-main'), '::after').content;
+              const recent = viewRows[0];
+              const plain = viewRows[2];
+              return {
+                layout: document.querySelector('.piopt-mp-view').getAttribute('data-piopt-mp-layout'),
+                nativeLabels: nativeRows.map(label),
+                viewLabels: viewRows.map(label),
+                nativeTitles: [...document.querySelectorAll('.composer-model-list > .composer-model-group > .composer-model-group-label')].map((node) => node.textContent.trim()),
+                viewTitles: [...document.querySelectorAll('.piopt-mp-view .composer-model-group-label')].map((node) => node.textContent.trim()),
+                firstTitle: title(recent),
+                firstSource: source(recent),
+                firstHasBadge: !!recent.querySelector('.composer-model-option-meta .composer-model-option-badge'),
+                firstCtx: recent.querySelector('.composer-model-option-ctx') ? recent.querySelector('.composer-model-option-ctx').textContent : '',
+                plainSource: plain ? source(plain) : '',
+                modes: [...document.querySelectorAll('[data-piopt-mp-mode]')].map((node) => node.textContent.trim()),
+                pressed: [...document.querySelectorAll('[data-piopt-mp-mode][aria-pressed="true"]')].map((node) => node.getAttribute('data-piopt-mp-mode')),
+              };
+            }"""
+        )
+
+        # 第四段：切到「按名称」。来源那一行改由行上的属性驱动之后，平铺视图仍然
+        # 每行都有它，而且照旧另起一行。
+        page.click('[data-piopt-mp-mode="name"]')
+        page.wait_for_selector('.piopt-mp-view[data-piopt-mp-layout="name"]', state="attached", timeout=4000)
+        page.wait_for_timeout(200)
+        by_name = page.evaluate(
+            """() => {
+              const rows = [...document.querySelectorAll('.piopt-mp-view [data-piopt-mp-item]')];
+              const main = (row) => row.querySelector('.composer-model-option-main');
+              return {
+                labels: rows.map((row) => row.querySelector('.composer-model-label').textContent.trim()),
+                sources: rows.map((row) => getComputedStyle(main(row), '::after').content),
+                wraps: rows.map((row) => getComputedStyle(main(row)).flexWrap),
+              };
+            }"""
+        )
+
         browser.close()
 
     server.shutdown()
@@ -233,3 +323,25 @@ assert sticky["looseBackdrop"] in ("none", ""), sticky
 # 原生分组标题仍用宿主自己的底色（搜索时显示的就是它）。
 assert sticky["nativeTitle"] not in ("transparent", "rgba(0, 0, 0, 0)", ""), sticky
 print("PASS model picker: group label only paints its own wash while stuck")
+print(json.dumps(by_name, ensure_ascii=False, indent=2))
+assert by_name["labels"] == ["Model A", "Model B", "Zeta 1", "Zeta 2"], by_name
+assert by_name["sources"] == ['"Alpha"', '"Alpha"', '"Zeta"', '"Zeta"'], by_name
+assert by_name["wraps"] == ["wrap"] * 4, by_name
+print("PASS model picker: name arrangement keeps its source line under every option")
+print(json.dumps(host_order, ensure_ascii=False, indent=2))
+assert host_order["layout"] == "default", host_order
+# 四个按钮的顺序，以及当前选中的就是「默认」。
+assert host_order["modes"] == ["默认", "供应商", "厂商", "名称"], host_order
+assert host_order["pressed"] == ["default"], host_order
+# 一条不差：分组、组内顺序、最近使用那一组的位置全部跟原生列表一样。
+assert host_order["viewTitles"] == host_order["nativeTitles"] == ["Recent", "Zeta", "Alpha"], host_order
+assert host_order["viewLabels"] == host_order["nativeLabels"], host_order
+assert host_order["nativeLabels"] == ["Model A", "Zeta 2", "Zeta 1", "Model B"], host_order
+# 最近使用那一行仍带宿主的能力标记（来源换成 meta 之后要靠下方那行写回来）。
+assert host_order["firstTitle"] == "Alpha · model-a", host_order
+assert host_order["firstHasBadge"], host_order
+assert host_order["firstCtx"] == "200K", host_order
+assert host_order["firstSource"] == '"Alpha"', host_order
+# 别的分组本来就有抬头写着供应商，不再多一行来源。
+assert host_order["plainSource"] in ("none", '""'), host_order
+print("PASS model picker: default arrangement keeps the host's order and the recent group's source")

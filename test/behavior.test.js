@@ -49,11 +49,14 @@ function loadFeature(fake) {
 
 // ---------------------------------------------------------------------- shape
 
-test("the grouping has one default and one accepted pair", () => {
-  assert.deepEqual(modelPicker.GROUPINGS, ["provider", "vendor", "name"]);
+test("the grouping has one default and three rearrangements", () => {
+  // 按钮的先后就是这里的先后：「默认」在最前面，后面三种都自己重排。
+  assert.deepEqual(modelPicker.GROUPINGS, ["default", "provider", "vendor", "name"]);
   assert.equal(modelPicker.SETTINGS_KEY, "modelPicker");
+  // 没存过设置时仍是按供应商分组：新增「默认」不改老用户打开浮窗看到的样子。
   assert.deepEqual(modelPicker.normalizeConfig(undefined), { grouping: "provider" });
   assert.deepEqual(modelPicker.normalizeConfig({ grouping: "name" }), { grouping: "name" });
+  assert.deepEqual(modelPicker.normalizeConfig({ grouping: "default" }), { grouping: "default" });
   // 旧值、大小写、别的功能的键都不该漏进来。
   assert.deepEqual(modelPicker.normalizeConfig({ grouping: "NAME" }), { grouping: "provider" });
   assert.deepEqual(modelPicker.normalizeConfig({ grouping: "size" }), { grouping: "provider" });
@@ -68,7 +71,7 @@ test("the panel reads and writes the grouping through the behavior feature", asy
   try {
     await feature.onLoad();
     assert.equal(feature.getState().config.grouping, "name");
-    assert.deepEqual(feature.getState().groupings, ["provider", "vendor", "name"]);
+    assert.deepEqual(feature.getState().groupings, ["default", "provider", "vendor", "name"]);
 
     const saved = await feature.onPanelInvoke("behavior.modelPicker.setGrouping", { grouping: "provider" });
     assert.equal(saved.ok, true);
@@ -80,6 +83,12 @@ test("the panel reads and writes the grouping through the behavior feature", asy
     // 非法值退回默认，不允许写进去一个宿主不认识的排列方式。
     const coerced = await feature.onPanelInvoke("behavior.modelPicker.setGrouping", { grouping: "alphabetical" });
     assert.equal(coerced.config.grouping, "provider");
+
+    // 「默认」也是宿主认识的排列方式，能存下来、下次打开照样读到。
+    const kept = await feature.onPanelInvoke("behavior.modelPicker.setGrouping", { grouping: "default" });
+    assert.equal(kept.config.grouping, "default");
+    assert.deepEqual(fake.store[modelPicker.SETTINGS_KEY], { grouping: "default" });
+    assert.equal(feature.getState().config.grouping, "default");
 
     await assert.rejects(
       () => feature.onPanelInvoke("behavior.unknown", {}),
@@ -141,7 +150,7 @@ test("最近使用的行不再把来源写在右边", () => {
   // 最近使用那一组的 meta 就是来源文本：克隆时整块摘掉。
   assert.match(source, /if \(row\.recent\) \{/);
   assert.match(source, /meta\.remove\(\)/);
-  // 按名称时来源改由下方那行淡字承担（CSS 里用 data-piopt-mp-provider 画）。
+  // 来源改由下方那行淡字承担（CSS 里用 data-piopt-mp-provider 画），与排列方式无关。
   assert.match(source, /::after\{content:attr\(\$\{PROVIDER_ATTR\}\)/);
   assert.match(source, /flex:1 0 100%/);
 });
@@ -150,7 +159,7 @@ test("最近使用的选中行跟分组里的选中行长一个样", () => {
   const source = read("renderer/model-picker.mjs");
   // 宿主只给分组里的选中行挂 active，那枚勾也只在这一路带 composer-model-check；
   // 「最近使用」那一组的选中行两样都没有，于是选中时上下文读数停在淡色、勾停在
-  // 次要文字色。克隆行把这两个类补上，选中态在三种排列下才一致。
+  // 次要文字色。克隆行把这两个类补上，选中态在四种排列下才一致。
   assert.match(source, /if \(item\.getAttribute\("aria-checked"\) === "true"\)/);
   assert.match(source, /item\.classList\.add\("active"\)/);
   assert.match(source, /check\.classList\.add\("composer-model-check"\)/);
@@ -181,8 +190,30 @@ test("分组视图把最近使用的模型并回分组，并按 A–Z 排序", (
   assert.ok(source.includes("@container scroll-state(stuck: top)"));
 });
 
+test("「默认」排列原样照搬宿主的顺序", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 原生行的顺序（querySelectorAll 按文档序）与分组标题一并记下来。
+  assert.match(source, /groupLabel,\s*\n\s*label:/);
+  // 独立的一支：不排序，只按首次出现的顺序落桶，最近使用那一组仍在最前面。
+  assert.match(source, /function defaultView\(rows\)/);
+  assert.match(source, /for \(const \[label, bucket\] of buckets\) \{/);
+  assert.match(source, /groups\.push\(buildGroup\(label, bucket, bucket\.every\(\(row\) => row\.recent\)\)\);/);
+  assert.match(source, /} else if \(grouping === "default"\) \{/);
+  assert.match(source, /for \(const group of defaultView\(rows\)\) view\.append\(group\);/);
+  // 宿主没有分组抬头时不硬造一个空标题。
+  assert.match(source, /if \(label\) \{\s*\n\s*group\.setAttribute\("aria-label", label\)/);
+});
 
-test("排列方式在搜索框外面，三个选项点哪个是哪个", () => {
+test("默认排列下最近使用那一组仍然写着来源", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 来源那一行由行上的属性决定，不再绑在某一种排列方式上：按名称每行都有，
+  // 默认排列下只有最近使用那一组（宿主在那里画的本来就是来源）。
+  assert.match(source, /option-main\[\$\{PROVIDER_ATTR\}\]\{flex-wrap:wrap\}/);
+  assert.match(source, /option-main\[\$\{PROVIDER_ATTR\}\]::after\{content:attr\(\$\{PROVIDER_ATTR\}\)/);
+  assert.doesNotMatch(source, /\[LAYOUT_ATTR="name"\] \.composer-model-option-main::after/);
+});
+
+test("排列方式在搜索框外面，四个选项点哪个是哪个", () => {
   const source = read("renderer/model-picker.mjs");
   assert.match(source, /const MODES_CLASS = "piopt-mp-modes";/);
   assert.match(source, /const MODE_CLASS = "piopt-mp-mode";/);
@@ -191,7 +222,7 @@ test("排列方式在搜索框外面，三个选项点哪个是哪个", () => {
   assert.match(source, /const root = menuElement\.querySelector\("\.composer-menu-root"\)/);
   assert.match(source, /search\.after\(bar\)/);
   assert.doesNotMatch(source, /search\.append\(/);
-  // 三种模式一轮渲染，点击直接切到那一种。
+  // 四种模式一轮渲染，点击直接切到那一种。
   assert.match(source, /for \(const mode of GROUPINGS\) \{/);
   assert.match(source, /void setGrouping\(mode\)/);
   assert.match(source, /button\.setAttribute\("aria-pressed", String\(grouping === mode\)\)/);

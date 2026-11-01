@@ -17,9 +17,13 @@ them: they are panel settings.
   section has a 重置 button with a confirm step.
 - **行为 (behavior)** — the chat composer's model popup. It always lists every
   model (the host's height limits are untouched); a bar right under the search
-  field switches between grouping by provider, grouping by model vendor, and a
-  flat list sorted by name. Groups and the rows inside them are all A–Z (Latin
-  first, then Chinese). Provider grouping puts recently used models back under
+  field switches between the host's own order (默认, nothing is re-sorted),
+  grouping by provider, grouping by model vendor, and a flat list sorted by
+  name. The three rearrangements sort groups and the rows inside them A–Z (Latin
+  first, then Chinese). Default keeps the host's groups, their order, the order
+  inside each group and the recently-used group at the top; that recent group has
+  no provider heading, so its source moves to the faint second line under the
+  model name. Provider grouping puts recently used models back under
   their provider and drops the group label's background; vendor grouping labels
   groups by brand (Anthropic, OpenAI, Tencent…); name sorting adds a faint source
   line under each option. Every row also carries a 14px colored brand mark picked by

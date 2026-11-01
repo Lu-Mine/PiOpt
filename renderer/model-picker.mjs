@@ -3,11 +3,13 @@
 // PI-Desktop's popup lists the three most recent models first and folds every
 // other model behind an 「其他模型」 toggle. This module changes exactly that:
 // 全部模型始终展开（限高仍是宿主自己的 max-height，这里不碰），搜索框下面一条
-// 「供应商 / 厂商 / 名称」切换排列方式，分组与组内顺序都按 A–Z。
+// 「默认 / 供应商 / 厂商 / 名称」切换排列方式：默认照宿主自己的顺序（最近使用那
+// 一组仍在最前），其余三种的分组与组内顺序都按 A–Z。
 //
 // 做法：
 //   1. 点一次宿主自己的「其他模型」入口把其余分组放出来，随后把入口藏掉；
 //   2. 原生列表整体让位，用克隆出来的按钮自建一份视图：
+//      · 按默认：分组与组内顺序原样照搬宿主，最近使用那一组仍排在最前面；
 //      · 按供应商：最近使用过的模型还回各自供应商那一组，分组标题不压底色；
 //      · 按名称：全部模型平铺，每个选项下面另起一行淡色的来源。
 //
@@ -43,16 +45,18 @@ const ITEM_ATTR = "data-piopt-mp-item";
 const PROBING_ATTR = "data-piopt-mp-probing";
 const CAPS_STORAGE_KEY = "piopt.modelPicker.capabilities.v1";
 const DEFAULT_GROUPING = "provider";
-const GROUPINGS = ["provider", "vendor", "name"];
+// `default` 照宿主自己的顺序：分组、组内、最近使用那一组的位置全部原样保留。
+// 其余三种都重排。按钮的先后就是这里的先后。
+const GROUPINGS = ["default", "provider", "vendor", "name"];
 // 探测一次「最近使用」模型的能力要一次搜索 + 一次渲染；最多等这么久，超时就放弃。
 const PROBE_TIMEOUT_MS = 400;
 const CAPS_LIMIT = 200;
 const SYNC_DELAY_MS = 40;
 
-// 三种排列方式的名字：宿主界面跟随 locale，这里也跟随。
+// 四种排列方式的名字：宿主界面跟随 locale，这里也跟随。
 const COPY = {
-  zh: { modes: "排列方式", provider: "供应商", vendor: "厂商", name: "名称" },
-  en: { modes: "Arrange by", provider: "Provider", vendor: "Vendor", name: "Name" },
+  zh: { modes: "排列方式", default: "默认", provider: "供应商", vendor: "厂商", name: "名称" },
+  en: { modes: "Arrange by", default: "Default", provider: "Provider", vendor: "Vendor", name: "Name" },
 };
 
 // Injected with the entry stylesheet. Every rule is scoped to a menu this module
@@ -74,7 +78,7 @@ export const MODEL_PICKER_CSS = [
   `.composer-model-menu[${EXPANDED_ATTR}] .${VIEW_CLASS} .composer-model-group-label{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;container-type:scroll-state}`,
   `.${VIEW_CLASS} .${GROUP_TITLE_CLASS}{display:inline-block;padding:2px 6px;margin:-2px -6px;border-radius:6px}`,
   `@container scroll-state(stuck: top){.${GROUP_TITLE_CLASS}{background:color-mix(in oklab,var(--ds-bg-elevated-opaque) 96%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(20px);backdrop-filter:saturate(1.4) blur(20px);box-shadow:0 1px 2px color-mix(in oklab,#000000 30%,transparent),0 8px 18px -6px color-mix(in oklab,#000000 42%,transparent)}}`,
-  /* 搜索框下面单独一条：三种排列方式，点哪个是哪个。 */
+  /* 搜索框下面单独一条：四种排列方式，点哪个是哪个。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODES_CLASS}{display:flex;gap:2px;margin:0 3px 5px;padding:2px;border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 6%,transparent)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}{flex:1 1 0;min-width:0;height:20px;padding:0 6px;border:0;border-radius:var(--radius-full);background:transparent;color:var(--ds-text-muted);font:inherit;font-size:var(--text-xs);line-height:1;white-space:nowrap;cursor:pointer;transition:color var(--motion-duration-fast) var(--motion-ease-out),background var(--motion-duration-fast) var(--motion-ease-out)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}:hover{color:var(--ds-text-primary);background:color-mix(in oklab,var(--ds-text-primary) 8%,transparent)}`,
@@ -89,9 +93,11 @@ export const MODEL_PICKER_CSS = [
   `.piopt-mp-logo{flex:none;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:inherit}`,
   `.piopt-mp-logo svg{width:14px;height:14px;display:block}`,
   `.piopt-mp-logo-letter{border-radius:4px;background:color-mix(in oklab,var(--piopt-logo) 22%,transparent);color:var(--piopt-logo);font-size:9px;font-weight:600;line-height:1}`,
-  /* 按名称：来源另起一行、居左、比次要文字再淡一档。 */
-  `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main{flex-wrap:wrap}`,
-  `.${VIEW_CLASS}[${LAYOUT_ATTR}="name"] .composer-model-option-main::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
+  /* 来源那一行：哪一行要写来源由模块自己决定（按名称时每行都写，默认排列下只有
+     最近使用那一组要写 —— 宿主在那里画的本来就是来源，我们换成能力标记之后
+     得把它补回来）。写在行上就生效，与排列方式无关。 */
+  `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]{flex-wrap:wrap}`,
+  `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
   `.${VIEW_CLASS}[data-piopt-mp-switch="true"]{animation:piopt-mp-switch var(--pm-fast,135ms) var(--pm-ease-symmetric,cubic-bezier(.22,1,.36,1)) backwards}`,
   `@keyframes piopt-mp-switch{from{opacity:.65}to{opacity:1}}`,
 ].join("\n");
@@ -197,7 +203,12 @@ function compareRows(left, right) {
   return left.key < right.key ? -1 : left.key > right.key ? 1 : 0;
 }
 
-/** 原生列表里的每一个模型，按身份去重后的行。 */
+/**
+ * 原生列表里的每一个模型，按身份去重后的行。
+ *
+ * 顺序就是宿主的顺序（`querySelectorAll` 按文档序），分组标题一并记下来：
+ * 「默认」排列原样照搬宿主的这棵树，不重新排序。
+ */
 function readRows(list) {
   const rows = [];
   const seen = new Set();
@@ -215,6 +226,7 @@ function readRows(list) {
       provider: identity.provider,
       modelId: identity.modelId,
       recent: identity.recent,
+      groupLabel,
       label: textOf(option.querySelector(LABEL_SELECTOR)) || identity.modelId,
     });
   }
@@ -498,7 +510,7 @@ function buildRow(row, showSource) {
   const main = item.querySelector(OPTION_MAIN_SELECTOR);
   // 宿主只给分组里的选中行挂 active，那枚勾也只在这一路带 composer-model-check；
   // 「最近使用」那一组的选中行两样都没有，于是选中时上下文读数停在淡色、勾停在
-  // 次要文字色。这里补齐，让三种排列下的选中行共用宿主同一套规则。
+  // 次要文字色。这里补齐，让四种排列下的选中行共用宿主同一套规则。
   if (item.getAttribute("aria-checked") === "true") {
     if (item.classList) item.classList.add("active");
     const check = item.lastElementChild;
@@ -545,18 +557,43 @@ function buildGroup(label, rows, showSource) {
   const group = document.createElement("div");
   group.className = "composer-model-group";
   group.setAttribute("role", "group");
-  group.setAttribute("aria-label", label);
-  const heading = document.createElement("div");
-  heading.className = "composer-model-group-label";
-  // 文字放在内层：吸顶时由它补一层底色挡住下面滚过去的行（容器查询只能给查询
-  // 容器的后代上色，所以标题自身是容器、文字块才是那层底）。
-  const title = document.createElement("span");
-  title.className = GROUP_TITLE_CLASS;
-  title.textContent = label;
-  heading.append(title);
-  group.append(heading);
+  // 宿主没有分组抬头时（列表直接就是一串按钮）不硬造一个空标题。
+  if (label) {
+    group.setAttribute("aria-label", label);
+    const heading = document.createElement("div");
+    heading.className = "composer-model-group-label";
+    // 文字放在内层：吸顶时由它补一层底色挡住下面滚过去的行（容器查询只能给查询
+    // 容器的后代上色，所以标题自身是容器、文字块才是那层底）。
+    const title = document.createElement("span");
+    title.className = GROUP_TITLE_CLASS;
+    title.textContent = label;
+    heading.append(title);
+    group.append(heading);
+  }
   for (const row of rows) group.append(buildRow(row, showSource));
   return group;
+}
+
+/**
+ * 「默认」视图：宿主自己的顺序一点不改。
+ *
+ * 分组、组内顺序、最近使用那一组的位置全部照搬原生列表 —— 宿主按自己的设置排好
+ * 的那份顺序就是这里要的东西，所以这一支不排序、也不把最近使用的模型并回供应商。
+ * 最近使用那一组的行要补一行来源：宿主在那里画的本来就是来源，buildRow 把它换成
+ * 能力标记（推理 / 视觉徽标 + 上下文读数）之后，来源得另起一行写回来。
+ */
+function defaultView(rows) {
+  const buckets = new Map();
+  for (const row of rows) {
+    const label = row.groupLabel || "";
+    if (!buckets.has(label)) buckets.set(label, []);
+    buckets.get(label).push(row);
+  }
+  const groups = [];
+  for (const [label, bucket] of buckets) {
+    groups.push(buildGroup(label, bucket, bucket.every((row) => row.recent)));
+  }
+  return groups;
 }
 
 /**
@@ -602,6 +639,8 @@ function renderView(list) {
     empty.className = "composer-model-empty";
     empty.textContent = textOf(list.querySelector(EMPTY_SELECTOR));
     view.append(empty);
+  } else if (grouping === "default") {
+    for (const group of defaultView(rows)) view.append(group);
   } else if (grouping === "name") {
     rows.sort(compareRows);
     for (const row of rows) view.append(buildRow(row, true));
@@ -627,7 +666,7 @@ function copyOf() {
 }
 
 /**
- * 搜索框下面那条「排列方式」：供应商 / 厂商 / 名称，点哪个是哪个。
+ * 搜索框下面那条「排列方式」：默认 / 供应商 / 厂商 / 名称，点哪个是哪个。
  *
  * 它挂在宿主的 `.composer-menu-root` 里、紧跟搜索框之后 —— 在搜索框外面，输入框
  * 拿回整行宽度。React 只管它自己的子节点（搜索框、列表、思考滑杆），多出来的一条
