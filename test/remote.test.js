@@ -313,3 +313,51 @@ test("the port guard rejects anything a phone could not open", async () => {
   await assert.rejects(() => server.start({ port: 80 }), /1024/);
   await assert.rejects(() => server.start({ port: 70000 }), /1024/);
 });
+
+test("one session's transcript is read through whichever host shape answers", async () => {
+  const saved = global.pi;
+  const shapes = [
+    // bundle.session.messages
+    { get: { session: { id: "s1", title: "会话一", messages: [{ role: "user", content: "你好" }] } }, expectText: "你好" },
+    // bundle.messages
+    { get: { id: "s1", title: "会话一", messages: [{ role: "user", content: "你好" }] }, expectText: "你好" },
+    // only listMessages answers
+    { get: { session: { id: "s1", title: "会话一" } }, listMessages: [{ role: "assistant", content: "在" }], expectText: "在" },
+    // get fails entirely, listMessages still answers
+    { getError: new Error("no such session"), listMessages: [{ role: "assistant", content: "在" }], expectText: "在" },
+  ];
+  try {
+    for (const shape of shapes) {
+      global.pi = {
+        session: {
+          get: async () => {
+            if (shape.getError) throw shape.getError;
+            return shape.get;
+          },
+          listMessages: async () => shape.listMessages || [],
+        },
+      };
+      const payload = await internals.readSession("s1", { limit: 20 });
+      assert.equal(payload.session.id, "s1");
+      assert.equal(payload.messages.length, 1);
+      assert.equal(payload.messages[0].text, shape.expectText);
+    }
+
+    // Nothing answers: still a session, just no messages.
+    global.pi = {
+      session: {
+        get: async () => {
+          throw new Error("gone");
+        },
+        listMessages: async () => {
+          throw new Error("gone");
+        },
+      },
+    };
+    const empty = await internals.readSession("s2", { limit: 20 });
+    assert.deepEqual(empty.messages, []);
+    assert.equal(empty.session.id, "s2");
+  } finally {
+    global.pi = saved;
+  }
+});

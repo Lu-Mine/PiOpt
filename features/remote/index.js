@@ -194,12 +194,23 @@ async function readSession(sessionId, options) {
   } catch {
     bundle = null;
   }
-  let messages = normalizeMessages(bundle);
+  // The host may hang the transcript on the bundle, on `bundle.session`, or only
+  // hand it out through listMessages, and those calls have taken different
+  // argument shapes over time. Try them in order and keep whatever arrives: a
+  // phone that shows the header with no messages beats an error page.
+  let messages = [];
+  for (const container of [bundle, bundle && bundle.session]) {
+    messages = normalizeMessages(container);
+    if (messages.length) break;
+  }
   if (!messages.length) {
-    try {
-      messages = normalizeMessages(await pi.session.listMessages({ sessionId, limit }));
-    } catch (error) {
-      throw new Error(`读不到这个会话: ${error && error.message ? error.message : error}`);
+    for (const shape of [{ sessionId, limit }, { sessionId }, { id: sessionId, limit }]) {
+      try {
+        messages = normalizeMessages(await pi.session.listMessages(shape));
+      } catch {
+        continue;
+      }
+      if (messages.length) break;
     }
   }
   const meta = normalizeSessionRow((bundle && (bundle.session || bundle)) || { id: sessionId }) || {
