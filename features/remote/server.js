@@ -225,6 +225,13 @@ function createRemoteServer(options) {
       return;
     }
 
+    // The browser asks for this on its own; answering 204 keeps an unpaired
+    // phone from logging a 401 it did nothing to cause.
+    if (pathname === "/favicon.ico") {
+      res.writeHead(204).end();
+      return;
+    }
+
     if (pathname === "/api/pair" && req.method === "POST") {
       await handlePair(req, res);
       return;
