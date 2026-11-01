@@ -397,11 +397,8 @@ function buildGlassCss(input = {}, options = {}) {
   // way they hide does not change.
   const frostedEntrance = [
     `:is(${[...FROSTED_POPUPS, ...FROSTED_FRAMES].join(",")}){transition-property:transform,visibility!important}`,
-    // The duration comes from the motion layer and falls back to almost nothing:
-    // with the motion layer switched off the user asked for no entrance, and the
-    // full "disabled" switch flattens this to 1ms anyway.
-    `:is(${FROSTED_POPUPS.join(",")}){animation:pg-popup-in var(--pm-fast,1ms) var(--pm-ease-out,ease-out) backwards!important}`,
     `:is(${[...FROSTED_POPUPS, ...FROSTED_FRAMES].join(",")}).is-open{opacity:1!important}`,
+    `:is(${FROSTED_POPUPS.join(",")}){animation:pg-popup-in var(--pm-fast,140ms) var(--pm-ease-out,ease-out) backwards!important}`,
     `:is(${FROSTED_FRAMES.join(",")}){animation:none!important}`,
     // No opacity anywhere in this keyframe: that is the whole point.
     "@keyframes pg-popup-in{from{transform:translateY(4px)}to{transform:translateY(0)}}",
