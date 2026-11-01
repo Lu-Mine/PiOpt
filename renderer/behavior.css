@@ -114,14 +114,92 @@ h1 {
   gap: 8px;
 }
 
-/* --------------------------------------------------------------- 只读值 */
+/* ------------------------------------------------------------- 分段控件 */
 
-/* 值不是可点的控件：它只是把浮窗里那颗按钮当前选中的排列方式念出来。 */
-.behavior-value {
-  color: var(--ds-text-secondary);
-  font-size: var(--text-sm-plus);
-  font-variant-numeric: tabular-nums;
+/* 四选一的排列方式：与外观那一屏的基底选择同一个样子，一行放得下。 */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-2xs);
+  background: var(--ds-bg-inset);
 }
+
+.segmented button {
+  appearance: none;
+  min-width: 0;
+  height: var(--ds-control-sm);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-3xs);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+.segmented button:hover { color: var(--ds-text-primary); }
+.segmented button[aria-pressed="true"] {
+  background: var(--ds-raised);
+  color: var(--ds-text-primary);
+  box-shadow: var(--ds-raised-shadow), 0 0 0 1px var(--ds-border-subtle);
+}
+.segmented button:disabled { cursor: default; color: var(--ds-text-muted); }
+
+/* ---------------------------------------------------------------- 开关 */
+
+/* 与外观那一屏同一个开关：input 藏起来，画的是 .switch。 */
+.switch-row input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch {
+  position: relative;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--ds-switch-track-off);
+  transition: background var(--motion-duration-fast) var(--motion-ease-out);
+}
+.switch-row:hover .switch { background: var(--ds-switch-track-off-hover); }
+.switch span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--ds-switch-knob-off);
+  box-shadow: var(--ds-raised-shadow);
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    background var(--motion-duration-fast) var(--motion-ease-out);
+}
+.switch-row input:checked + .switch { background: var(--ds-accent); }
+.switch-row input:checked + .switch span {
+  transform: translateX(12px);
+  background: var(--ds-switch-knob-on);
+}
+.switch-row input:focus-visible + .switch {
+  outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
+  outline-offset: 2px;
+}
+.switch-row input:disabled + .switch { opacity: 0.4; filter: grayscale(1); }
+/* 存不进去时控件暂时不可点：行文字跟着淡下去，读屏从 disabled 就知道。 */
+.settings-row:has(input:disabled) { cursor: default; }
+.settings-row:has(input:disabled) .settings-row-title,
+.settings-row:has(input:disabled) .settings-row-detail { opacity: 0.5; }
 
 /* 保存失败时这一行才出现；平时它不占位置。 */
 .behavior-status {

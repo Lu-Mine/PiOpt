@@ -25,7 +25,7 @@ async function readConfig() {
   }
 }
 
-// 面板只要两样东西：当前设置，以及可以选哪些排列方式。
+// 面板要的东西：当前设置，以及可以选哪些排列方式。
 function statePayload() {
   return {
     config,
@@ -33,8 +33,16 @@ function statePayload() {
   };
 }
 
+// 面板与浮窗改的都是同一份设置：宿主窗口里那颗排列按钮经 setGrouping 写，
+// 面板里的分段控件写同一个字段，两个开关走 setOptions。
 async function setGrouping(input) {
-  config = { ...config, grouping: modelPicker.normalizeGrouping(input) };
+  config = modelPicker.normalizeConfig({ ...config, grouping: input });
+  await pi.plugin.setSettings({ [modelPicker.SETTINGS_KEY]: config });
+  return statePayload();
+}
+
+async function setOptions(patch = {}) {
+  config = modelPicker.normalizeConfig({ ...config, ...patch });
   await pi.plugin.setSettings({ [modelPicker.SETTINGS_KEY]: config });
   return statePayload();
 }
@@ -54,6 +62,8 @@ async function onPanelInvoke(channel, payload = {}) {
       return statePayload();
     case "behavior.modelPicker.setGrouping":
       return { ok: true, ...(await setGrouping(payload.grouping)) };
+    case "behavior.modelPicker.setOptions":
+      return { ok: true, ...(await setOptions(payload)) };
     default:
       throw new Error(`Unsupported panel action: ${channel}`);
   }
@@ -67,5 +77,6 @@ module.exports = {
   // copy is the one this process last wrote, so no settings round-trip per open.
   getState: statePayload,
   setGrouping,
+  setOptions,
   _getConfig: () => config,
 };

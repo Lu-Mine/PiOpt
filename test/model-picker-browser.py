@@ -119,6 +119,59 @@ DEFAULT_DOM = f"""
 </div>
 """
 
+# 第三段用：一个会像宿主那样渲染的迷你「宿主」。它的搜索不过滤「最近使用」那一组，
+# 又用供应商名匹配整组 —— 模块正是靠这两点把设置里的完整顺序问出来。
+HOST_DOM = """
+<div class="composer-model-menu is-open">
+  <div class="composer-menu-root">
+    <div class="composer-model-search"><input></div>
+    <div class="composer-model-list"></div>
+  </div>
+</div>
+"""
+
+HOST_MOCK = """
+(() => {
+  const CACHED = %s;
+  // 设置里的顺序：Zeta 在前、Alpha 在后；model-a 在 Alpha 组里排第二。
+  window.hostGroups = {
+    Zeta: [{ id: 'zeta-2', label: 'Zeta 2' }, { id: 'zeta-1', label: 'Zeta 1' }],
+    Alpha: [{ id: 'model-b', label: 'Model B' }, { id: 'model-a', label: 'Model A' }],
+  };
+  window.hostRecent = [{ id: 'model-a', label: 'Model A' }];
+  window.renderHost = (query) => {
+    const q = String(query || '').trim().toLowerCase();
+    const list = document.querySelector('.composer-model-list');
+    if (!list) return;
+    const row = (title, label, meta) =>
+      `<button type="button" role="menuitemradio" aria-checked="false" title="${title}" class="composer-plus-item composer-model-option"><span class="composer-model-option-main"><span class="composer-model-label">${label}</span>${meta}</span></button>`;
+    const group = (name, rows) =>
+      `<div class="composer-model-group" role="group" aria-label="${name}"><div class="composer-model-group-label">${name}</div>${rows.join('')}</div>`;
+    const parts = [];
+    // 「最近使用」那一组一直在最上面，搜索时也不过滤（和宿主一致）。
+    parts.push(group('Recent', window.hostRecent.map((m) =>
+      row(`Alpha · ${m.id}`, m.label, '<span class="composer-model-option-meta" title="Alpha">Alpha</span>'))));
+    parts.push('<button class="composer-menu-entry" aria-expanded="true">Other models</button>');
+    for (const [name, models] of Object.entries(window.hostGroups)) {
+      const shown = models.filter((m) => {
+        // 没有查询：宿主把最近用过的那几个从分组里剔出去。
+        if (!q) return !window.hostRecent.some((r) => r.id === m.id);
+        // 有查询：它用 providerSearchText（含供应商名）匹配，所以搜供应商名会列出整组。
+        return m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q) || name.toLowerCase().includes(q);
+      });
+      if (!shown.length) continue;
+      parts.push(group(name, shown.map((m) => row(m.id, m.label, CACHED))));
+    }
+    list.innerHTML = parts.join('');
+  };
+  document.addEventListener('input', (event) => {
+    const input = event.target;
+    if (!input || !input.closest || !input.closest('.composer-model-search')) return;
+    window.renderHost(input.value);
+  });
+})();
+""" % json.dumps(CACHED)
+
 WHITE = "rgb(255, 255, 255)"
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -230,20 +283,26 @@ with tempfile.TemporaryDirectory() as serve:
             }"""
         )
 
-        # 第三段：「默认」排列就是宿主自己的顺序 —— 平铺、一行不重排、没有分组抬头
-        # （「最近使用」那一类连标题一起没有），每行补一行来源。
-        # 最近用过的那几行本来就在原生列表最前，位置照旧；能力标记照旧补上。
+        # 第三段：「默认」排列按宿主那份完整顺序平铺。宿主把最近用过的模型从分组里
+        # 剔了出去，所以这里用会搜索的迷你宿主（HOST_MOCK）让它把顺序问出来 ——
+        # 最近用过的那一行要回到 Alpha 组里的原位，能力标记与来源照旧。
+        page.add_script_tag(content=HOST_MOCK)
         page.evaluate(
             """([dom]) => {
+              localStorage.removeItem('piopt.modelPicker.order.v1');
               picker.unmountModelPicker();
               document.querySelector('.composer-model-menu').remove();
               document.body.insertAdjacentHTML('beforeend', dom);
+              window.renderHost('');
               window.mountReady = picker.mountModelPicker({dispatch: async () => ({config: {grouping: 'default'}})});
             }""",
-            [DEFAULT_DOM],
+            [HOST_DOM],
         )
-        page.wait_for_selector('.piopt-mp-view[data-piopt-mp-layout="default"]', state="attached", timeout=4000)
-        page.wait_for_timeout(300)
+        page.wait_for_function(
+            "() => !!localStorage.getItem('piopt.modelPicker.order.v1')", timeout=8000
+        )
+        page.wait_for_selector('.piopt-mp-view[data-piopt-mp-layout="default"]', state="attached", timeout=8000)
+        page.wait_for_timeout(400)
         host_order = page.evaluate(
             """() => {
               const inView = (node) => !!node.closest('.piopt-mp-view');
@@ -335,15 +394,17 @@ assert host_order["layout"] == "default", host_order
 # 四个按钮的顺序，以及当前选中的就是「默认」。
 assert host_order["modes"] == ["默认", "供应商", "厂商", "名称"], host_order
 assert host_order["pressed"] == ["default"], host_order
-# 「最近使用」那一类连标题一起没有：视图里没有任何分组抬头，行序就是原生的行序。
+# 「最近使用」那一类连标题一起没有：视图里一个分组抬头都没有。
 assert host_order["nativeTitles"] == ["Recent", "Zeta", "Alpha"], host_order
 assert host_order["viewTitles"] == [], host_order
+# 原生列表把 model-a 摆在最前（宿主随手放那儿），视图把它送回 Alpha 组里它的位置
+# —— 顺序与设置里那份一致：Zeta 组在前、组内原序，Alpha 组里 model-b 在 model-a 之前。
 assert host_order["nativeLabels"] == ["Model A", "Zeta 2", "Zeta 1", "Model B"], host_order
-assert host_order["viewLabels"] == host_order["nativeLabels"], host_order
+assert host_order["viewLabels"] == ["Zeta 2", "Zeta 1", "Model B", "Model A"], host_order
 # 能力标记照旧补上；平铺之后没有抬头写着供应商，所以每行都写一行来源。
 assert host_order["recentTitle"] == "Alpha · model-a", host_order
 assert host_order["firstHasBadge"], host_order
 assert host_order["firstCtx"] == "200K", host_order
 assert host_order["recentSource"] == '"Alpha"', host_order
 assert host_order["plainSource"] == '"Zeta"', host_order
-print("PASS model picker: default arrangement flattens the host's own order")
+print("PASS model picker: default arrangement restores the configured order")

@@ -20,19 +20,23 @@ them: they are panel settings.
   field switches between the host's own order (默认), grouping by provider,
   grouping by model vendor, and a flat list sorted by name. The three
   rearrangements sort groups and the rows inside them A–Z (Latin first, then
-  Chinese). Default is one flat list in exactly the host's own order — nothing is
-  re-sorted and nothing is grouped, so there is no 「最近使用」 section at all: the
-  host puts the recently-used rows on top itself and they stay there, and every
-  row gets a faint source line (without group headings nobody else names the
-  provider). Provider grouping puts recently used models back under
-  their provider and drops the group label's background; vendor grouping labels
-  groups by brand (Anthropic, OpenAI, Tencent…); name sorting adds a faint source
-  line under each option. Every row also carries a 14px colored brand mark picked by
-  model name first and provider name second, with a colored initial as fallback
-  for brands not in the table (icons are lobe-icons, bundled, no network).
+  Chinese). Default is one flat list in the order configured in Settings — nothing
+  is re-sorted and nothing is grouped, so there is no 「最近使用」 section at all;
+  the host pulls those rows out of their provider groups and puts them on top, so
+  the module asks the host for the full list (searching each provider name shows
+  the whole group in its configured order, and search never hides the
+  recently-used rows) and puts them back where they belong, caching the whole
+  order in localStorage. Every row in that list also gets a faint source line
+  (without group headings nobody else names the provider). Provider grouping puts
+  recently used models back under their provider and drops the group label's
+  background; vendor grouping labels groups by brand (Anthropic, OpenAI,
+  Tencent…); name sorting adds a faint source line under each option. Every row
+  also carries a 14px colored brand mark picked by model name first and provider
+  name second, with a colored initial as fallback for brands not in the table
+  (icons are lobe-icons, bundled, no network).
   Recently used rows show the same reasoning/vision badges and context reading as
-  the provider groups: the first open probes them with the host's own search
-  while the content is hidden, then caches the markup in localStorage. The
+  the provider groups: the same hidden probe fetches them with the host's own
+  search and caches the markup in localStorage. The
   bar lives in the host window (`renderer/model-picker.mjs`) and writes the
   plugin's `modelPicker` key; the panel's 行为 view only reports the current
   value, so do not tell the user to change it there.

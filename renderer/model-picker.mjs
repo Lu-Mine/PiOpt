@@ -4,6 +4,8 @@
 // other model behind an 「其他模型」 toggle. This module changes exactly that:
 // 「默认 / 供应商 / 厂商 / 名称」切换排列方式：默认是宿主自己的顺序，一个不分组
 // 的平铺列表、一行都不重排；其余三种的分组与组内顺序都按 A–Z。
+// 另外两项由设置决定：选中行的那枚对勾可以换成圈住整行的圆角边框，推理强度滑杆
+// 上的档位（off / minimal / low …）可以换成中文。
 //
 // 做法：
 //   1. 点一次宿主自己的「其他模型」入口把其余分组放出来，随后把入口藏掉；
@@ -42,7 +44,17 @@ const LAYOUT_ATTR = "data-piopt-mp-layout";
 const PROVIDER_ATTR = "data-piopt-mp-provider";
 const ITEM_ATTR = "data-piopt-mp-item";
 const PROBING_ATTR = "data-piopt-mp-probing";
+// 选中标记：挂在浮窗上，`frame` 时样式不画对勾、改用一圈圆角矩形边框框住选中行。
+const MARKER_ATTR = "data-piopt-mp-marker";
+const THINKING_SLIDER_SELECTOR = ".composer-thinking-slider";
+const THINKING_TICK_SELECTOR = ".composer-thinking-tick";
+const THINKING_RANGE_SELECTOR = ".composer-thinking-range";
+// 档位的原文写回这个属性：宿主重渲染之后还能认出这一格是哪一档。
+const LEVEL_ATTR = "data-piopt-mp-level";
 const CAPS_STORAGE_KEY = "piopt.modelPicker.capabilities.v1";
+// 宿主把最近用过的模型从分组里剔出来摆在最上面；「默认」排列要它们回到各自的位置，
+// 就得知道宿主那份完整清单。探测出来的顺序按「供应商␟模型 id」整份缓存。
+const ORDER_STORAGE_KEY = "piopt.modelPicker.order.v1";
 const DEFAULT_GROUPING = "provider";
 // `default` 是宿主自己的顺序：一个平铺列表，行序一行不动，也不分组（「最近使用」
 // 那一类连同标题一起没有）。其余三种都重排。按钮的先后就是这里的先后。
@@ -57,6 +69,10 @@ const COPY = {
   zh: { modes: "排列方式", default: "默认", provider: "供应商", vendor: "厂商", name: "名称" },
   en: { modes: "Arrange by", default: "Default", provider: "Provider", vendor: "Vendor", name: "Name" },
 };
+
+// 推理强度档位：宿主把档位原名直接写在滑杆的刻度上（off / minimal / low …），
+// 中文界面里这几个词混在中文标签中间不好读。
+const LEVEL_COPY = { off: "关闭", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" };
 
 // Injected with the entry stylesheet. Every rule is scoped to a menu this module
 // has already touched, so an untouched popup keeps the host's own look.
@@ -96,12 +112,20 @@ export const MODEL_PICKER_CSS = [
      补一行淡色的小字。写在行上就生效，与排列方式无关。 */
   `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]{flex-wrap:wrap}`,
   `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
+  /* 选中标记：默认还是宿主那枚对勾。换成圆角框时把那枚勾藏掉，改用一圈内描边
+     框住这整行 —— 描边画在行里，圆角由宿主自己给（选中行是 --radius-sm），
+     行高、内边距与滚动位置一律不动。 */
+  `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"]{box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--ds-accent) 64%,transparent)}`,
+  `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"] .composer-model-check{display:none}`,
   `.${VIEW_CLASS}[data-piopt-mp-switch="true"]{animation:piopt-mp-switch var(--pm-fast,135ms) var(--pm-ease-symmetric,cubic-bezier(.22,1,.36,1)) backwards}`,
   `@keyframes piopt-mp-switch{from{opacity:.65}to{opacity:1}}`,
 ].join("\n");
 
 let host = null;
 let grouping = DEFAULT_GROUPING;
+// 两项开关的当前值：选中标记用圆角框，推理强度档位用中文。
+let frameSelected = false;
+let translateThinking = false;
 let menu = null;
 let bodyObserver = null;
 let listObserver = null;
@@ -402,6 +426,87 @@ function missingCapRows(list) {
   return readRows(list).filter((row) => row.recent && !store.has(row.key));
 }
 
+/*
+ * 宿主那份完整清单。
+ *
+ * 「最近使用」是宿主临时拼出来的一组：那几行被从各自供应商分组里剔掉了，展开后的
+ * 原生列表因此拿不到它们原来的位置。宿主对搜索却是另一套渲染 —— 搜索时它不剔除
+ * 最近使用过的模型，而且会用供应商名匹配 providerSearchText，所以搜索一个分组名就
+ * 能把那一组的全部模型按设置里的顺序列出来。
+ *
+ * 于是：先按分组名逐个搜一遍，把顺序拼成一份「供应商␟模型 id」的数组缓存起来，
+ * 之后每次打开直接用；模型增删或换序（原生行序跟着变）时重新探测一次。
+ */
+
+let orderStore = null;
+
+function order() {
+  if (orderStore) return orderStore;
+  orderStore = { signature: "", keys: [] };
+  try {
+    const raw = window.localStorage.getItem(ORDER_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed.signature === "string" && Array.isArray(parsed.keys)) {
+      orderStore = {
+        signature: parsed.signature,
+        keys: parsed.keys.filter((key) => typeof key === "string"),
+      };
+    }
+  } catch {
+    // 读不到就退回宿主当前的行序。
+  }
+  return orderStore;
+}
+
+function saveOrder() {
+  try {
+    window.localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order()));
+  } catch {
+    // 存不进去不影响这一次显示。
+  }
+}
+
+/** 原生行序的指纹：模型增删、换序或最近使用那一组变了，都要重新探测。 */
+function signatureOf(rows) {
+  return rows.map((row) => row.key).join("|");
+}
+
+/** 「最近使用」那个组不是供应商：它的标题下是宿主临时拼的一小撮，跳过它。 */
+function supplierLabels(list) {
+  const labels = [];
+  for (const group of list.querySelectorAll(GROUP_SELECTOR)) {
+    if (closestOf(group, `.${VIEW_CLASS}`)) continue;
+    const label = textOf(group.querySelector(GROUP_LABEL_SELECTOR));
+    if (!label) continue;
+    if (group.querySelector(`${OPTION_SELECTOR}[title*=" · "]`)) continue;
+    if (!labels.includes(label)) labels.push(label);
+  }
+  return labels;
+}
+
+/** 搜索结果里某个分组当前列出的模型，按它们出现的顺序。 */
+function keysInGroup(list, label) {
+  const keys = [];
+  for (const group of list.querySelectorAll(GROUP_SELECTOR)) {
+    if (closestOf(group, `.${VIEW_CLASS}`)) continue;
+    if (textOf(group.querySelector(GROUP_LABEL_SELECTOR)) !== label) continue;
+    for (const option of group.querySelectorAll(OPTION_SELECTOR)) {
+      const identity = identityOf(option, label);
+      if (identity.recent) continue;
+      keys.push(identity.key);
+    }
+  }
+  return [...new Set(keys)];
+}
+
+/** 「默认」排列要不要重新问一次顺序：只有存在最近使用那一组、且缓存过期时才要。 */
+function needsOrder(list) {
+  const rows = readRows(list);
+  if (!rows.some((row) => row.recent)) return false;
+  const entry = order();
+  return entry.signature !== signatureOf(rows) || !entry.keys.length;
+}
+
 /** 给宿主的搜索框喂一个值。React 认的是原生 setter + input 事件。 */
 function setQuery(input, value) {
   const descriptor = window.HTMLInputElement
@@ -453,39 +558,81 @@ function nextRender(target, ms = 80) {
 }
 
 /**
- * 逐个搜出最近使用过的模型，把它们的 meta（徽标 + 上下文）抄下来。
- * 只在没有缓存时跑一次；宿主不再按搜索重渲染时立刻放弃，不再重试。
+ * 一次性把两样东西从宿主那里问出来，全程在隐藏状态下跑（PROBING_ATTR）：
+ *
+ *   1. 最近使用那几行的能力标记（徽标 + 上下文）—— 逐个搜模型 id；
+ *   2. 宿主那份完整顺序 —— 逐个搜供应商分组名，搜索时它不剔除最近使用过的模型。
+ *
+ * 用户一开始打字就立刻退出，别把输入抢走；宿主不按搜索重渲染时也只放弃。
  */
-async function probeCaps(list) {
-  if (probeRunning || probeUnsupported || !menu || !list) return;
+async function probeHidden(list) {
+  if (probeRunning || !menu || !list) return;
   probeRunning = true;
   try {
     const input = menu.querySelector(SEARCH_INPUT_SELECTOR);
     if (!input || input.value.trim()) return;
-    const pending = missingCapRows(list);
     let owned = "";
-    for (let index = 0; index < pending.length; index += 1) {
-      const row = pending[index];
-      if (menu !== findLiveMenu()) return;
-      // 用户自己开始打字了就退出，别把输入抢走。
-      if (input.value !== owned) return;
-      owned = row.modelId;
-      setQuery(input, owned);
-      const deadline = Date.now() + PROBE_TIMEOUT_MS;
-      let html = metaHtmlFor(list, row.key);
-      while (!html && Date.now() < deadline) {
+    // 用户自己开始打字了就退出，别把输入抢走；浮窗被换掉也退出。
+    if (input.value !== owned) return;
+    const free = () => menu === findLiveMenu() && input.value === owned;
+
+    if (!probeUnsupported) {
+      const pending = missingCapRows(list);
+      for (let index = 0; index < pending.length; index += 1) {
+        const row = pending[index];
+        if (!free()) return;
+        owned = row.modelId;
+        setQuery(input, owned);
+        const deadline = Date.now() + PROBE_TIMEOUT_MS;
+        let html = metaHtmlFor(list, row.key);
+        while (!html && Date.now() < deadline) {
+          await nextRender(list);
+          html = metaHtmlFor(list, row.key);
+        }
+        if (!html) {
+          // 第一个就没等到：宿主不会为程序化的搜索重渲染，别再耗着。
+          if (index === 0) probeUnsupported = true;
+          break;
+        }
+        caps().set(row.key, html);
+      }
+      saveCaps();
+      if (owned && input.value === owned) {
+        setQuery(input, "");
+        owned = "";
         await nextRender(list);
-        html = metaHtmlFor(list, row.key);
       }
-      if (!html) {
-        // 第一个就没等到：宿主不会为程序化的搜索重渲染，别再耗着。
-        if (index === 0) probeUnsupported = true;
-        break;
-      }
-      caps().set(row.key, html);
     }
-    saveCaps();
-    if (input.value === owned) setQuery(input, "");
+
+    // 顺序：只有存在「最近使用」那一组时才需要 —— 没有它，原生行序就是完整顺序。
+    const rows = readRows(list);
+    if (rows.some((row) => row.recent) && order().signature !== signatureOf(rows)) {
+      const keys = [];
+      let complete = rows.length > 0;
+      for (const label of supplierLabels(list)) {
+        if (!free()) return;
+        owned = label;
+        setQuery(input, owned);
+        const deadline = Date.now() + PROBE_TIMEOUT_MS;
+        let found = keysInGroup(list, label);
+        while (!found.length && Date.now() < deadline) {
+          await nextRender(list);
+          found = keysInGroup(list, label);
+        }
+        if (!found.length) {
+          complete = false;
+          break;
+        }
+        keys.push(...found);
+      }
+      if (complete && keys.length) {
+        order().signature = signatureOf(rows);
+        order().keys = keys;
+        saveOrder();
+      }
+    }
+
+    if (owned && input.value === owned) setQuery(input, "");
     await nextRender(list);
   } finally {
     probeRunning = false;
@@ -572,13 +719,11 @@ function buildGroup(label, rows, showSource) {
 }
 
 /**
- * 「默认」：宿主自己的顺序，一个连续列表 —— 一行都不重排，也不分组。
+ * 「默认」的行序：宿主那份完整顺序，一个连续列表 —— 不分组，也不按名字重排。
  *
- * 宿主把最近用过的模型摆在最上面、其余按它在设置里的顺序分供应商排列；这里的行
- * 序完全照搬那棵树（`rows` 就是文档顺序），只是把分组抬头去掉 —— 「最近使用」那
- * 一类连同标题一起不再出现，但它那几行本来就在最前面，位置照旧。
- *
- * 没有分组抬头就没人写着来源，所以每一行都补一行淡色的来源（和按名称一样）。
+ * 探测到的顺序（`order().keys`）就是设置里排的那一份：最近使用过的模型也在它们原
+ * 来的位置上。没有缓存时退回原生行序（那几行会停在宿主摆的最前面），下次打开时
+ * 探测补上。没有分组抬头就没人写着来源，所以每一行都补一行淡色的来源。
  */
 /**
  * 分组视图（按供应商 / 按厂商共用）：分组名与组内模型都按 A–Z 排。
@@ -624,8 +769,15 @@ function renderView(list) {
     empty.textContent = textOf(list.querySelector(EMPTY_SELECTOR));
     view.append(empty);
   } else if (grouping === "default") {
-    // 宿主自己的顺序原样平铺：不排序、不分组，也就不需要建分组节点。
-    for (const row of rows) view.append(buildRow(row, true));
+    // 宿主那份完整顺序上平铺：不分组、也不按名字重排，只是把最近使用过的那几行
+    // 送回它们本来的位置。顺序里没有的行（刚加的模型）接在末尾，保持原相对次序。
+    const rank = new Map(order().keys.map((key, index) => [key, index]));
+    const placed = rows.slice().sort((left, right) => {
+      const a = rank.has(left.key) ? rank.get(left.key) : Number.MAX_SAFE_INTEGER;
+      const b = rank.has(right.key) ? rank.get(right.key) : Number.MAX_SAFE_INTEGER;
+      return a - b;
+    });
+    for (const row of placed) view.append(buildRow(row, true));
   } else if (grouping === "name") {
     rows.sort(compareRows);
     for (const row of rows) view.append(buildRow(row, true));
@@ -648,6 +800,35 @@ function renderView(list) {
 function copyOf() {
   const lang = (document.documentElement && document.documentElement.lang) || "";
   return /^zh\b/i.test(lang) ? COPY.zh : COPY.en;
+}
+
+/*
+ * 推理强度：滑杆的刻度是宿主按档位原名画的按钮（off / minimal / low / medium /
+ * high / xhigh / max），滑杆本身是一个 range 输入。开启这一项时把刻度文字换成
+ * 中文，顺便把 range 的 aria-valuetext 一起换掉 —— 读屏念的也是同一档。
+ *
+ * 原文写回 LEVEL_ATTR：宿主重渲染后（它只认自己的英文 vdom）还能认出这一格是
+ * 哪一档，重复调用也就不会把中文再翻一遍。只动刻度，不动滑杆里那排装饰圆点：
+ * 那些圆点是 aria-hidden 的，改字只会在圆点里挤出半截汉字。
+ */
+function localizeThinking(menuElement) {
+  if (!menuElement) return;
+  const ticks = menuElement.querySelectorAll(THINKING_TICK_SELECTOR);
+  if (!ticks.length) return;
+  const labels = [];
+  for (const tick of ticks) {
+    const raw = tick.getAttribute(LEVEL_ATTR) || textOf(tick);
+    const label = LEVEL_COPY[raw.toLowerCase()] || "";
+    labels.push(label || raw);
+    if (!label) continue;
+    tick.setAttribute(LEVEL_ATTR, raw);
+    if (textOf(tick) !== label) tick.textContent = label;
+    if (tick.title !== label) tick.title = label;
+  }
+  const range = menuElement.querySelector(THINKING_RANGE_SELECTOR);
+  if (!range) return;
+  const label = labels[Number(range.value)];
+  if (label && range.getAttribute("aria-valuetext") !== label) range.setAttribute("aria-valuetext", label);
 }
 
 /**
@@ -725,6 +906,10 @@ function sync() {
 
   target.setAttribute(EXPANDED_ATTR, "true");
   syncModes(target);
+  // 选中标记与档位文案都只影响这一个浮窗：挂在窗上，换一份设置就整块换掉。
+  if (frameSelected) target.setAttribute(MARKER_ATTR, "frame");
+  else target.removeAttribute(MARKER_ATTR);
+  if (translateThinking) localizeThinking(target);
 
   // 宿主的折叠入口：点一次把它全部展开，然后它在 CSS 里被藏掉，用户不能再收起。
   // 点击是异步生效的，这一轮先让原生列表照常显示，展开后的下一轮再建视图，免得
@@ -797,6 +982,7 @@ function unbindMenu() {
     if (bar) bar.remove();
     menu.removeAttribute(SEARCH_ATTR);
     menu.removeAttribute(EXPANDED_ATTR);
+    menu.removeAttribute(MARKER_ATTR);
   }
   menu = null;
 }
@@ -812,6 +998,12 @@ function bindMenu(element) {
         if (isOurs(record)) continue;
         const node = record.target;
         if (closestOf(node, `.${VIEW_CLASS},.${MODES_CLASS}`)) continue;
+        // 推理强度滑杆是宿主自己的另一块（它就在同一个浮窗里）：档位换了一格、
+        // 我们自己的译文写回去，都只在这块里动，别牵动一次整份重建。
+        if (closestOf(node, THINKING_SLIDER_SELECTOR)) {
+          if (translateThinking && record.type === "attributes") localizeThinking(element);
+          continue;
+        }
         // 只是键盘高亮换了一行：跟着挪一下，别整份重建。
         if (record.type === "attributes" && record.attributeName === "class") {
           syncHighlight(element.querySelector(LIST_SELECTOR));
@@ -829,32 +1021,38 @@ function bindMenu(element) {
     });
   }
 
-  // 最近使用那几行缺能力标记时，先在隐藏状态下把探测跑完，再让人看见内容。
+  // 缺能力标记、或缺宿主那份完整顺序时，先在隐藏状态下把探测跑完，再让人看见内容。
   const list = element.querySelector(LIST_SELECTOR);
-  const pending = list ? missingCapRows(list) : [];
-  if (pending.length) element.setAttribute(PROBING_ATTR, "true");
+  const missingCaps = list ? missingCapRows(list) : [];
+  const missingOrder = list ? needsOrder(list) : false;
+  if (missingCaps.length || missingOrder) element.setAttribute(PROBING_ATTR, "true");
 
   sync();
-  if (pending.length && list) void probeCaps(list);
-  void refreshGrouping();
+  if (list && (missingCaps.length || missingOrder)) void probeHidden(list);
+  void refreshConfig();
 }
 
 // ----------------------------------------------------------------- lifecycle
 
-async function refreshGrouping() {
+// 面板与浮窗里那颗排列按钮写的是同一份设置：每次打开浮窗都读一次，三项一起生效。
+async function refreshConfig() {
   if (!host || typeof host.dispatch !== "function") return;
   try {
     const state = await host.dispatch("plugin.call", { method: "modelPickerState", args: {} });
-    const next = state && state.config ? state.config.grouping : state && state.grouping;
-    if (GROUPINGS.includes(next) && next !== grouping) {
-      grouping = next;
-      if (menu) {
-        syncModes(menu);
-        sync();
-      }
+    const config = (state && state.config) || state || {};
+    const nextGrouping = GROUPINGS.includes(config.grouping) ? config.grouping : grouping;
+    const nextFrame = config.frameSelected === true;
+    const nextTranslate = config.translateThinking === true;
+    const changed = nextGrouping !== grouping || nextFrame !== frameSelected || nextTranslate !== translateThinking;
+    grouping = nextGrouping;
+    frameSelected = nextFrame;
+    translateThinking = nextTranslate;
+    if (changed && menu) {
+      syncModes(menu);
+      sync();
     }
   } catch {
-    // 读不到就沿用上一次的排列方式，浮窗本身照常工作。
+    // 读不到就沿用上一次的用法，浮窗本身照常工作。
   }
 }
 
@@ -895,7 +1093,7 @@ export function mountModelPicker(bridge) {
   }
   const open = findLiveMenu();
   if (open && open !== menu) bindMenu(open);
-  return refreshGrouping();
+  return refreshConfig();
 }
 
 export function unmountModelPicker() {
@@ -907,6 +1105,8 @@ export function unmountModelPicker() {
   unbindMenu();
   host = null;
   grouping = DEFAULT_GROUPING;
+  frameSelected = false;
+  translateThinking = false;
 }
 
 export const __internals = {
@@ -920,6 +1120,10 @@ export const __internals = {
   EXPANDED_ATTR,
   LAYOUT_ATTR,
   PROVIDER_ATTR,
+  MARKER_ATTR,
+  LEVEL_ATTR,
+  ORDER_STORAGE_KEY,
+  CAPS_STORAGE_KEY,
   DEFAULT_GROUPING,
   GROUPINGS,
 };

@@ -280,12 +280,40 @@
             <div class="settings-row">
               <div class="settings-row-copy">
                 <div class="settings-row-title">排列方式</div>
-                <div class="settings-row-detail">在模型浮窗的搜索框右侧切换</div>
+                <div class="settings-row-detail">模型浮窗里按哪一种顺序列出来</div>
               </div>
               <div class="settings-row-control">
-                <span class="behavior-value" id="behavior-grouping" aria-live="polite">按供应商</span>
+                <!-- 四选一，点哪个是哪个：与浮窗里那条切换是同一个值。 -->
+                <div class="segmented" role="group" aria-label="排列方式" id="behavior-grouping">
+                  <button type="button" data-grouping="default">默认</button>
+                  <button type="button" data-grouping="provider">供应商</button>
+                  <button type="button" data-grouping="vendor">厂商</button>
+                  <button type="button" data-grouping="name">名称</button>
+                </div>
               </div>
             </div>
+
+            <label class="settings-row switch-row" for="behavior-frame">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">圆角框替代对勾</span>
+                <span class="settings-row-detail">选中的模型用圆角矩形框住，不画对勾</span>
+              </span>
+              <span class="settings-row-control">
+                <input id="behavior-frame" type="checkbox" />
+                <span class="switch" aria-hidden="true"><span></span></span>
+              </span>
+            </label>
+
+            <label class="settings-row switch-row" for="behavior-thinking-zh">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">中文推理强度</span>
+                <span class="settings-row-detail">把滑杆上的 off / low / high 译成中文</span>
+              </span>
+              <span class="settings-row-control">
+                <input id="behavior-thinking-zh" type="checkbox" />
+                <span class="switch" aria-hidden="true"><span></span></span>
+              </span>
+            </label>
           </div>
 
           <p class="behavior-status" id="behavior-status" role="status" aria-live="polite" hidden></p>

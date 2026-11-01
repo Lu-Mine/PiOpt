@@ -16,7 +16,9 @@ const SETTINGS_KEY = "modelPicker";
 // OpenAI、智谱…），`name` 把全部模型平铺成一份按显示名称排序的列表。后三种模式
 // 的分组与组内顺序都按 A–Z。
 const GROUPINGS = Object.freeze(["default", "provider", "vendor", "name"]);
-const DEFAULT_CONFIG = Object.freeze({ grouping: "provider" });
+// frameSelected：选中项的标记由宿主那枚对勾换成一圈圆角矩形边框；
+// translateThinking：推理强度滑杆上的 off / minimal / low … 换成中文。
+const DEFAULT_CONFIG = Object.freeze({ grouping: "provider", frameSelected: false, translateThinking: false });
 
 function normalizeGrouping(value) {
   return GROUPINGS.includes(value) ? value : DEFAULT_CONFIG.grouping;
@@ -24,7 +26,11 @@ function normalizeGrouping(value) {
 
 function normalizeConfig(input) {
   const source = input && typeof input === "object" ? input : {};
-  return { grouping: normalizeGrouping(source.grouping) };
+  return {
+    grouping: normalizeGrouping(source.grouping),
+    frameSelected: source.frameSelected === true,
+    translateThinking: source.translateThinking === true,
+  };
 }
 
 module.exports = {

@@ -343,6 +343,18 @@ function buildThemeCss(input = {}, base = "dark") {
     ? `.skeleton::after{animation:pm-shimmer 1600ms ease-in-out infinite}\n:is(${SKELETON_LINES}){animation:pm-breathe 1400ms ease-in-out infinite}`
     : `.skeleton::after{animation:none}\n:is(${SKELETON_LINES}){animation:none;opacity:.68}`;
 
+  // 推理强度滑杆：档位是一格一格的，滑钮落到哪一格就「吸」到哪一格 —— 用一条带过冲
+  // 的曲线替掉宿主的等时过渡，滑钮与进度条先越过一点再回落，点亮的那一格同时弹一下。
+  // 拖动中宿主自己要求无过渡（指针到哪到哪），那条规则特异性更高，不会被这里盖掉；
+  // reduced 预设不做过冲，系统「减弱动态」时连过渡都不留。
+  const thinkingSnap = tokens.continuous
+    ? `.composer-thinking-thumb{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),transform var(--pm-fast) var(--pm-ease-symmetric)}
+.composer-thinking-rail::after{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),width var(--pm-base) cubic-bezier(.34,1.44,.64,1),background-color var(--pm-fast) var(--pm-ease-standard)}
+.composer-thinking-dot.active{animation:pm-thinking-snap var(--pm-base) var(--pm-ease-out) backwards}
+@keyframes pm-thinking-snap{0%{transform:scale(.55)}55%{transform:scale(1.45)}100%{transform:scale(1)}}`
+    : `.composer-thinking-thumb{transition:left var(--pm-fast) var(--pm-ease-symmetric)}
+.composer-thinking-rail::after{transition:width var(--pm-fast) var(--pm-ease-symmetric)}`;
+
   const reducedMedia = config.followReducedMotion
     ? `@media(prefers-reduced-motion:reduce){
 :root{--pm-active:0;--pm-instant:60ms;--pm-fast:75ms;--pm-base:85ms;--pm-slow:90ms;--pm-switch:90ms;--pm-press-y:0px;--pm-distance-xs:0px;--pm-distance-sm:0px;--pm-distance-md:0px;--pm-distance-panel:0px;--pm-distance-sheet:0px;--pm-scale-subtle:1;--pm-scale-from:1}
@@ -352,6 +364,9 @@ function buildThemeCss(input = {}, base = "dark") {
 details::details-content{transition-duration:80ms}
 :is(${SPINNERS},${PULSES},${SKELETON_LINES}){animation:none}
 .skeleton::after{animation:none}
+.composer-thinking-thumb{transition:none}
+.composer-thinking-rail::after{transition:none}
+.composer-thinking-dot.active{animation:none}
 }`
     : "";
 
@@ -370,6 +385,7 @@ details{interpolate-size:allow-keywords}
 .settings-toggle{transition:background-color var(--pm-fast) var(--pm-ease-symmetric),box-shadow var(--pm-fast) var(--pm-ease-standard)}
 .settings-toggle-thumb{transition:transform var(--pm-fast) var(--pm-ease-symmetric),background-color var(--pm-fast) var(--pm-ease-standard)}
 :is(.composer-thinking-thumb,.composer-thinking-dot,.composer-thinking-tick,.update-notice-progress>span,.plugins-install-bar-fill,.plugins-reviews-dist-fill,.settings-config-sync-progress-bar-fill,.voice-volume-fill){transition:transform var(--pm-fast) var(--pm-ease-symmetric),width var(--pm-base) var(--pm-ease-symmetric),background-color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
+${thinkingSnap}
 :is(${INTERACTIVE_SURFACES}){transition:background-color var(--pm-fast) var(--pm-ease-standard),border-color var(--pm-fast) var(--pm-ease-standard),box-shadow var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard),opacity var(--pm-fast) var(--pm-ease-standard)}
 :is(.sidebar-item,.project-item,.session-item,[role=option],[role=tab])[aria-selected=true]::before{animation:pm-indicator-in var(--pm-base) var(--pm-ease-out) backwards;transform-origin:center}
 :is(.thread-item-more,.thread-item-last-reply,.sidebar-session-group-add,.tool-row-head-copy,.tool-row-copy,.message-actions,.work-panel-tab-close,.plugins-search-clear,.agent-capability-search-clear,.ext-row-actions,.sidebar-resize-handle::after,.chat-width-handle::before){transition:opacity var(--pm-fast) var(--pm-ease-symmetric),background-color var(--pm-fast) var(--pm-ease-standard),color var(--pm-fast) var(--pm-ease-standard)}
