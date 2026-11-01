@@ -1,10 +1,14 @@
 /*
- * 手机 view. One page, one job: turn the LAN gateway on and off, and hand out
- * the two things a phone needs — an address and a pairing code.
+ * 手机 view.
  *
- * Everything shown here comes from the feature's own status payload; nothing is
- * cached and nothing is guessed. When the gateway is off the rows that only
- * make sense while it runs collapse instead of showing stale numbers.
+ * One job: get a phone connected. So the page is built around the two things a
+ * phone needs — the address (as a scannable code, because typing a URL on a
+ * phone to reach the machine you are sitting at is the whole friction) — and
+ * the pairing code that turns that phone into a known device.
+ *
+ * Everything here reads the feature's own status payload. Nothing is cached and
+ * nothing is invented: when the gateway is off the page shows the switch and the
+ * promise of a code, not a dimmed copy of the last address.
  */
 (function () {
   "use strict";
@@ -34,46 +38,42 @@
     return node;
   }
 
-  function button(label, handler, options = {}) {
-    const node = el("button", `ui-btn ui-btn-sm ${options.primary ? "ui-btn-primary" : ""} ${options.danger ? "ui-btn-danger" : ""}`.trim(), label);
+  function icon(paths, size) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", size || 16);
+    svg.setAttribute("height", size || 16);
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.7");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    for (const d of paths) {
+      const path = document.createElementNS(svg.namespaceURI, "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    return svg;
+  }
+
+  const ICONS = {
+    copy: () => icon(["M9 9h10v12H9z", "M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"]),
+    refresh: () => icon(["M21 12a9 9 0 1 1-2.64-6.36", "M21 3v6h-6"]),
+    trash: () => icon(["M4 7h16", "M9 7V4h6v3", "M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13", "M10 11v6M14 11v6"]),
+    phone: () => icon(["M8 2.5h8a1.5 1.5 0 0 1 1.5 1.5v16a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 20V4A1.5 1.5 0 0 1 8 2.5z", "M11 18.5h2"]),
+  };
+
+  function button(label, run, options) {
+    const opts = options || {};
+    const node = el("button", `ui-btn ui-btn-sm ${opts.primary ? "ui-btn-primary" : ""} ${opts.danger ? "ui-btn-danger" : ""}`.trim());
     node.type = "button";
-    node.disabled = Boolean(options.disabled);
-    node.addEventListener("click", handler);
+    if (opts.icon && ICONS[opts.icon]) node.append(ICONS[opts.icon]());
+    if (label) node.append(el("span", "", label));
+    if (opts.aria) node.setAttribute("aria-label", opts.aria);
+    node.disabled = Boolean(opts.disabled);
+    node.addEventListener("click", run);
     return node;
-  }
-
-  function row(title, control, detail) {
-    const wrapper = el("div", "settings-row");
-    const copy = el("div", "settings-row-copy");
-    copy.append(el("div", "settings-row-title", title));
-    if (detail) copy.append(el("div", "settings-row-detail", detail));
-    wrapper.append(copy, control);
-    return wrapper;
-  }
-
-  function switchRow({ id, title, detail, checked, onChange }) {
-    const label = el("label", "settings-row switch-row");
-    label.htmlFor = id;
-    const copy = el("span", "settings-row-copy");
-    copy.append(el("span", "settings-row-title", title));
-    if (detail) copy.append(el("span", "settings-row-detail", detail));
-    const control = el("span", "settings-row-control");
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.id = id;
-    input.checked = Boolean(checked);
-    input.addEventListener("change", () => onChange(input.checked));
-    const track = el("span", "switch");
-    track.setAttribute("aria-hidden", "true");
-    track.append(el("span"));
-    control.append(input, track);
-    label.append(copy, control);
-    return label;
-  }
-
-  function statusChip(text, tone) {
-    const chip = el("span", `ui-chip rm-chip${tone ? ` rm-chip-${tone}` : ""}`, text);
-    return chip;
   }
 
   async function copyText(text) {
@@ -89,11 +89,33 @@
     state.flash = text;
     render();
     setTimeout(() => {
-      if (state.flash === text) {
-        state.flash = "";
-        render();
-      }
+      if (state.flash !== text) return;
+      state.flash = "";
+      render();
     }, 1800);
+  }
+
+  function relative(iso) {
+    if (!iso) return "";
+    const time = new Date(iso).getTime();
+    if (!Number.isFinite(time)) return "";
+    const diff = Date.now() - time;
+    if (diff < 60_000) return "刚刚活跃";
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前活跃`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前活跃`;
+    return `${Math.floor(diff / 86_400_000)} 天前活跃`;
+  }
+
+  function duration(iso) {
+    if (!iso) return "";
+    const time = new Date(iso).getTime();
+    if (!Number.isFinite(time)) return "";
+    const minutes = Math.max(0, Math.round((Date.now() - time) / 60_000));
+    if (minutes < 1) return "已运行不到一分钟";
+    if (minutes < 60) return `已运行 ${minutes} 分钟`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `已运行 ${hours} 小时`;
+    return `已运行 ${Math.floor(hours / 24)} 天`;
   }
 
   async function load() {
@@ -123,72 +145,106 @@
     }
   }
 
-  // ------------------------------------------------------------------- sections
+  // ------------------------------------------------------------------ pieces
 
-  function accessSection(status) {
-    const section = el("section", "appearance-section");
-    const head = el("header", "appearance-heading");
-    const copy = el("div");
-    copy.append(el("h1", "", "手机控制"));
-    copy.append(el("p", "", "同一局域网里的手机可以看会话、发指令、停止运行。"));
-    head.append(copy);
-    head.append(statusChip(status.running ? "运行中" : "已关闭", status.running ? "on" : "off"));
-    section.append(head);
+  function statusBar(status) {
+    const bar = el("header", "rm-bar");
 
-    const group = el("div", "settings-group");
-    group.append(
-      switchRow({
-        id: "rm-toggle",
-        title: "开启手机控制",
-        detail: "关闭后端口不再监听，已配对的手机也连不上",
-        checked: status.running,
-        onChange: (checked) => {
-          act("toggle", () => invoke(checked ? "remote.start" : "remote.stop"));
-        },
-      })
+    const left = el("div", "rm-bar-main");
+    const title = el("div", "rm-bar-title");
+    title.append(el("span", "", "手机控制"));
+    if (status.running) {
+      const dot = el("span", "rm-dot");
+      dot.setAttribute("aria-hidden", "true");
+      title.append(dot);
+      title.append(el("span", "rm-bar-meta", duration(status.startedAt)));
+    }
+    left.append(title);
+    left.append(
+      el(
+        "div",
+        "rm-bar-sub",
+        status.running
+          ? `${status.deviceCount} 台已配对设备 · 端口 ${status.port}`
+          : "关闭时端口不监听，手机连不上"
+      )
     );
 
-    if (status.running) {
-      const addresses = Array.isArray(status.addresses) ? status.addresses : [];
-      const primary = status.url || (addresses[0] && addresses[0].url) || "";
-      const urlValue = el("div", "settings-row-detail rm-url", primary);
-      const urlCopy = el("div", "settings-row-copy");
-      urlCopy.append(el("div", "settings-row-title", "访问地址"));
-      urlCopy.append(urlValue);
-      if (addresses.length > 1) {
-        const extra = el("div", "settings-row-detail rm-url-extra", addresses.slice(1).map((item) => item.url).join("  ·  "));
-        urlCopy.append(extra);
-      }
-      const urlControl = el("div", "settings-row-control");
-      urlControl.append(
-        button("复制", async () => {
-          const ok = await copyText(primary);
-          flash(ok ? "地址已复制" : "复制失败，请手动输入");
-        })
-      );
-      const urlRow = el("div", "settings-row rm-url-row");
-      urlRow.append(urlCopy, urlControl);
-      group.append(urlRow);
+    const control = el("label", "switch-row rm-switch");
+    control.htmlFor = "rm-toggle";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.id = "rm-toggle";
+    input.checked = Boolean(status.running);
+    input.disabled = Boolean(state.busy);
+    input.addEventListener("change", () => {
+      act("toggle", () => invoke(input.checked ? "remote.start" : "remote.stop"));
+    });
+    const track = el("span", "switch");
+    track.setAttribute("aria-hidden", "true");
+    track.append(el("span"));
+    control.append(input, track);
 
-      const codeRow = el("div", "settings-row rm-code-row");
-      const codeCopy = el("div", "settings-row-copy");
-      codeCopy.append(el("div", "settings-row-title", "配对码"));
-      codeCopy.append(el("div", "settings-row-detail", "在手机上输入一次即可长期使用"));
-      const codeControl = el("div", "settings-row-control rm-code-control");
-      codeControl.append(el("output", "rm-code", status.code || "------"));
-      codeControl.append(
-        button("换一个", () => act("code", () => invoke("remote.rotateCode")), { disabled: Boolean(state.busy) })
-      );
-      codeRow.append(codeCopy, codeControl);
-      group.append(codeRow);
+    bar.append(left, control);
+    return bar;
+  }
+
+  function qrCard(status) {
+    const url = status.url || "";
+    const card = el("section", "rm-card rm-connect");
+
+    const code = el("div", "rm-qr");
+    if (url && window.PiOptQr) {
+      try {
+        code.innerHTML = window.PiOptQr.svg(url, { margin: 2, dark: "#101418", light: "transparent" });
+      } catch (error) {
+        code.textContent = "二维码生成失败";
+      }
+    } else {
+      code.textContent = "二维码不可用";
+    }
+    card.append(code);
+
+    const side = el("div", "rm-connect-body");
+
+    const addressRow = el("div", "rm-address");
+    const address = el("code", "rm-address-text", url || "没有可用的内网地址");
+    addressRow.append(address);
+    addressRow.append(
+      button("复制", async () => {
+        const ok = await copyText(url);
+        flash(ok ? "地址已复制" : "复制失败，请手动输入");
+      }, { icon: "copy", aria: "复制地址", disabled: !url })
+    );
+    side.append(addressRow);
+
+    const others = (status.addresses || []).filter((entry) => entry.url && entry.url !== url);
+    if (others.length) {
+      side.append(el("div", "rm-alt", others.map((entry) => `${entry.address}（${entry.name}）`).join("　")));
     }
 
+    const codeBlock = el("div", "rm-code-block");
+    const codeLabel = el("div", "rm-label", "配对码");
+    const digits = String(status.code || "").replace(/(\d{3})(\d{3})/, "$1 $2");
+    const codeValue = el("output", "rm-code", digits || "------");
+    const rotate = button("换一个", () => act("code", () => invoke("remote.rotateCode")), {
+      icon: "refresh",
+      disabled: Boolean(state.busy),
+    });
+    const codeRow = el("div", "rm-code-row");
+    codeRow.append(codeValue, rotate);
+    codeBlock.append(codeLabel, codeRow);
+    side.append(codeBlock);
+
+    const portRow = el("div", "rm-port-row");
+    portRow.append(el("span", "rm-label", "端口"));
     const portInput = document.createElement("input");
     portInput.type = "number";
     portInput.min = "1024";
     portInput.max = "65535";
     portInput.className = "rm-port";
     portInput.value = state.portDraft || String(status.configuredPort);
+    portInput.setAttribute("aria-label", "端口");
     portInput.addEventListener("input", () => {
       state.portDraft = portInput.value;
     });
@@ -206,101 +262,131 @@
     portInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") portInput.blur();
     });
-    const portControl = el("div", "settings-row-control");
-    portControl.append(portInput);
-    group.append(row("端口", portControl, status.running ? "改端口会重启一次网关" : "手机访问地址里的端口号"));
+    portRow.append(portInput);
+    portRow.append(el("span", "rm-hint", "改端口会重启一次网关"));
+    side.append(portRow);
 
-    section.append(group);
-    return section;
+    card.append(side);
+    return card;
   }
 
-  function devicesSection(status) {
-    const section = el("section", "appearance-section");
-    const head = el("header", "appearance-heading");
+  function emptyCard() {
+    const card = el("section", "rm-card rm-empty");
+    const art = el("div", "rm-empty-art");
+    art.append(ICONS.phone());
     const copy = el("div");
-    copy.append(el("h1", "", "已配对设备"));
-    copy.append(el("p", "", "取消后这台手机需要重新配对。"));
-    head.append(copy);
-    section.append(head);
+    copy.append(el("div", "rm-empty-title", "还没有打开"));
+    copy.append(
+      el(
+        "div",
+        "rm-empty-text",
+        "打开上面的开关，这里会出现一个二维码和六位配对码；手机连同一个 Wi-Fi，扫码输入配对码即可。"
+      )
+    );
+    card.append(art, copy);
+    return card;
+  }
 
-    const group = el("div", "settings-group");
+  function devicesCard(status) {
+    const card = el("section", "rm-card");
+    const head = el("div", "rm-card-head");
+    head.append(el("h2", "", "已配对设备"));
+    head.append(el("span", "rm-count", String(status.deviceCount || 0)));
+    card.append(head);
+
     const devices = Array.isArray(status.devices) ? status.devices : [];
     if (!devices.length) {
-      const empty = el("div", "settings-row");
-      const copyBox = el("div", "settings-row-copy");
-      copyBox.append(el("div", "settings-row-title", "还没有设备"));
-      copyBox.append(el("div", "settings-row-detail", "手机配对后会出现在这里"));
-      empty.append(copyBox);
-      group.append(empty);
-    } else {
-      for (const device of devices) {
-        const control = el("div", "settings-row-control");
-        control.append(
-          button("移除", () => {
-            act("revoke", () => invoke("remote.revoke", { name: device.name, createdAt: device.createdAt }));
-          }, { disabled: Boolean(state.busy) })
-        );
-        const when = device.lastSeenAt || device.createdAt;
-        const detail = when ? `${device.token} · ${new Date(when).toLocaleString()}` : device.token;
-        group.append(row(device.name || "手机", control, detail));
-      }
+      card.append(el("p", "rm-empty-line", "手机配对后会出现在这里，可以随时移除。"));
+      return card;
     }
-    section.append(group);
-    return section;
+
+    const list = el("ul", "rm-devices");
+    for (const device of devices) {
+      const item = el("li", "rm-device");
+      const main = el("div", "rm-device-main");
+      main.append(el("div", "rm-device-name", device.name || "手机"));
+      main.append(el("div", "rm-device-meta", relative(device.lastSeenAt || device.createdAt)));
+      item.append(main);
+      item.append(
+        button("", () => {
+          act("revoke", () => invoke("remote.revoke", { name: device.name, createdAt: device.createdAt }));
+        }, { icon: "trash", aria: `移除 ${device.name || "设备"}`, danger: true, disabled: Boolean(state.busy) })
+      );
+      list.append(item);
+    }
+    card.append(list);
+    return card;
   }
 
-  function notesSection() {
-    const section = el("section", "appearance-section");
-    const head = el("header", "appearance-heading");
-    const copy = el("div");
-    copy.append(el("h1", "", "能做什么"));
-    head.append(copy);
-    section.append(head);
+  function aboutCard() {
+    const card = el("section", "rm-card");
+    const head = el("div", "rm-card-head");
+    head.append(el("h2", "", "手机端能做什么"));
+    card.append(head);
 
-    const group = el("div", "settings-group");
-    const list = el("div", "settings-row rm-notes-row");
-    const body = el("div", "rm-notes");
-    for (const line of [
-      "看会话列表与对话内容，给任意会话发指令，停止正在运行的一轮。",
-      "工具权限确认与计划审批不开放：这些需要在这台电脑上当面确认，手机端只能看到它们在等。",
-      "网关只在打开的这段时间里监听，且只接受配对过的设备。",
-    ]) {
-      body.append(el("p", "", line));
+    const rows = [
+      ["看会话", "全部会话按更新时间排，正在跑的一轮会标出来。"],
+      ["发指令", "进一个会话直接发；运行中可以追加，也可以停止这一轮。"],
+      ["看到卡在哪", "一轮停在提问上会标「等你回答」，点进去能看到它在等什么。"],
+      ["审批仍在电脑", "权限确认、问答与计划批准要在这一台上点，手机只负责让你先知道。"],
+    ];
+    const list = el("dl", "rm-facts");
+    for (const [term, detail] of rows) {
+      list.append(el("dt", "", term));
+      list.append(el("dd", "", detail));
     }
-    list.append(body);
-    group.append(list);
-    section.append(group);
-    return section;
+    card.append(list);
+    return card;
   }
 
   function render() {
     const host = root();
     if (!host) return;
     host.replaceChildren();
-    const scroll = el("div", "rm-scroll");
-    const workspace = el("main", "workspace");
     const status = state.status;
+
+    if (status) host.append(statusBar(status));
+
+    const scroll = el("div", "rm-scroll");
+    const body = el("main", "rm-body");
 
     if (state.error) {
       const box = el("div", "opt-error", state.error);
       box.setAttribute("role", "alert");
-      workspace.append(box);
+      body.append(box);
     }
     if (state.flash) {
       const note = el("p", "rm-flash", state.flash);
       note.setAttribute("role", "status");
-      workspace.append(note);
+      body.append(note);
     }
 
-    if (status) {
-      workspace.append(accessSection(status), devicesSection(status), notesSection());
-    } else if (!state.error) {
-      const loading = el("div", "skeleton");
-      loading.append(el("i"), el("i"), el("i"));
-      workspace.append(loading);
+    if (!status) {
+      if (!state.error) {
+        const skeleton = el("div", "skeleton");
+        skeleton.append(el("i"), el("i"), el("i"));
+        body.append(skeleton);
+      }
+      scroll.append(body);
+      host.append(scroll);
+      return;
     }
 
-    scroll.append(workspace);
+    if (status.running) {
+      const columns = el("div", "rm-columns");
+      const primary = el("div", "rm-column rm-column-main");
+      primary.append(qrCard(status), devicesCard(status));
+      const secondary = el("div", "rm-column rm-column-side");
+      secondary.append(aboutCard());
+      columns.append(primary, secondary);
+      body.append(columns);
+    } else {
+      const single = el("div", "rm-single");
+      single.append(emptyCard(), aboutCard());
+      body.append(single);
+    }
+
+    scroll.append(body);
     host.append(scroll);
   }
 
@@ -308,8 +394,8 @@
     if (state.booted) return;
     state.booted = true;
     load();
-    // The panel is the only place the pairing code exists outside the phone, so
-    // it refreshes while it is open: a code read out loud an hour ago is gone.
+    // The pairing code lives here and nowhere else, so the page keeps it fresh
+    // while it is open: a code read out an hour ago is no longer the code.
     state.timer = setInterval(() => {
       const host = root();
       if (host && !host.hidden && !state.busy) load();

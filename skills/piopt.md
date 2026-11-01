@@ -62,7 +62,8 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    by hand or start a second server; turning it on means the LAN can drive the
    machine, so say that when you offer it.
 2. Pairing uses the six-digit code shown in the panel, not a password the user
-   invents. Rotating the code invalidates only that code; phones already in
+   invents; the phone reaches the page by scanning the QR the panel draws (or by
+   typing the address the panel prints). Rotating the code invalidates only that code; phones already in
    已配对设备 keep working until they are removed there.
 3. The phone can list sessions, read one transcript, send a prompt and abort a
    turn. It also shows what a session is waiting for — `agent/pendingInteractive`

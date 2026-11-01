@@ -1,7 +1,8 @@
-/* 手机 view — a settings page, so it borrows the settings page's own rows. */
+/* 手机 view — one card per question: how does the phone get in, and who is in. */
 @scope (#view-remote) {
   :scope {
-    position: relative;
+    display: flex;
+    flex-direction: column;
     height: 100%;
     min-height: 0;
     overflow: hidden;
@@ -13,15 +14,114 @@
     color: var(--ds-text-primary);
   }
 
+  /* ---- status bar ------------------------------------------------------- */
+
+  .rm-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex: none;
+    padding: 13px 22px 12px;
+    border-bottom: 1px solid color-mix(in oklab, var(--ds-text-primary) 9%, transparent);
+  }
+
+  .rm-bar-main { min-width: 0; }
+
+  .rm-bar-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ds-text-primary);
+  }
+
+  /* The dot only ever appears while the port is listening, so it needs no label. */
+  .rm-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ds-accent);
+  }
+
+  .rm-bar-meta {
+    color: var(--ds-text-secondary);
+    font-size: 12px;
+    font-weight: 400;
+  }
+
+  .rm-bar-sub {
+    margin-top: 3px;
+    color: var(--ds-text-secondary);
+    font-size: 12px;
+  }
+
+  /* The switch is this view's own copy: the appearance view's switch lives
+     inside its @scope, so a sibling view cannot borrow its box. The tokens it
+     reads are global, so both copies still look like one control. */
+  .rm-switch {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    cursor: pointer;
+  }
+
+  .rm-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .rm-switch .switch {
+    position: relative;
+    flex: 0 0 32px;
+    width: 32px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--ds-switch-track-off);
+    transition: background 140ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .rm-switch:hover .switch { background: var(--ds-switch-track-off-hover); }
+
+  .rm-switch .switch span {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--ds-switch-knob-off);
+    box-shadow: var(--ds-raised-shadow);
+    transition: transform 140ms cubic-bezier(0.4, 0, 0.2, 1), background 140ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .rm-switch input:checked + .switch { background: var(--ds-accent); }
+
+  .rm-switch input:checked + .switch span {
+    transform: translateX(12px);
+    background: var(--ds-switch-knob-on);
+  }
+
+  .rm-switch input:focus-visible + .switch {
+    outline: 2px solid color-mix(in oklab, var(--ds-focus) 55%, transparent);
+    outline-offset: 2px;
+  }
+
+  /* ---- shell ------------------------------------------------------------ */
+
   .rm-scroll {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklab, var(--ds-text-primary) 18%, transparent) transparent;
   }
 
   .rm-scroll::-webkit-scrollbar { width: 10px; }
-
   .rm-scroll::-webkit-scrollbar-thumb {
     border: 3px solid transparent;
     border-radius: 999px;
@@ -29,69 +129,176 @@
     background-color: color-mix(in oklab, var(--ds-text-primary) 18%, transparent);
   }
 
-  /* The state chip rides the heading's right edge instead of adding a row. */
-  .appearance-heading .ui-chip {
-    margin-left: auto;
-    flex: none;
+  .rm-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 22px 26px;
+    max-width: 1040px;
   }
 
-  .rm-chip-on {
-    color: var(--ds-accent);
-    background: color-mix(in oklab, var(--ds-accent) 14%, transparent);
+  .rm-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 288px;
+    align-items: start;
+    gap: 14px;
   }
 
-  .rm-chip-off {
-    color: var(--ds-text-secondary);
-    background: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+  .rm-column {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
   }
 
-  .rm-url-row {
-    align-items: flex-start;
+  .rm-single {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 620px;
   }
 
-  .rm-url {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12.5px;
-    color: var(--ds-text-primary);
-    word-break: break-all;
-    user-select: all;
+  @media (max-width: 880px) {
+    .rm-columns { grid-template-columns: minmax(0, 1fr); }
   }
 
-  .rm-url-extra {
-    margin-top: 4px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11.5px;
-    opacity: 0.7;
-    word-break: break-all;
+  .rm-card {
+    border: 1px solid color-mix(in oklab, var(--ds-text-primary) 10%, transparent);
+    border-radius: 14px;
+    background: color-mix(in oklab, var(--ds-text-primary) 2.5%, transparent);
+    padding: 16px 18px;
   }
 
-  .rm-code-row {
+  .rm-card-head {
+    display: flex;
     align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
   }
 
-  .rm-code-control {
+  .rm-card-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ds-text-primary);
+  }
+
+  .rm-count {
+    min-width: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+    color: var(--ds-text-secondary);
+    font-size: 11px;
+    line-height: 17px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rm-flash {
+    margin: 0;
+    color: var(--ds-text-secondary);
+    font-size: 12px;
+  }
+
+  /* ---- connect card ----------------------------------------------------- */
+
+  .rm-connect {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+  }
+
+  /* A scanner needs a light field around dark modules, in either theme, so this
+     square stays white instead of following the palette. */
+  .rm-qr {
+    flex: none;
+    width: 172px;
+    height: 172px;
+    padding: 9px;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(12, 16, 24, 0.14), 0 0 0 1px rgba(12, 16, 24, 0.06);
+    display: grid;
+    place-items: center;
+    color: #333;
+    font-size: 12px;
+  }
+
+  .rm-qr svg { display: block; width: 100%; height: 100%; }
+
+  .rm-connect-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-top: 4px;
+  }
+
+  .rm-address {
     display: flex;
     align-items: center;
     gap: 10px;
-    flex: none;
+    flex-wrap: wrap;
+  }
+
+  .rm-address-text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 15px;
+    line-height: 1.3;
+    color: var(--ds-text-primary);
+    user-select: all;
+    word-break: break-all;
+  }
+
+  .rm-alt {
+    color: var(--ds-text-secondary);
+    font-size: 11.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    opacity: 0.8;
+  }
+
+  .rm-code-block {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .rm-label {
+    color: var(--ds-text-secondary);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+  }
+
+  .rm-code-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
   }
 
   .rm-code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 20px;
+    font-size: 26px;
     font-weight: 600;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.1em;
     font-variant-numeric: tabular-nums;
     color: var(--ds-text-primary);
     user-select: all;
   }
 
+  .rm-port-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .rm-port {
-    width: 96px;
-    padding: 6px 9px;
+    width: 82px;
+    padding: 5px 8px;
     border: 1px solid color-mix(in oklab, var(--ds-text-primary) 14%, transparent);
     border-radius: 8px;
-    background: var(--ds-bg-secondary, transparent);
+    background: transparent;
     color: var(--ds-text-primary);
     font: inherit;
     font-size: 13px;
@@ -104,27 +311,111 @@
     border-color: var(--ds-accent);
   }
 
-  .rm-notes-row {
-    display: block;
-    padding-top: 12px;
-    padding-bottom: 14px;
+  .rm-hint {
+    color: var(--ds-text-secondary);
+    font-size: 11.5px;
   }
 
-  .rm-notes p {
+  /* ---- devices ---------------------------------------------------------- */
+
+  .rm-devices {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .rm-device {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+  }
+
+  .rm-device + .rm-device {
+    border-top: 1px solid color-mix(in oklab, var(--ds-text-primary) 7%, transparent);
+  }
+
+  .rm-device-main { flex: 1; min-width: 0; }
+
+  .rm-device-name {
+    color: var(--ds-text-primary);
+    font-size: 13px;
+    font-weight: 550;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rm-device-meta {
+    color: var(--ds-text-secondary);
+    font-size: 11.5px;
+    margin-top: 1px;
+  }
+
+  .rm-empty-line {
     margin: 0;
     color: var(--ds-text-secondary);
     font-size: 12.5px;
-    line-height: 1.7;
+    line-height: 1.6;
   }
 
-  .rm-notes p + p {
-    margin-top: 6px;
-  }
+  /* ---- what the phone can do -------------------------------------------- */
 
-  .rm-flash {
+  .rm-facts {
     margin: 0;
-    padding: 8px 0 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px 12px;
+    align-items: start;
+  }
+
+  .rm-facts dt {
+    color: var(--ds-text-primary);
+    font-size: 12px;
+    font-weight: 550;
+    white-space: nowrap;
+  }
+
+  .rm-facts dd {
+    margin: 0;
+    color: var(--ds-text-secondary);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  /* ---- closed state ----------------------------------------------------- */
+
+  .rm-empty {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .rm-empty-art {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+    background: color-mix(in oklab, var(--ds-text-primary) 6%, transparent);
+    color: var(--ds-text-secondary);
+  }
+
+  .rm-empty-art svg { width: 24px; height: 24px; }
+
+  .rm-empty-title {
+    color: var(--ds-text-primary);
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  .rm-empty-text {
+    margin-top: 4px;
     color: var(--ds-text-secondary);
     font-size: 12.5px;
+    line-height: 1.6;
   }
 }
