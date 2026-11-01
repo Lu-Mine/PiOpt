@@ -173,6 +173,78 @@ function normalizeMessages(raw) {
   return messages;
 }
 
+// --------------------------------------------------------------- what it asks
+
+// A session waiting on a question looks exactly like one that is working, so the
+// phone needs the pending list to tell them apart. Reading it needs no
+// confirmation — both channels are `read`; answering it does, which is why this
+// only ever renders and never resolves.
+const WAITING_PROBE_LIMIT = 5;
+const PENDING_ITEM_LIMIT = 4;
+
+function firstText(source, keys) {
+  if (!source || typeof source !== "object") return "";
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function normalizeAsks(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    const text = firstText(entry, ["question", "prompt", "message", "text", "title"]);
+    const options = Array.isArray(entry && entry.options)
+      ? entry.options
+          .map((item) => (typeof item === "string" ? item : firstText(item, ["label", "title", "text"])))
+          .filter(Boolean)
+      : [];
+    return { kind: "ask", text: text || "Agent 在等你回答一个问题", options };
+  });
+}
+
+function normalizePermissions(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => ({
+    kind: "permission",
+    text: firstText(entry, ["description", "reason", "summary", "toolName", "tool"]) || "有一个工具权限在等确认",
+  }));
+}
+
+function normalizePlans(raw) {
+  const rows = Array.isArray(raw)
+    ? raw
+    : raw && Array.isArray(raw.proposals)
+      ? raw.proposals
+      : raw && Array.isArray(raw.plans)
+        ? raw.plans
+        : raw && Array.isArray(raw.pending)
+          ? raw.pending
+          : [];
+  return rows.map((entry) => ({
+    kind: "plan",
+    text: firstText(entry, ["title", "summary", "name"]) || "有一份计划在等批准",
+  }));
+}
+
+async function readPending(sessionId) {
+  const items = [];
+  try {
+    const interactive = await desktopInvoke("agent/pendingInteractive", [{ sessionId }]);
+    items.push(...normalizeAsks(interactive && interactive.asks));
+    items.push(...normalizePermissions(interactive && interactive.permissions));
+  } catch {
+    /* a host that does not answer has nothing pending */
+  }
+  try {
+    items.push(...normalizePlans(await desktopInvoke("plans/pending", [{ sessionId }])));
+  } catch {
+    /* same */
+  }
+  return { count: items.length, items: items.slice(0, PENDING_ITEM_LIMIT) };
+}
+
 async function listSessions(options) {
   const limit = options && Number.isFinite(options.limit) ? options.limit : 60;
   let raw;
@@ -183,7 +255,24 @@ async function listSessions(options) {
   }
   const sessions = asArray(raw).map(normalizeSessionRow).filter(Boolean);
   sessions.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
-  return sessions.slice(0, limit);
+  const page = sessions.slice(0, limit);
+  // Only the phone's own list asks for this. The stream skips it: probing every
+  // running session on every push would cost two host calls per session.
+  if (options && options.probe) await attachWaiting(page);
+  return page;
+}
+
+async function attachWaiting(sessions) {
+  const targets = sessions.filter((row) => row.running).slice(0, WAITING_PROBE_LIMIT);
+  await Promise.all(
+    targets.map(async (row) => {
+      const pending = await readPending(row.id).catch(() => null);
+      if (pending && pending.count) {
+        row.waiting = pending.count;
+        row.waitingText = pending.items[0] ? pending.items[0].text : "";
+      }
+    })
+  );
 }
 
 async function readSession(sessionId, options) {
@@ -217,11 +306,13 @@ async function readSession(sessionId, options) {
     id: sessionId,
     title: "会话",
   };
+  const pending = await readPending(sessionId);
   return {
     session: meta,
     messages: messages.slice(-limit),
     running: Boolean(meta.running),
     truncated: messages.length > limit,
+    pending,
   };
 }
 
@@ -510,6 +601,10 @@ module.exports = {
     normalizeSessionRow,
     normalizeMessages,
     textOfBlocks,
+    normalizeAsks,
+    normalizePermissions,
+    normalizePlans,
+    readPending,
     listSessions,
     readSession,
     startServer,

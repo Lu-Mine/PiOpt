@@ -25,6 +25,7 @@
     empty: document.getElementById("sessions-empty"),
     detail: document.getElementById("detail"),
     messages: document.getElementById("messages"),
+    pending: document.getElementById("pending"),
     composer: document.getElementById("composer"),
     input: document.getElementById("input"),
     stop: document.getElementById("stop"),
@@ -114,6 +115,7 @@
     el.list.hidden = false;
     el.detail.hidden = true;
     el.composer.hidden = true;
+    el.pending.hidden = true;
     el.back.hidden = true;
     el.refresh.hidden = false;
     el.title.textContent = "会话";
@@ -144,7 +146,16 @@
   }
 
   function renderSessions(rows) {
-    state.sessions = rows;
+    // The stream's snapshots skip the pending probe (it costs a host call per
+    // session), so a row that already knew it was waiting keeps that knowledge
+    // until the next full load.
+    const previous = new Map(state.sessions.map((row) => [row.id, row]));
+    state.sessions = rows.map((row) => {
+      const old = previous.get(row.id);
+      if (!old || row.waiting !== undefined) return row;
+      return { ...row, waiting: old.waiting, waitingText: old.waitingText };
+    });
+    rows = state.sessions;
     el.sessions.replaceChildren();
     if (!rows.length) {
       el.empty.hidden = false;
@@ -163,7 +174,12 @@
       title.className = "row-title";
       title.textContent = row.title || "未命名会话";
       head.append(title);
-      if (row.running) {
+      if (row.waiting) {
+        const waiting = document.createElement("span");
+        waiting.className = "row-waiting";
+        waiting.textContent = "等你回答";
+        head.append(waiting);
+      } else if (row.running) {
         const running = document.createElement("span");
         running.className = "row-running";
         running.textContent = "运行中";
@@ -246,6 +262,38 @@
     }
   }
 
+  // A turn that stopped to ask something is the one state the phone cannot
+  // resolve, so it says so plainly instead of letting the conversation look busy.
+  function renderPending(pending) {
+    const items = pending && Array.isArray(pending.items) ? pending.items : [];
+    el.pending.replaceChildren();
+    if (!items.length) {
+      el.pending.hidden = true;
+      return;
+    }
+    const kindName = { ask: "在等你回答", permission: "在等权限确认", plan: "在等批准计划" };
+    for (const item of items) {
+      const line = document.createElement("p");
+      line.className = "pending-line";
+      const label = document.createElement("span");
+      label.className = "pending-kind";
+      label.textContent = kindName[item.kind] || "在等你";
+      line.append(label, document.createTextNode(item.text));
+      if (Array.isArray(item.options) && item.options.length) {
+        const options = document.createElement("span");
+        options.className = "pending-options";
+        options.textContent = item.options.join(" / ");
+        line.append(options);
+      }
+      el.pending.append(line);
+    }
+    const hint = document.createElement("p");
+    hint.className = "pending-hint";
+    hint.textContent = "要在这台电脑上回答。";
+    el.pending.append(hint);
+    el.pending.hidden = false;
+  }
+
   function setRunning(running) {
     state.running = Boolean(running);
     el.stop.hidden = !state.running;
@@ -258,6 +306,7 @@
     if (payload.session && payload.session.title) state.sessionTitle = payload.session.title;
     if (!el.detail.hidden) el.title.textContent = state.sessionTitle || "会话";
     renderMessages(payload.messages || []);
+    renderPending(payload.pending);
     setRunning(payload.running);
   }
 

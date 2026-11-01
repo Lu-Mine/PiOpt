@@ -65,9 +65,11 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    invents. Rotating the code invalidates only that code; phones already in
    已配对设备 keep working until they are removed there.
 3. The phone can list sessions, read one transcript, send a prompt and abort a
-   turn. It cannot approve anything: `tool/resolvePermission`,
-   `agent/askTool/resolve` and `plans/resolve` are `dangerous` and stay on the
-   desktop. Do not promise remote approval.
+   turn. It also shows what a session is waiting for — `agent/pendingInteractive`
+   and `plans/pending` are `read`, so the list marks 等你回答 and the transcript
+   view prints the question. It cannot answer any of it: `tool/resolvePermission`,
+   `agent/askTool/resolve` and `plans/resolve` are `dangerous` and come back to a
+   confirmation on the desktop. Do not promise remote approval.
 4. If the phone cannot reach the address, that is the Windows firewall or the
    access point's client isolation — the plugin cannot fix either. Check that the
    address is a LAN one (`127.0.0.1` there means no usable interface was found).

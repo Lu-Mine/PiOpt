@@ -361,3 +361,82 @@ test("one session's transcript is read through whichever host shape answers", as
     global.pi = saved;
   }
 });
+
+test("a waiting session is read from both read-only channels", async () => {
+  const saved = global.pi;
+  const calls = [];
+  global.pi = {
+    desktop: {
+      invoke: async ({ operation }) => {
+        calls.push(operation);
+        if (operation === "agent/pendingInteractive") {
+          return {
+            asks: [{ question: "先改测试还是先改实现？", options: [{ label: "先改测试" }, "先改实现"] }],
+            permissions: [{ toolName: "Bash", description: "执行 npm publish" }],
+          };
+        }
+        if (operation === "plans/pending") return { proposals: [{ title: "统一设计语言" }] };
+        throw new Error(`unexpected ${operation}`);
+      },
+    },
+  };
+  try {
+    const pending = await internals.readPending("s1");
+    assert.deepEqual(calls.sort(), ["agent/pendingInteractive", "plans/pending"]);
+    assert.equal(pending.count, 3);
+    assert.equal(pending.items[0].kind, "ask");
+    assert.deepEqual(pending.items[0].options, ["先改测试", "先改实现"]);
+    assert.equal(pending.items[1].kind, "permission");
+    assert.equal(pending.items[1].text, "执行 npm publish");
+    assert.equal(pending.items[2].text, "统一设计语言");
+  } finally {
+    global.pi = saved;
+  }
+});
+
+test("a host that refuses both channels reports nothing pending", async () => {
+  const saved = global.pi;
+  global.pi = {
+    desktop: {
+      invoke: async () => {
+        throw Object.assign(new Error("unsupported"), { code: "UNSUPPORTED" });
+      },
+    },
+  };
+  try {
+    assert.deepEqual(await internals.readPending("s1"), { count: 0, items: [] });
+  } finally {
+    global.pi = saved;
+  }
+});
+
+test("the phone's list marks a running session that is waiting, not every row", async () => {
+  const saved = global.pi;
+  global.pi = {
+    session: {
+      list: async () => [
+        { id: "s1", title: "A", running: true },
+        { id: "s2", title: "B", running: false },
+      ],
+    },
+    desktop: {
+      invoke: async ({ operation, args }) => {
+        if (operation === "agent/pendingInteractive") {
+          return args[0].sessionId === "s1" ? { asks: [{ question: "继续吗？" }] } : { asks: [] };
+        }
+        return {};
+      },
+    },
+  };
+  try {
+    const plain = await internals.listSessions({ limit: 10 });
+    assert.equal(plain[0].waiting, undefined);
+
+    const probed = await internals.listSessions({ limit: 10, probe: true });
+    assert.equal(probed[0].waiting, 1);
+    assert.equal(probed[0].waitingText, "继续吗？");
+    assert.equal(probed[1].waiting, undefined);
+  } finally {
+    global.pi = saved;
+  }
+});

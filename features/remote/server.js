@@ -185,7 +185,7 @@ function createRemoteServer(options) {
 
   async function handleBootstrap(req, res, device) {
     const window = Number(new URL(req.url, "http://lan").searchParams.get("window")) || SESSION_LIST_LIMIT;
-    const sessions = await api.sessions({ limit: Math.min(200, Math.max(1, window)) });
+    const sessions = await api.sessions({ limit: Math.min(200, Math.max(1, window)), probe: true });
     json(res, 200, { device: { name: device.name, createdAt: device.createdAt }, sessions });
   }
 
