@@ -51,6 +51,12 @@ const THINKING_TICK_SELECTOR = ".composer-thinking-tick";
 const THINKING_RANGE_SELECTOR = ".composer-thinking-range";
 // 档位的原文写回这个属性：宿主重渲染之后还能认出这一格是哪一档。
 const LEVEL_ATTR = "data-piopt-mp-level";
+// 推理强度的中文开关：`zh` 时那一排刻度先藏起来，译完再放出来。观察者回调虽然
+// 早于绘制，但滑杆是宿主自己后渲染的，藏一下最稳妥，不会先闪一帧英文。
+const LEVELS_ATTR = "data-piopt-mp-levels";
+// 发送键左边那枚思考 chip：档位文字在浮窗外面，要单独盯着。
+const CHIP_SELECTOR = ".composer-model-thinking-chip";
+const CHIP_LEVEL_SELECTOR = ".composer-model-thinking-level";
 const CAPS_STORAGE_KEY = "piopt.modelPicker.capabilities.v1";
 // 宿主把最近用过的模型从分组里剔出来摆在最上面；「默认」排列要它们回到各自的位置，
 // 就得知道宿主那份完整清单。探测出来的顺序按「供应商␟模型 id」整份缓存。
@@ -70,9 +76,19 @@ const COPY = {
   en: { modes: "Arrange by", default: "Default", provider: "Provider", vendor: "Vendor", name: "Name" },
 };
 
-// 推理强度档位：宿主把档位原名直接写在滑杆的刻度上（off / minimal / low …），
-// 中文界面里这几个词混在中文标签中间不好读。
-const LEVEL_COPY = { off: "关闭", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" };
+// 推理强度档位：宿主把档位原名直接写在滑杆的刻度与思考 chip 上（off / minimal /
+// low …），中文界面里这几个词混在中文标签中间不好读。`omit` 是「不发送这个参数、
+// 由模型自己决定」，中文写成「默认」。
+const LEVEL_COPY = {
+  off: "关闭",
+  omit: "默认",
+  minimal: "极低",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "极高",
+  max: "最高",
+};
 
 // Injected with the entry stylesheet. Every rule is scoped to a menu this module
 // has already touched, so an untouched popup keeps the host's own look.
@@ -117,6 +133,9 @@ export const MODEL_PICKER_CSS = [
      行高、内边距与滚动位置一律不动。 */
   `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"]{box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--ds-accent) 64%,transparent)}`,
   `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"] .composer-model-check{display:none}`,
+  /* 推理强度的刻度：中文开关打开时，还没写回原文属性的刻度先不显示 —— 那一排本来
+     就是 aria-hidden 的装饰，藏一帧比露出半帧英文好；译完即刻可见。 */
+  `.composer-model-menu[${LEVELS_ATTR}="zh"] .composer-thinking-tick:not([${LEVEL_ATTR}]){visibility:hidden}`,
   `.${VIEW_CLASS}[data-piopt-mp-switch="true"]{animation:piopt-mp-switch var(--pm-fast,135ms) var(--pm-ease-symmetric,cubic-bezier(.22,1,.36,1)) backwards}`,
   `@keyframes piopt-mp-switch{from{opacity:.65}to{opacity:1}}`,
 ].join("\n");
@@ -803,32 +822,121 @@ function copyOf() {
 }
 
 /*
- * 推理强度：滑杆的刻度是宿主按档位原名画的按钮（off / minimal / low / medium /
- * high / xhigh / max），滑杆本身是一个 range 输入。开启这一项时把刻度文字换成
- * 中文，顺便把 range 的 aria-valuetext 一起换掉 —— 读屏念的也是同一档。
+ * 推理强度：滑杆的刻度与发送键旁的 chip 都写着宿主那套档位原名（off / minimal /
+ * low / medium / high / xhigh / max，外加 omit＝不发送这个参数、由模型自己决定）。
+ * 开启这一项时把它们换成中文，range 的 aria-valuetext 一起换 —— 读屏念的也是同一档。
  *
- * 原文写回 LEVEL_ATTR：宿主重渲染后（它只认自己的英文 vdom）还能认出这一格是
- * 哪一档，重复调用也就不会把中文再翻一遍。只动刻度，不动滑杆里那排装饰圆点：
- * 那些圆点是 aria-hidden 的，改字只会在圆点里挤出半截汉字。
+ * 原文写回 LEVEL_ATTR：宿主重渲染后（它只认自己的英文 vdom）还能认出这一格是哪一档，
+ * 重复调用也就不会把中文再翻一遍。只动刻度，不动滑杆里那排装饰圆点：那些圆点是
+ * aria-hidden 的，改字只会在圆点里挤出半截汉字。
  */
+// 这一格当前该按哪一档算。宿主重渲染会把它自己的英文写回来，所以文本认识就是
+// 新的原文；不认识说明文本是我们的译文，原文还在属性里。
+function rawLevelOf(element) {
+  const text = textOf(element);
+  const stored = element.getAttribute(LEVEL_ATTR);
+  return LEVEL_COPY[text.toLowerCase()] ? text : (stored || text);
+}
+
+function levelOf(element) {
+  const raw = rawLevelOf(element);
+  const label = LEVEL_COPY[raw.toLowerCase()];
+  return label ? { raw, label } : null;
+}
+
+/** 把一格档位译成中文，原文写回属性（重复调用不会翻第二遍）。 */
+function applyLevel(element) {
+  const level = levelOf(element);
+  if (!level) return false;
+  if (element.getAttribute(LEVEL_ATTR) !== level.raw) element.setAttribute(LEVEL_ATTR, level.raw);
+  if (textOf(element) !== level.label) element.textContent = level.label;
+  return true;
+}
+
+/** 关掉这一项时把文字还给宿主：属性里存着它原来的英文。 */
+function restoreLevel(element) {
+  if (!element || !element.hasAttribute(LEVEL_ATTR)) return;
+  const raw = element.getAttribute(LEVEL_ATTR);
+  element.removeAttribute(LEVEL_ATTR);
+  if (textOf(element) !== raw) element.textContent = raw;
+}
+
 function localizeThinking(menuElement) {
   if (!menuElement) return;
-  const ticks = menuElement.querySelectorAll(THINKING_TICK_SELECTOR);
-  if (!ticks.length) return;
   const labels = [];
-  for (const tick of ticks) {
-    const raw = tick.getAttribute(LEVEL_ATTR) || textOf(tick);
-    const label = LEVEL_COPY[raw.toLowerCase()] || "";
+  for (const tick of menuElement.querySelectorAll(THINKING_TICK_SELECTOR)) {
+    const raw = rawLevelOf(tick);
+    const label = LEVEL_COPY[raw.toLowerCase()];
     labels.push(label || raw);
+    if (!translateThinking) continue;
+    // 认不出的档位也要写回原文属性：样式靠它判断「这一格处理过了」，不写就会被一直藏着。
+    if (tick.getAttribute(LEVEL_ATTR) !== raw) tick.setAttribute(LEVEL_ATTR, raw);
     if (!label) continue;
-    tick.setAttribute(LEVEL_ATTR, raw);
     if (textOf(tick) !== label) tick.textContent = label;
     if (tick.title !== label) tick.title = label;
   }
   const range = menuElement.querySelector(THINKING_RANGE_SELECTOR);
-  if (!range) return;
-  const label = labels[Number(range.value)];
-  if (label && range.getAttribute("aria-valuetext") !== label) range.setAttribute("aria-valuetext", label);
+  if (range) {
+    const label = labels[Number(range.value)];
+    if (label && range.getAttribute("aria-valuetext") !== label) range.setAttribute("aria-valuetext", label);
+  }
+  syncChip();
+}
+
+// ------------------------------------------------------ 发送键旁的思考 chip
+
+/*
+ * 档位文字不只在浮窗里：发送键左边那枚 chip 写着同一个词，它在浮窗外面，宿主每次
+ * 换档都会重渲染这一小段。这里盯着那枚 span 自己（文本与子节点），观察者回调早于
+ * 绘制，所以换档的那一帧就是中文，不会先闪一下英文。
+ *
+ * chip 会被整只是替换（换模型、换会话），所以每次有机会都重新找一遍、重新换绑。
+ */
+let chipLevel = null;
+let chipObserver = null;
+
+function syncChip() {
+  if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
+  const level = document.querySelector(`${CHIP_SELECTOR} ${CHIP_LEVEL_SELECTOR}`);
+  if (!level) {
+    if (chipObserver) {
+      chipObserver.disconnect();
+      chipObserver = null;
+    }
+    chipLevel = null;
+    return;
+  }
+  if (!translateThinking) {
+    restoreLevel(level);
+    return;
+  }
+  if (level !== chipLevel && typeof MutationObserver === "function") {
+    if (chipObserver) chipObserver.disconnect();
+    chipObserver = new MutationObserver(() => applyLevel(level));
+    chipObserver.observe(level, { childList: true, characterData: true, subtree: true });
+  }
+  chipLevel = level;
+  applyLevel(level);
+}
+
+function forgetChip() {
+  if (chipObserver) {
+    chipObserver.disconnect();
+    chipObserver = null;
+  }
+  chipLevel = null;
+}
+
+/** 这一批 mutation 碰的是不是推理强度滑杆（宿主也可能整块换成新的）。 */
+function touchesThinking(record) {
+  if (closestOf(record.target, THINKING_SLIDER_SELECTOR)) return true;
+  for (const node of record.addedNodes || []) {
+    if (!isElement(node)) continue;
+    if (closestOf(node, THINKING_SLIDER_SELECTOR)) return true;
+    if (node.classList && node.classList.contains("composer-thinking-slider")) return true;
+    if (typeof node.querySelector === "function" && node.querySelector(THINKING_SLIDER_SELECTOR)) return true;
+  }
+  return false;
 }
 
 /**
@@ -909,7 +1017,16 @@ function sync() {
   // 选中标记与档位文案都只影响这一个浮窗：挂在窗上，换一份设置就整块换掉。
   if (frameSelected) target.setAttribute(MARKER_ATTR, "frame");
   else target.removeAttribute(MARKER_ATTR);
-  if (translateThinking) localizeThinking(target);
+  // 先挂上 `zh`，再译：还没写回原文的刻度在这段时间里是藏着的（见 MODEL_PICKER_CSS），
+  // 所以看不到半帧英文。关掉时反过来，把刻度上的中文还给宿主。
+  if (translateThinking) {
+    target.setAttribute(LEVELS_ATTR, "zh");
+    localizeThinking(target);
+  } else {
+    target.removeAttribute(LEVELS_ATTR);
+    for (const tick of target.querySelectorAll(THINKING_TICK_SELECTOR)) restoreLevel(tick);
+    syncChip();
+  }
 
   // 宿主的折叠入口：点一次把它全部展开，然后它在 CSS 里被藏掉，用户不能再收起。
   // 点击是异步生效的，这一轮先让原生列表照常显示，展开后的下一轮再建视图，免得
@@ -983,6 +1100,7 @@ function unbindMenu() {
     menu.removeAttribute(SEARCH_ATTR);
     menu.removeAttribute(EXPANDED_ATTR);
     menu.removeAttribute(MARKER_ATTR);
+    menu.removeAttribute(LEVELS_ATTR);
   }
   menu = null;
 }
@@ -999,9 +1117,11 @@ function bindMenu(element) {
         const node = record.target;
         if (closestOf(node, `.${VIEW_CLASS},.${MODES_CLASS}`)) continue;
         // 推理强度滑杆是宿主自己的另一块（它就在同一个浮窗里）：档位换了一格、
-        // 我们自己的译文写回去，都只在这块里动，别牵动一次整份重建。
-        if (closestOf(node, THINKING_SLIDER_SELECTOR)) {
-          if (translateThinking && record.type === "attributes") localizeThinking(element);
+        // 我们自己的译文写回去，都只在这块里动，别牵动一次整份重建。译文必须在这一批
+        // mutation 里同步写完 —— 观察者回调早于绘制，拖到下一次 sync（40ms 之后）
+        // 就会先闪一帧英文。
+        if (touchesThinking(record)) {
+          if (translateThinking) localizeThinking(element);
           continue;
         }
         // 只是键盘高亮换了一行：跟着挪一下，别整份重建。
@@ -1051,6 +1171,8 @@ async function refreshConfig() {
       syncModes(menu);
       sync();
     }
+    // chip 在浮窗外面：设置一变就顺手译一遍（或把英文还回去），不必等下一次开浮窗。
+    syncChip();
   } catch {
     // 读不到就沿用上一次的用法，浮窗本身照常工作。
   }
@@ -1084,11 +1206,22 @@ function watchBody() {
   bodyObserver.observe(document.body, { childList: true });
 }
 
+// 用户从面板切回来、窗口重新获得焦点时再看一眼 chip：它是浮窗外面唯一写着档位的地方，
+// 而这些时机都是廉价的（一次 querySelector）。
+function onAttention() {
+  syncChip();
+}
+
 export function mountModelPicker(bridge) {
   host = bridge;
   // 入口模块可能在同一个窗口里被重新挂载（插件重载）；监听器只挂一次。
   if (!bodyObserver) {
     document.addEventListener("input", onDocumentInput, true);
+    document.addEventListener("focusin", onAttention, true);
+    document.addEventListener("visibilitychange", onAttention);
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("focus", onAttention);
+    }
     watchBody();
   }
   const open = findLiveMenu();
@@ -1098,6 +1231,12 @@ export function mountModelPicker(bridge) {
 
 export function unmountModelPicker() {
   document.removeEventListener("input", onDocumentInput, true);
+  document.removeEventListener("focusin", onAttention, true);
+  document.removeEventListener("visibilitychange", onAttention);
+  if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+    window.removeEventListener("focus", onAttention);
+  }
+  forgetChip();
   if (bodyObserver) {
     bodyObserver.disconnect();
     bodyObserver = null;

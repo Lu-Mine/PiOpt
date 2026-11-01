@@ -456,20 +456,51 @@ test("选中标记换成圆角框时只换画法，不动宿主的节点", () =>
 
 test("推理强度档位译成中文，原文留在属性里", () => {
   const source = read("renderer/model-picker.mjs");
-  // 七个档位都有中文，档位表就是宿主那套原名。
-  assert.match(source, /const LEVEL_COPY = \{ off: "关闭", minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" \};/);
+  // 宿主那套档位全在表里，包括 omit（不发送这个参数、由模型自己决定）。
+  const table = source.slice(source.indexOf("const LEVEL_COPY = {"), source.indexOf("};", source.indexOf("const LEVEL_COPY = {")));
+  for (const [level, label] of [
+    ["off", "关闭"], ["omit", "默认"], ["minimal", "极低"], ["low", "低"],
+    ["medium", "中"], ["high", "高"], ["xhigh", "极高"], ["max", "最高"],
+  ]) {
+    assert.ok(table.includes(`${level}: "${label}"`), `${level} -> ${label}`);
+  }
   assert.match(source, /function localizeThinking\(menuElement\)/);
   // 只动刻度按钮；滑杆里那排装饰圆点不动（它们是 aria-hidden 的圆点，塞字只会挤出来）。
   assert.match(source, /const THINKING_TICK_SELECTOR = "\.composer-thinking-tick";/);
   assert.doesNotMatch(source, /composer-thinking-dot"\);?\s*$/m);
-  // 原文写回属性，重复调用不会把中文再翻一遍。
-  assert.match(source, /const raw = tick\.getAttribute\(LEVEL_ATTR\) \|\| textOf\(tick\);/);
-  assert.match(source, /tick\.setAttribute\(LEVEL_ATTR, raw\);/);
+  // 原文写回属性，重复调用不会把中文再翻一遍；认不出的档位也要写回（样式靠它判断
+  // 这一格处理过了，不写就会被一直藏着）。
+  assert.match(source, /const raw = rawLevelOf\(tick\);/);
+  assert.match(source, /if \(tick\.getAttribute\(LEVEL_ATTR\) !== raw\) tick\.setAttribute\(LEVEL_ATTR, raw\);/);
   assert.match(source, /if \(textOf\(tick\) !== label\) tick\.textContent = label;/);
+  // 宿主重渲染会把英文写回来：文本认识就算新的原文，否则原文还在属性里。
+  assert.match(source, /return LEVEL_COPY\[text\.toLowerCase\(\)\] \? text : \(stored \|\| text\);/);
   // range 的 aria-valuetext 跟刻度是同一档：读屏念中文。
   assert.match(source, /range\.setAttribute\("aria-valuetext", label\)/);
-  // 开关关着就一个字都不碰。
-  assert.match(source, /if \(translateThinking\) localizeThinking\(target\);/);
+  // 开关关着就一个字都不碰；关掉时把英文还回去。
+  assert.match(source, /if \(translateThinking\) \{/);
+  assert.match(source, /target\.setAttribute\(LEVELS_ATTR, "zh"\);/);
+  assert.match(source, /for \(const tick of target\.querySelectorAll\(THINKING_TICK_SELECTOR\)\) restoreLevel\(tick\);/);
+});
+
+test("发送键左边的 chip 也译成中文，而且不先闪一帧英文", () => {
+  const source = read("renderer/model-picker.mjs");
+  // chip 在浮窗外面：单独找它、单独换绑。
+  assert.match(source, /const CHIP_SELECTOR = "\.composer-model-thinking-chip";/);
+  assert.match(source, /const CHIP_LEVEL_SELECTOR = "\.composer-model-thinking-level";/);
+  assert.match(source, /const level = document\.querySelector\(`\$\{CHIP_SELECTOR\} \$\{CHIP_LEVEL_SELECTOR\}`\);/);
+  // 盯着那枚 span 自己：观察者回调早于绘制，换档那一帧就是中文。
+  assert.match(source, /chipObserver = new MutationObserver\(\(\) => applyLevel\(level\)\);/);
+  assert.match(source, /chipObserver\.observe\(level, \{ childList: true, characterData: true, subtree: true \}\);/);
+  // 从面板切回来、窗口重新获得焦点时补一眼（那时设置才刚写进去）。
+  assert.match(source, /document\.addEventListener\("focusin", onAttention, true\);/);
+  assert.match(source, /window\.addEventListener\("focus", onAttention\);/);
+  // 刻度在译文写完之前先藏着：菜单一挂上 zh，没处理过的格子就是 visibility:hidden。
+  assert.match(source, /const LEVELS_ATTR = "data-piopt-mp-levels";/);
+  assert.ok(source.includes(`.composer-model-menu[\${LEVELS_ATTR}="zh"] .composer-thinking-tick:not([\${LEVEL_ATTR}]){visibility:hidden}`));
+  // 滑杆那块的变化在观察者里同步译完，不排进 40ms 之后的重建。
+  assert.match(source, /if \(touchesThinking\(record\)\) \{/);
+  assert.match(source, /if \(translateThinking\) localizeThinking\(element\);/);
 });
 
 test("两项改写与排列方式一起从主进程读回来", () => {
@@ -480,6 +511,6 @@ test("两项改写与排列方式一起从主进程读回来", () => {
   assert.match(source, /void refreshConfig\(\);/);
   assert.match(source, /return refreshConfig\(\);/);
   // 滑杆是宿主自己的另一块：它的高亮/译文变化不该触发整份重建。
-  assert.match(source, /if \(closestOf\(node, THINKING_SLIDER_SELECTOR\)\) \{/);
-  assert.match(source, /if \(translateThinking && record\.type === "attributes"\) localizeThinking\(element\);/);
+  assert.match(source, /function touchesThinking\(record\)/);
+  assert.match(source, /if \(closestOf\(record\.target, THINKING_SLIDER_SELECTOR\)\) return true;/);
 });

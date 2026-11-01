@@ -202,7 +202,8 @@ const css = `${motion.buildThemeCss(motionLayer, base)}${glassLayer}`;
 - **按名称**：全部模型平铺，同样按 A–Z；每个选项下面另起一行居左的淡色小字写着来源。
 - **品牌图标**：每个模型前面一枚 14px 的彩色品牌标（lobe-icons，随包内置、不联网）。Claude 系（`claude`/`sonnet`/`opus`/`haiku`）用自家那朵橙色菊花而不是 Anthropic 的 A 标，混元用那颗蓝球（供应商写「腾讯混元」也认）。匹配先看模型名与 id（`claude`、`gpt`、`glm`、`gemini`…），再看供应商名 —— OpenRouter、Azure 这类转售商下面跑的仍显示模型自家的标。两个都认不出时画供应商首字母的彩块，所以没上表的新模型、新服务也不会空着。加品牌只需在 `tools/build-model-icons.js` 的表里加一行，再重新生成 `renderer/model-logos/icons.mjs`。
 - **选中标记**：默认是宿主那枚对勾；打开「圆角框替代对勾」后对勾藏起来，改用一圈 1px 的内描边把选中的模型整行框住（圆角沿用宿主给选中行的那一档），行高、内边距与滚动位置都不动 —— 克隆行与宿主原生行（搜索时）一起生效。
-- **中文推理强度**：宿主把档位原名（`off` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`）直接写在滑杆的刻度上。打开这一项后刻度换成「关闭 / 极低 / 低 / 中 / 高 / 极高 / 最高」，`title` 与 range 的 `aria-valuetext` 一起换，读屏念的也是同一条；原名写回 `data-piopt-mp-level`，宿主重渲染后还能认出是哪一档。滑杆里那排装饰圆点不动（它们是 `aria-hidden` 的圆点，塞汉字只会从圆点里挤出来）。
+- **中文推理强度**：宿主把档位原名直接写在滑杆的刻度上，也写在发送键左边那枚思考 chip 上（`off` / `omit` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`；`omit` 是「不发送这个参数、由模型自己决定」）。打开这一项后它们换成「关闭 / 默认 / 极低 / 低 / 中 / 高 / 极高 / 最高」，`title` 与 range 的 `aria-valuetext` 一起换，读屏念的也是同一条；原名写回 `data-piopt-mp-level`，宿主重渲染后还能认出是哪一档。滑杆里那排装饰圆点不动（它们是 `aria-hidden` 的圆点，塞汉字只会从圆点里挤出来）。
+  - **不闪英文**：滑杆那块的变化在浮窗自己的 `MutationObserver` 里**同步**译完（回调早于绘制），不排进 40ms 之后的重建；chip 由它自己的观察者盯着那枚 span。菜单一挂上 `data-piopt-mp-levels="zh"`，还没写回原文的刻度先 `visibility:hidden`（那排本来就是 `aria-hidden` 的装饰），所以不会先画半帧英文。从面板切回来、窗口重新获得焦点时会再补看一眼 chip，不必等下一次开浮窗。
 - **最近使用那几行的能力标记与位置**：宿主只在这组里写来源，推理/视觉徽标和上下文读数只画在供应商分组里，而且它把这几行从分组里剔了出去。这一层用宿主的另一次渲染把这些问出来 —— 搜索时它不过滤最近使用、又会用供应商名匹配整组，所以先按模型 id 搜出徽标与上下文，再按供应商名逐组搜一遍拿回设置里的完整顺序；前者按「供应商␟模型 id」缓存进 `piopt.modelPicker.capabilities.v1`，后者整份缓存进 `piopt.modelPicker.order.v1`（模型增删或换序时自动重探）。宿主不响应程序化搜索时立刻放弃、不影响浮窗。
 
 设置存在插件 settings 的 `modelPicker` 键里，整份只有三个字段：`grouping`、`frameSelected`、`translateThinking`。宿主窗口的 `renderer/model-picker.mjs` 每次打开浮窗都经 `plugin.call` 读一次，按钮点击则立刻写回去，改完不用重启。
