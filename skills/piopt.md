@@ -20,10 +20,10 @@ them: they are panel settings.
   field switches between the host's own order (默认, nothing is re-sorted),
   grouping by provider, grouping by model vendor, and a flat list sorted by
   name. The three rearrangements sort groups and the rows inside them A–Z (Latin
-  first, then Chinese). Default keeps the host's groups, their order, the order
-  inside each group and the recently-used group at the top; that recent group has
-  no provider heading, so its source moves to the faint second line under the
-  model name. Provider grouping puts recently used models back under
+  first, then Chinese). Default keeps the host's own groups and their order and
+  drops the recently-used group entirely: the host picks those rows out of their
+  provider groups and puts them on top, so they go back to the front of their own
+  provider group. Provider grouping puts recently used models back under
   their provider and drops the group label's background; vendor grouping labels
   groups by brand (Anthropic, OpenAI, Tencent…); name sorting adds a faint source
   line under each option. Every row also carries a 14px colored brand mark picked by

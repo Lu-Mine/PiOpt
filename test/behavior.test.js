@@ -194,20 +194,31 @@ test("「默认」排列原样照搬宿主的顺序", () => {
   const source = read("renderer/model-picker.mjs");
   // 原生行的顺序（querySelectorAll 按文档序）与分组标题一并记下来。
   assert.match(source, /groupLabel,\s*\n\s*label:/);
-  // 独立的一支：不排序，只按首次出现的顺序落桶，最近使用那一组仍在最前面。
+  // 独立的一支：不排序，只按分组首次出现的顺序落桶。
   assert.match(source, /function defaultView\(rows\)/);
   assert.match(source, /for \(const \[label, bucket\] of buckets\) \{/);
-  assert.match(source, /groups\.push\(buildGroup\(label, bucket, bucket\.every\(\(row\) => row\.recent\)\)\);/);
   assert.match(source, /} else if \(grouping === "default"\) \{/);
   assert.match(source, /for \(const group of defaultView\(rows\)\) view\.append\(group\);/);
   // 宿主没有分组抬头时不硬造一个空标题。
   assert.match(source, /if \(label\) \{\s*\n\s*group\.setAttribute\("aria-label", label\)/);
 });
 
-test("默认排列下最近使用那一组仍然写着来源", () => {
+test("默认排列不保留「最近使用」那一类", () => {
   const source = read("renderer/model-picker.mjs");
-  // 来源那一行由行上的属性决定，不再绑在某一种排列方式上：按名称每行都有，
-  // 默认排列下只有最近使用那一组（宿主在那里画的本来就是来源）。
+  // 第一遍先把最近使用过的行挑出去 —— 它们不会成为自成一组的分类。
+  assert.match(source, /if \(row\.recent\) continue;/);
+  // 第二遍按供应商把它们放到那一组的行首，组内仍按宿主给的先后。
+  assert.match(source, /if \(!row\.recent\) continue;/);
+  assert.match(source, /const label = row\.provider \|\| row\.groupLabel \|\| "";/);
+  assert.match(source, /groups\.push\(buildGroup\(label, \(carried\.get\(label\) \|\| \[\]\)\.concat\(bucket\), false\)\);/);
+  // 找不到对应分组时才退回一个没有抬头的组。
+  assert.match(source, /if \(stray\.length\) groups\.unshift\(buildGroup\("", stray, true\)\);/);
+  assert.doesNotMatch(source, /bucket\.every\(\(row\) => row\.recent\)/);
+});
+
+test("来源那一行由行上的属性驱动，不再绑在某种排列上", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 按名称时每行都有来源；没有这个属性就不生成伪元素。
   assert.match(source, /option-main\[\$\{PROVIDER_ATTR\}\]\{flex-wrap:wrap\}/);
   assert.match(source, /option-main\[\$\{PROVIDER_ATTR\}\]::after\{content:attr\(\$\{PROVIDER_ATTR\}\)/);
   assert.doesNotMatch(source, /\[LAYOUT_ATTR="name"\] \.composer-model-option-main::after/);

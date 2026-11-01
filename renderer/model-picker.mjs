@@ -3,13 +3,13 @@
 // PI-Desktop's popup lists the three most recent models first and folds every
 // other model behind an 「其他模型」 toggle. This module changes exactly that:
 // 全部模型始终展开（限高仍是宿主自己的 max-height，这里不碰），搜索框下面一条
-// 「默认 / 供应商 / 厂商 / 名称」切换排列方式：默认照宿主自己的顺序（最近使用那
-// 一组仍在最前），其余三种的分组与组内顺序都按 A–Z。
+// 「默认 / 供应商 / 厂商 / 名称」切换排列方式：默认就是宿主自己的分组与顺序
+// （最近用过的那几个回到各自供应商组的行首），其余三种的分组与组内顺序都按 A–Z。
 //
 // 做法：
 //   1. 点一次宿主自己的「其他模型」入口把其余分组放出来，随后把入口藏掉；
 //   2. 原生列表整体让位，用克隆出来的按钮自建一份视图：
-//      · 按默认：分组与组内顺序原样照搬宿主，最近使用那一组仍排在最前面；
+//      · 按默认：分组与组内顺序原样照搬宿主，只把「最近使用」那一类拆掉；
 //      · 按供应商：最近使用过的模型还回各自供应商那一组，分组标题不压底色；
 //      · 按名称：全部模型平铺，每个选项下面另起一行淡色的来源。
 //
@@ -45,7 +45,7 @@ const ITEM_ATTR = "data-piopt-mp-item";
 const PROBING_ATTR = "data-piopt-mp-probing";
 const CAPS_STORAGE_KEY = "piopt.modelPicker.capabilities.v1";
 const DEFAULT_GROUPING = "provider";
-// `default` 照宿主自己的顺序：分组、组内、最近使用那一组的位置全部原样保留。
+// `default` 就是宿主自己的顺序：分组、组内先后都不动，「最近使用」那一组不算一类。
 // 其余三种都重排。按钮的先后就是这里的先后。
 const GROUPINGS = ["default", "provider", "vendor", "name"];
 // 探测一次「最近使用」模型的能力要一次搜索 + 一次渲染；最多等这么久，超时就放弃。
@@ -93,9 +93,8 @@ export const MODEL_PICKER_CSS = [
   `.piopt-mp-logo{flex:none;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:inherit}`,
   `.piopt-mp-logo svg{width:14px;height:14px;display:block}`,
   `.piopt-mp-logo-letter{border-radius:4px;background:color-mix(in oklab,var(--piopt-logo) 22%,transparent);color:var(--piopt-logo);font-size:9px;font-weight:600;line-height:1}`,
-  /* 来源那一行：哪一行要写来源由模块自己决定（按名称时每行都写，默认排列下只有
-     最近使用那一组要写 —— 宿主在那里画的本来就是来源，我们换成能力标记之后
-     得把它补回来）。写在行上就生效，与排列方式无关。 */
+  /* 来源那一行：哪一行要写来源由模块自己决定（按名称时每行都写；宿主没给某个供应
+     商留分组时，兜底那几行也要写）。写在行上就生效，与排列方式无关。 */
   `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]{flex-wrap:wrap}`,
   `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
   `.${VIEW_CLASS}[data-piopt-mp-switch="true"]{animation:piopt-mp-switch var(--pm-fast,135ms) var(--pm-ease-symmetric,cubic-bezier(.22,1,.36,1)) backwards}`,
@@ -575,24 +574,41 @@ function buildGroup(label, rows, showSource) {
 }
 
 /**
- * 「默认」视图：宿主自己的顺序一点不改。
+ * 「默认」视图：宿主的分组与顺序一点不改，但不要「最近使用」那一类。
  *
- * 分组、组内顺序、最近使用那一组的位置全部照搬原生列表 —— 宿主按自己的设置排好
- * 的那份顺序就是这里要的东西，所以这一支不排序、也不把最近使用的模型并回供应商。
- * 最近使用那一组的行要补一行来源：宿主在那里画的本来就是来源，buildRow 把它换成
- * 能力标记（推理 / 视觉徽标 + 上下文读数）之后，来源得另起一行写回来。
+ * 宿主把最近用过的模型从供应商组里剔出来、单独摆在最上面。这一支把它们按供应商
+ * 送回各自那一组的行首（组内原本在第几位无从得知，它们本来就在列表最前），于是
+ * 只剩宿主自己的分组：组的先后、组内的先后都照原生顺序，这一支不排序。
  */
 function defaultView(rows) {
+  // 第一遍：宿主的分组与组内顺序，「最近使用」那一组先跳过。
   const buckets = new Map();
   for (const row of rows) {
+    if (row.recent) continue;
     const label = row.groupLabel || "";
     if (!buckets.has(label)) buckets.set(label, []);
     buckets.get(label).push(row);
   }
+  // 第二遍：最近使用过的行回到供应商那一组的行首，彼此之间仍按宿主给的先后。
+  const carried = new Map();
+  const stray = [];
+  for (const row of rows) {
+    if (!row.recent) continue;
+    const label = row.provider || row.groupLabel || "";
+    if (!buckets.has(label)) {
+      stray.push(row);
+      continue;
+    }
+    if (!carried.has(label)) carried.set(label, []);
+    carried.get(label).push(row);
+  }
   const groups = [];
   for (const [label, bucket] of buckets) {
-    groups.push(buildGroup(label, bucket, bucket.every((row) => row.recent)));
+    groups.push(buildGroup(label, (carried.get(label) || []).concat(bucket), false));
   }
+  // 宿主没给这些供应商留分组时，退回一个没有抬头的组（那时才需要写来源），
+  // 位置仍是它们原来的地方：最前面。
+  if (stray.length) groups.unshift(buildGroup("", stray, true));
   return groups;
 }
 
