@@ -213,20 +213,9 @@ about the calls, only about the prefix.
    screenful and the rest falls back to the translucent fill. Those menus hold
    a handful of items; the long ones are the submenus and the model picker,
    and both carry the filter on the element.
-   A frosted popup must not fade in as a whole. An element at opacity < 1 is a
-   Backdrop Root, so the frosting sees only what is painted inside the popup for
-   the whole fade and lands in one step on the final frame — measured on a
-   46px blur over a text background: brightness 94.7 at the first frame against
-   72.9 at rest, i.e. the popup appears to settle and then twitch. Switching the
-   motion layer off hides it, because then there is no fade at all. So the
-   entrance never touches opacity: `pg-popup-in` lifts a leaf popup 4px with
-   `backwards`, the menus that may open a submenu appear with no entrance (a
-   transform would re-anchor the submenu they open), and hiding stays the host's
-   `visibility` switch. After the change the first frame and the resting frame
-   measure the same.
-   The "no transform" rule in `test/glass.test.js` checks resting declarations
-   only (comments and keyframes are stripped first). Prose may say `transform` —
-   the rule is about behaviour, not vocabulary.
+   The "no transform" rule in `test/glass.test.js` checks property declarations
+   only (comments are stripped first). Prose may say `transform` — the rule is
+   about behaviour, not vocabulary.
 4. Settings apply live, about one debounce frame after the last input. Do not
    tell the user to press an apply button.
 5. 轻薄 / 标准 / 厚重 are glass recipes, not motion presets. The switch only

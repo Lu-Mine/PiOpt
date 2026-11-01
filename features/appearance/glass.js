@@ -386,23 +386,6 @@ function buildGlassCss(input = {}, options = {}) {
   const shellBlur = surfaces
     ? "-webkit-backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))!important;backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))!important"
     : "";
-  // Frosted popups must not fade in as a whole. An element at opacity < 1 is a
-  // Backdrop Root: for the entire fade the frosting sees only what is painted
-  // inside the element, so it arrives on the last frame in one step — that
-  // "settles, then twitches" is what an entrance reads as. The material
-  // therefore goes opaque at once and the entrance moves instead of fading: a
-  // leaf popup rises 4px, and a menu that may open a submenu simply appears
-  // (a transform there would re-anchor the submenu it opens, viewport
-  // coordinates and all). Both keep the host's own visibility switch, so the
-  // way they hide does not change.
-  const frostedEntrance = [
-    `:is(${[...FROSTED_POPUPS, ...FROSTED_FRAMES].join(",")}){transition-property:transform,visibility!important}`,
-    `:is(${[...FROSTED_POPUPS, ...FROSTED_FRAMES].join(",")}).is-open{opacity:1!important}`,
-    `:is(${FROSTED_POPUPS.join(",")}){animation:pg-popup-in var(--pm-fast,140ms) var(--pm-ease-out,ease-out) backwards!important}`,
-    `:is(${FROSTED_FRAMES.join(",")}){animation:none!important}`,
-    // No opacity anywhere in this keyframe: that is the whole point.
-    "@keyframes pg-popup-in{from{transform:translateY(4px)}to{transform:translateY(0)}}",
-  ].join("\n");
   const frostLayer = "content:\"\";position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;";
   const frosted = surfaces
     ? [
@@ -410,7 +393,6 @@ function buildGlassCss(input = {}, options = {}) {
         `:is(${FROSTED_FRAMES.join(",")})::before{${frostLayer}${blurStrong}}`,
         `${FROSTED_SHELL}::before{${frostLayer}${shellBlur}}`,
         `${FROSTED_SHELL}{background-color:color-mix(in oklab,var(--ds-bg-composer) var(--pg-overlay-alpha),transparent)!important;background-image:none!important}`,
-        frostedEntrance,
       ].join("\n")
     : "";
   const wallpaper = wallpaperCssUrl(config.wallpaper);
