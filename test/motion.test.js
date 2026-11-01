@@ -657,6 +657,9 @@ test("the reasoning slider snaps to its stops only while motion optimization is 
   // 点亮的那一格弹一下（档位换一格就重新触发一次）。
   assert.match(css, /\.composer-thinking-dot\.active\{animation:pm-thinking-snap var\(--pm-base\)/);
   assert.match(css, /@keyframes pm-thinking-snap\{/);
+  // 选择器带上滑杆父级：通用 :is(…) 列表里 `.update-notice-progress>span` 是「类 + 类型」，
+  // :is() 取其中最具体的那一个，只写一个类压不过它。
+  assert.match(css, /\.composer-thinking-slider \.composer-thinking-thumb\{transition:left/);
   // 不加 !important：拖动中宿主的 `[data-dragging]` 规则特异性更高，指针到哪到哪。
   assert.doesNotMatch(css, /\.composer-thinking-thumb\{transition:[^}]*!important/);
   // reduced 预设只有普通过渡，不做过冲。

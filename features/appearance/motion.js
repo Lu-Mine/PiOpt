@@ -347,13 +347,16 @@ function buildThemeCss(input = {}, base = "dark") {
   // 的曲线替掉宿主的等时过渡，滑钮与进度条先越过一点再回落，点亮的那一格同时弹一下。
   // 拖动中宿主自己要求无过渡（指针到哪到哪），那条规则特异性更高，不会被这里盖掉；
   // reduced 预设不做过冲，系统「减弱动态」时连过渡都不留。
+  // 选择器都带上 .composer-thinking-slider：上面那条通用 :is(…) 列表里混着
+  // `.update-notice-progress>span` 这种「类 + 类型」的项，:is() 取其中最具体的那一个
+  // （0,1,1），只写一个类（0,1,0）压不过它，过冲曲线就永远用不上。
   const thinkingSnap = tokens.continuous
-    ? `.composer-thinking-thumb{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),transform var(--pm-fast) var(--pm-ease-symmetric)}
-.composer-thinking-rail::after{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),width var(--pm-base) cubic-bezier(.34,1.44,.64,1),background-color var(--pm-fast) var(--pm-ease-standard)}
-.composer-thinking-dot.active{animation:pm-thinking-snap var(--pm-base) var(--pm-ease-out) backwards}
+    ? `.composer-thinking-slider .composer-thinking-thumb{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),transform var(--pm-fast) var(--pm-ease-symmetric)}
+.composer-thinking-slider .composer-thinking-rail::after{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),width var(--pm-base) cubic-bezier(.34,1.44,.64,1),background-color var(--pm-fast) var(--pm-ease-standard)}
+.composer-thinking-slider .composer-thinking-dot.active{animation:pm-thinking-snap var(--pm-base) var(--pm-ease-out) backwards}
 @keyframes pm-thinking-snap{0%{transform:scale(.55)}55%{transform:scale(1.45)}100%{transform:scale(1)}}`
-    : `.composer-thinking-thumb{transition:left var(--pm-fast) var(--pm-ease-symmetric)}
-.composer-thinking-rail::after{transition:width var(--pm-fast) var(--pm-ease-symmetric)}`;
+    : `.composer-thinking-slider .composer-thinking-thumb{transition:left var(--pm-fast) var(--pm-ease-symmetric)}
+.composer-thinking-slider .composer-thinking-rail::after{transition:width var(--pm-fast) var(--pm-ease-symmetric)}`;
 
   const reducedMedia = config.followReducedMotion
     ? `@media(prefers-reduced-motion:reduce){
@@ -364,9 +367,9 @@ function buildThemeCss(input = {}, base = "dark") {
 details::details-content{transition-duration:80ms}
 :is(${SPINNERS},${PULSES},${SKELETON_LINES}){animation:none}
 .skeleton::after{animation:none}
-.composer-thinking-thumb{transition:none}
-.composer-thinking-rail::after{transition:none}
-.composer-thinking-dot.active{animation:none}
+.composer-thinking-slider .composer-thinking-thumb{transition:none}
+.composer-thinking-slider .composer-thinking-rail::after{transition:none}
+.composer-thinking-slider .composer-thinking-dot.active{animation:none}
 }`
     : "";
 
