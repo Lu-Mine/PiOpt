@@ -155,11 +155,12 @@ about the calls, only about the prefix.
    the motion rules live in — so it only exists while PI-Desktop has that theme
    selected. Switching to another theme removes the
    glass; the stored on/off setting survives and comes back with the theme.
-   The surfaces it covers are the left sidebar, the right work panel body and
-   the chrome bars. Four chrome surfaces share one recipe via the `chromeFill`
-   string, emitted into a single selector rule: `.main-titlebar`,
-   `.conversation-topbar`, `.window-controls` and `.work-panel-header`. Not
-   copies — a copy is how they drift apart.
+   The surfaces it covers are the left sidebar, the right work panel body, the
+   chrome bars, every popup (context menus, the model picker, the composer's
+   own button popups) and the chat composer itself. Four chrome surfaces share
+   one recipe via the `chromeFill` string, emitted into a single selector rule:
+   `.main-titlebar`, `.conversation-topbar`, `.window-controls` and
+   `.work-panel-header`. Not copies — a copy is how they drift apart.
    `.window-controls` is the minimise / maximise / close strip: the host gives
    it a `position: fixed` solid block and even swaps it to
    `--ds-bg-dock-raised` whenever a work panel is open, which is exactly why
@@ -177,9 +178,6 @@ about the calls, only about the prefix.
    That layer lives on the pseudo element, never on `.work-panel` itself: an
    element with a backdrop-filter is a Backdrop Root, so a descendant's blur
    would see only what is painted inside it instead of the photo.
-   That layer lives on `.work-panel::before`, never on `.work-panel`: an element
-   with a backdrop-filter is a Backdrop Root, so a descendant's blur would see
-   only what is painted inside it instead of the photo.
    For the same Backdrop Root reason, no ancestor of a frosted surface may
    animate `opacity` (`opacity < 1` cuts off descendant `backdrop-filter` until
    the animation finishes): `.app-shell` and `.main-pane` do not animate, their
@@ -192,16 +190,28 @@ about the calls, only about the prefix.
    becomes a permanent Backdrop Root, bringing the colour mismatch back even
    at rest. Glass therefore disables that entry and supplies an opacity-free
    `work-panel-out-glass` exit independently of the motion switches.
-   Blur is safe on all of them because the host portals every popup (context
-   Never put a blur filter on a menu. The host nests its context submenu inside
-   the parent menu (`sidebar-submenu` lives inside `sidebar-floating-menu`) and
-   positions both from `getBoundingClientRect` / `innerWidth` / `innerHeight`,
-   i.e. viewport coordinates. A blur — like a transform — makes the parent the
-   containing block for that fixed child, so the submenu resolves those numbers
-   against the parent and appears trapped inside the menu that opened it.
-   Popups therefore get the translucent fill only, never the frosting.
-   The blur on the sidebar, the title bars and `work-panel::before` is safe: none of
-   them is the parent of a host popup.
+   Blur is safe on the frame because the host renders every popup inside its
+   own component rather than portalling it — the popups are not descendants of
+   the sidebar or the title bars. It is never safe on a menu that may open a
+   submenu: the host nests that submenu inside the parent menu
+   (`sidebar-submenu` lives inside `sidebar-floating-menu`) and positions both
+   from `getBoundingClientRect` / `innerWidth` / `innerHeight`, i.e. viewport
+   coordinates. A blur — like a transform — makes the parent the containing
+   block for that fixed child, so the submenu resolves those numbers against
+   the parent and appears trapped inside the menu that opened it.
+   The frosting therefore has two applications. A leaf popup
+   (`.composer-model-menu`, `.composer-autocomplete`, `.sidebar-submenu`, the
+   usage bubbles, the settings pickers) takes it on the element, which is also
+   what keeps the frosting over its own scrollbar. A menu that may open a
+   submenu, and the composer (whose own popups are descendants), takes it on
+   `::before` — a pseudo element is nobody's ancestor, so a child keeps the
+   viewport as its frame. Both read `--pg-blur-strong` and
+   `--pg-overlay-alpha`, so they read as one material.
+   One limitation is deliberate: on a menu whose own list scrolls, the pseudo
+   element scrolls with the content, so the frosting stays over the first
+   screenful and the rest falls back to the translucent fill. Those menus hold
+   a handful of items; the long ones are the submenus and the model picker,
+   and both carry the filter on the element.
    The "no transform" rule in `test/glass.test.js` checks property declarations
    only (comments are stripped first). Prose may say `transform` — the rule is
    about behaviour, not vocabulary.

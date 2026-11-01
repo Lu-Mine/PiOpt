@@ -206,7 +206,43 @@ test("the glass layer defines no color tokens of its own", () => {
 test("the stylesheet stays inside the host's 256 KB theme limit", () => {
   const css = glass.buildGlassCss({ enabled: true, preset: "deep", intensity: 1.6 });
   assert.ok(Buffer.byteLength(css, "utf8") < glass.CSS_LIMIT_BYTES);
-  assert.ok(Buffer.byteLength(css, "utf8") < 8 * 1024, "the glass layer must stay small");
+  // The layer reaches every popup and the composer now, so its selector lists are
+  // longer than the four surfaces it started with. This budget is what keeps a
+  // future addition honest; the host's own ceiling is CSS_LIMIT_BYTES.
+  assert.ok(Buffer.byteLength(css, "utf8") < 12 * 1024, "the glass layer must stay small");
+});
+
+test("popups and the composer are frosted where a submenu cannot be re-anchored", () => {
+  const css = glass.buildGlassCss({ enabled: true, preset: "standard", intensity: 1 });
+  // Comments may mention backdrop-filter; only declarations count.
+  const declarations = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  // A leaf popup — the model picker is one — takes the filter on the element
+  // itself, next to the translucent fill that gives the blur a floor. That is
+  // also the only way the frosting travels with the popup's own scrollbar.
+  assert.ok(declarations.includes(`:is(${glass.FROSTED_POPUPS.join(",")}){background-color:color-mix(`));
+  assert.ok(declarations.includes("backdrop-filter:blur(var(--pg-blur-strong))"));
+
+  // Every menu that may open a fixed submenu, and the composer (which owns the
+  // composer's own popups), takes it on a pseudo element instead.
+  const layered = [glass.FROSTED_SHELL, ...glass.FROSTED_FRAMES];
+  assert.ok(declarations.includes(`:is(${layered.join(",")})::before{content:"";`));
+  for (const selector of layered) {
+    // The element itself must stay filter-free, or the submenu it opens resolves
+    // its viewport coordinates against the menu instead of the viewport.
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.doesNotMatch(declarations, new RegExp(`${escaped}\\{[^}]*backdrop-filter`), selector);
+  }
+
+  // The composer's fill is the one host surface this layer repaints. It has to be
+  // translucent, or the frosting would sit on top of an opaque colour, and it has
+  // to fall back to the host's own colour where backdrop blur does not exist.
+  assert.ok(
+    declarations.includes(
+      ".composer-shell{background-color:color-mix(in oklab,var(--ds-bg-composer) var(--pg-overlay-alpha),transparent)!important"
+    )
+  );
+  assert.ok(declarations.includes(".composer-shell{background-color:var(--ds-bg-composer)!important}"));
 });
 
 // -------------------------------------------------------------------- feature

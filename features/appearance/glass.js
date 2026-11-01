@@ -244,6 +244,81 @@ function fitDeclarations(fit) {
       return "background-size:100% 100%;background-repeat:no-repeat;";
   }
 }
+// The popups and the composer are frosted too, and that needs two different
+// applications for one reason: a `backdrop-filter` makes the element the
+// containing block for every `position: fixed` descendant, exactly like a
+// `transform`. The host nests a submenu inside the menu that opens it
+// (`.sidebar-submenu` is a child of `.sidebar-row-menu`) and writes both levels'
+// `top`/`left` from `getBoundingClientRect` — viewport numbers. Blurring that
+// parent resolved them against the menu instead, which is how the second level
+// stayed trapped inside the first one.
+//
+// So the layer that may open a submenu carries the frosting on its `::before`: a
+// pseudo element is nobody's ancestor, so the child keeps the viewport as its
+// frame. A popup that never opens anything (a plain list, its own scrollbar) gets
+// the filter on the element, which is also the only way the frosting follows a
+// scrolling list instead of staying pinned to the first screenful.
+const FROSTED_POPUPS = Object.freeze([
+  // The model picker: the host itself frosts this one in its dark theme with a
+  // fixed 40px blur, so this is the one case where the recipe is replacing a
+  // material the shell already had.
+  ".composer-model-menu",
+  ".composer-autocomplete",
+  ".sidebar-submenu",
+  ".scope-popover",
+  ".provider-model-menu",
+  ".provider-model-multi-menu",
+  ".provider-service-menu",
+  ".model-default-menu",
+  ".settings-font-menu",
+  ".settings-language-menu",
+  ".settings-theme-menu",
+  ".settings-menu-select-menu",
+  ".home-project-switcher-menu",
+  ".turn-usage-popover",
+  ".context-inspector-popover",
+  ".live-voice-popup",
+]);
+
+// Menus that may host a fixed submenu of their own — the same set the motion
+// layer refuses to transform, and for the same reason.
+const FROSTED_FRAMES = Object.freeze([
+  ".context-menu",
+  ".sidebar-row-menu",
+  ".sidebar-floating-menu",
+  ".composer-permission-menu",
+  ".composer-mode-menu",
+  ".agent-capability-menu",
+  ".plan-approval-menu",
+  ".projects-menu",
+  ".plugins-menu",
+  ".scope-compact-menu",
+]);
+
+// The chat composer owns the composer's own popups (model, mode, permission,
+// autocomplete) as descendants, so its frosting goes on the pseudo element as
+// well; a filter here would re-anchor all of them.
+const FROSTED_SHELL = ".composer-shell";
+
+// The surfaces that take the translucent fill but not the element-level
+// frosting: the menus that may open a submenu (their layer is a pseudo element)
+// plus the dialogs and dropdowns that were already translucent. `[role=menu]`
+// covers most of the host's menus; the named ones are there because their role
+// is not a menu.
+//
+// The leaf popups are deliberately absent: their own rule below writes the same
+// fill next to the filter, so that selector list is not paid for twice.
+const POPUP_FILL = Object.freeze([
+  "[role=dialog]",
+  ".dialog-content",
+  ".modal-content",
+  "[role=menu]",
+  ".popover-content",
+  ".dropdown-content",
+  ".sidebar-section-menu",
+  ".project-menu",
+  ...FROSTED_FRAMES,
+]);
 /**
  * The stylesheet, or an empty string when glass is off.
  *
@@ -263,15 +338,17 @@ function fitDeclarations(fit) {
  *    through it. Only `background-color` changes: a `backdrop-filter` here would
  *    make the pane the containing block for the composer's fixed layers.
  *
- * 4. Menus, dialogs and popovers get a stronger blur. These are the one case
- *    where real friction-free glass is possible: they already float above live
- *    content, so the blur is doing actual work rather than decorating a colour.
+ * 4. Menus, popups and the chat composer get a stronger blur (see the note
+ *    above FROSTED_POPUPS for why half of them take it on a pseudo element).
+ *    These float above live content, so the blur does actual work there rather
+ *    than decorating a colour.
  *
  * No rule uses `transform`. A transform — even one that finishes — leaves the
  * element as the containing block for `position: fixed` descendants, which is
  * what once moved the host's context menu. `backdrop-filter` has the same
- * containing-block side effect, so it is applied only to elements whose fixed
- * descendants are the popups themselves (see the note in README).
+ * containing-block side effect, so it lands on an element only when that
+ * element's own fixed descendants are not positioned by the shell (a leaf
+ * popup), and on a `::before` layer everywhere else.
  */
 function buildGlassCss(input = {}, options = {}) {
   const config = normalizeGlassConfig(input);
@@ -284,6 +361,31 @@ function buildGlassCss(input = {}, options = {}) {
   // it going off, so the blur is what it adds — not the whole stylesheet.
   const blur = surfaces
     ? "-webkit-backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate));backdrop-filter:blur(var(--pg-blur)) saturate(var(--pg-saturate))"
+    : "";
+  // The popups and the composer take a slightly stronger blur than the frame:
+  // they already float over live content, so the blur does real work there.
+  const blurStrong = surfaces
+    ? "-webkit-backdrop-filter:blur(var(--pg-blur-strong)) saturate(var(--pg-saturate))!important;backdrop-filter:blur(var(--pg-blur-strong)) saturate(var(--pg-saturate))!important"
+    : "";
+  // One recipe, two applications — see FROSTED_POPUPS / FROSTED_FRAMES above.
+  // A leaf popup carries both the fill and the filter on itself (the fill is what
+  // gives the blur a floor to work against); the menus that may open a submenu
+  // and the composer only get the layer, because their fill is already set by the
+  // POPUP_FILL rule or by the host.
+  //
+  // The composer's fill stays on the shell rather than moving into the layer: the
+  // layer is painted above that fill, and a uniform colour is exactly what makes
+  // the two orders equivalent (blur of a·fill plus the backdrop equals a·fill
+  // over the blurred backdrop).
+  const popupFill =
+    "background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;" +
+    "border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent);";
+  const frosted = surfaces
+    ? [
+        `:is(${FROSTED_POPUPS.join(",")}){${popupFill}${blurStrong}}`,
+        `:is(${[FROSTED_SHELL, ...FROSTED_FRAMES].join(",")})::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;${blurStrong}}`,
+        `${FROSTED_SHELL}{background-color:color-mix(in oklab,var(--ds-bg-composer) var(--pg-overlay-alpha),transparent)!important;background-image:none!important}`,
+      ].join("\n")
     : "";
   const wallpaper = wallpaperCssUrl(config.wallpaper);
   // A photo already carries the detail the light field was standing in for, and
@@ -309,7 +411,10 @@ function buildGlassCss(input = {}, options = {}) {
         ":is(.sidebar-surface,.sidebar-rail){background-color:color-mix(in oklab,var(--ds-bg-sidebar) 90%,transparent)!important}",
         ".main-titlebar,:is(.conversation-topbar,[data-slot=topbar]),.window-controls,.work-panel-header{background-color:color-mix(in oklab,var(--ds-bg-primary) 94%,transparent)!important}",
         ".work-panel::before{background-image:linear-gradient(to bottom,color-mix(in oklab,var(--ds-bg-primary) 94%,transparent) 0 var(--ds-toolbar-height),color-mix(in oklab,var(--ds-bg-dock) 90%,transparent) var(--ds-toolbar-height))!important}",
-        ":is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content){background-color:var(--ds-bg-elevated-opaque)!important}",
+        ":is(" + POPUP_FILL.join(",") + "){background-color:var(--ds-bg-elevated-opaque)!important}",
+        // The composer's fill is the one surface that changed on its own element,
+        // so a compositor without backdrop blur gets the host's own colour back.
+        `${FROSTED_SHELL}{background-color:var(--ds-bg-composer)!important}`,
         "}",
       ].join("\n")
     : "";
@@ -363,20 +468,25 @@ function buildGlassCss(input = {}, options = {}) {
    more saturated than the bar, which read as "transparent, no frosting". */
 .work-panel::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(to bottom,color-mix(in oklab,var(--ds-bg-primary) var(--pg-canvas-alpha),transparent) 0 var(--ds-toolbar-height),color-mix(in oklab,var(--ds-bg-dock) var(--pg-sidebar-alpha),transparent) var(--ds-toolbar-height));${blur}}
 :is(.sidebar-footer,.footer-actions){background-color:transparent!important}
-/* Popups get the stronger fill but NOT the stronger blur.
+/* Popups and the composer are frosted too, but the layer is applied in two
+   different places — the reason is spelled out above FROSTED_POPUPS.
 
-   A backdrop blur makes an element the containing block for its
-   position:fixed descendants — the same trap as a transform. The host nests
-   its context submenu inside the parent menu (sidebar-submenu lives inside
-   sidebar-floating-menu) and positions BOTH from getBoundingClientRect,
-   innerWidth and innerHeight, i.e. in viewport coordinates. Blurring the parent
-   made the child resolve those numbers against the parent instead of the
-   viewport, so the submenu stayed pinned inside the menu that opened it and
-   could not float out. The translucent fill alone still reads as glass; the
-   blur was the part that broke it.
+   A backdrop blur makes an element the containing block for its position:fixed
+   descendants — the same trap as a transform. The host nests its context
+   submenu inside the parent menu (sidebar-submenu lives inside sidebar-row-menu)
+   and positions BOTH from getBoundingClientRect, innerWidth and innerHeight, i.e.
+   in viewport coordinates. Blurring the parent made the child resolve those
+   numbers against the parent instead of the viewport, so the submenu stayed
+   pinned inside the menu that opened it and could not float out.
+
+   So the menus that may open a submenu carry the frosting on their ::before —
+   a pseudo element is nobody's ancestor, and it paints between the fill and the
+   content — while a leaf popup carries it on the element, which is also what
+   keeps the frosting in place while a long list scrolls under it.
 
    (No backticks in this block: it lives inside a template literal.) */
-:is([role=dialog],.dialog-content,.modal-content,[role=menu],.popover-content,.dropdown-content,.sidebar-section-menu,.project-menu,.composer-model-menu,.agent-capability-menu){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent)}
+:is(${POPUP_FILL.join(",")}){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent)}
+${frosted}
 ${noBlurFallback}`;
 
   if (Buffer.byteLength(css, "utf8") > CSS_LIMIT_BYTES) {
@@ -390,7 +500,11 @@ module.exports = {
   CSS_MARKER,
   DEFAULT_CONFIG,
   FITS,
+  FROSTED_FRAMES,
+  FROSTED_POPUPS,
+  FROSTED_SHELL,
   LIMITS,
+  POPUP_FILL,
   PRESETS,
   RECENT_MAX,
   SETTINGS_KEY,
