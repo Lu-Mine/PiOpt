@@ -190,30 +190,30 @@ test("分组视图把最近使用的模型并回分组，并按 A–Z 排序", (
   assert.ok(source.includes("@container scroll-state(stuck: top)"));
 });
 
-test("「默认」排列原样照搬宿主的顺序", () => {
+test("「默认」排列把宿主的顺序原样平铺", () => {
   const source = read("renderer/model-picker.mjs");
-  // 原生行的顺序（querySelectorAll 按文档序）与分组标题一并记下来。
-  assert.match(source, /groupLabel,\s*\n\s*label:/);
-  // 独立的一支：不排序，只按分组首次出现的顺序落桶。
-  assert.match(source, /function defaultView\(rows\)/);
-  assert.match(source, /for \(const \[label, bucket\] of buckets\) \{/);
-  assert.match(source, /} else if \(grouping === "default"\) \{/);
-  assert.match(source, /for \(const group of defaultView\(rows\)\) view\.append\(group\);/);
-  // 宿主没有分组抬头时不硬造一个空标题。
-  assert.match(source, /if \(label\) \{\s*\n\s*group\.setAttribute\("aria-label", label\)/);
+  // 原生行的顺序就是宿主的顺序（querySelectorAll 按文档序，也是设置里排好的那份）。
+  assert.match(source, /function readRows\(list\)/);
+  // 这一支只做一件事：原序建行。不排序、不分组，连分组节点都不建。
+  const branch = source.slice(source.indexOf('if (grouping === "default") {'));
+  const body = branch.slice(0, branch.indexOf("} else if"));
+  assert.match(body, /for \(const row of rows\) view\.append\(buildRow\(row, true\)\);/);
+  assert.doesNotMatch(body, /sort\(/);
+  assert.doesNotMatch(body, /buildGroup\(/);
+  assert.doesNotMatch(source, /defaultView|defaultRows/);
+  // 按名称那一支才排序，别把两者混成一个。
+  assert.match(source, /\} else if \(grouping === "name"\) \{\s*\n\s*rows\.sort\(compareRows\);/);
 });
 
-test("默认排列不保留「最近使用」那一类", () => {
+test("默认排列没有「最近使用」这一类，也没有分组抬头", () => {
   const source = read("renderer/model-picker.mjs");
-  // 第一遍先把最近使用过的行挑出去 —— 它们不会成为自成一组的分类。
-  assert.match(source, /if \(row\.recent\) continue;/);
-  // 第二遍按供应商把它们放到那一组的行首，组内仍按宿主给的先后。
-  assert.match(source, /if \(!row\.recent\) continue;/);
-  assert.match(source, /const label = row\.provider \|\| row\.groupLabel \|\| "";/);
-  assert.match(source, /groups\.push\(buildGroup\(label, \(carried\.get\(label\) \|\| \[\]\)\.concat\(bucket\), false\)\);/);
-  // 找不到对应分组时才退回一个没有抬头的组。
-  assert.match(source, /if \(stray\.length\) groups\.unshift\(buildGroup\("", stray, true\)\);/);
-  assert.doesNotMatch(source, /bucket\.every\(\(row\) => row\.recent\)/);
+  // 默认分支不建分组节点：分组抬头只出现在按供应商 / 按厂商两支里。
+  const branch = source.slice(source.indexOf('if (grouping === "default") {'));
+  const body = branch.slice(0, branch.indexOf("} else if"));
+  assert.doesNotMatch(body, /composer-model-group-label/);
+  assert.doesNotMatch(body, /groupedView/);
+  // 平铺之后没有抬头写着供应商，所以每行都补一行来源。
+  assert.match(body, /buildRow\(row, true\)/);
 });
 
 test("来源那一行由行上的属性驱动，不再绑在某种排列上", () => {

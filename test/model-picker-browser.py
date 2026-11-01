@@ -230,8 +230,9 @@ with tempfile.TemporaryDirectory() as serve:
             }"""
         )
 
-        # 第三段：「默认」排列照搬宿主的分组与顺序，但不留「最近使用」那一类 ——
-        # 最近用过的那几行回到各自供应商组的行首，能力标记照旧补上。
+        # 第三段：「默认」排列就是宿主自己的顺序 —— 平铺、一行不重排、没有分组抬头
+        # （「最近使用」那一类连标题一起没有），每行补一行来源。
+        # 最近用过的那几行本来就在原生列表最前，位置照旧；能力标记照旧补上。
         page.evaluate(
             """([dom]) => {
               picker.unmountModelPicker();
@@ -252,7 +253,7 @@ with tempfile.TemporaryDirectory() as serve:
               const title = (row) => row.getAttribute('title') || '';
               const source = (row) => getComputedStyle(row.querySelector('.composer-model-option-main'), '::after').content;
               const recent = viewRows.find((row) => title(row).includes(' · '));
-              const plain = viewRows[0];
+              const plain = viewRows[1];
               return {
                 layout: document.querySelector('.piopt-mp-view').getAttribute('data-piopt-mp-layout'),
                 nativeLabels: nativeRows.map(label),
@@ -334,17 +335,15 @@ assert host_order["layout"] == "default", host_order
 # 四个按钮的顺序，以及当前选中的就是「默认」。
 assert host_order["modes"] == ["默认", "供应商", "厂商", "名称"], host_order
 assert host_order["pressed"] == ["default"], host_order
-# 宿主的「最近使用」那一类不见了：分组只剩它自己的两个，顺序照旧。
+# 「最近使用」那一类连标题一起没有：视图里没有任何分组抬头，行序就是原生的行序。
 assert host_order["nativeTitles"] == ["Recent", "Zeta", "Alpha"], host_order
-assert host_order["viewTitles"] == ["Zeta", "Alpha"], host_order
-# 组内顺序照旧，最近用过的那一行回到自己供应商那一组的行首。
+assert host_order["viewTitles"] == [], host_order
 assert host_order["nativeLabels"] == ["Model A", "Zeta 2", "Zeta 1", "Model B"], host_order
-assert host_order["viewLabels"] == ["Zeta 2", "Zeta 1", "Model A", "Model B"], host_order
-# 能力标记照旧补上（来源换成 meta 之后这里没有抬头写着供应商，但那一组本身就有）。
+assert host_order["viewLabels"] == host_order["nativeLabels"], host_order
+# 能力标记照旧补上；平铺之后没有抬头写着供应商，所以每行都写一行来源。
 assert host_order["recentTitle"] == "Alpha · model-a", host_order
 assert host_order["firstHasBadge"], host_order
 assert host_order["firstCtx"] == "200K", host_order
-# 回到分组里之后不再多写一行来源：抬头已经写着供应商。
-assert host_order["recentSource"] in ("none", '""'), host_order
-assert host_order["plainSource"] in ("none", '""'), host_order
-print("PASS model picker: default arrangement drops the recent group and keeps the host's order")
+assert host_order["recentSource"] == '"Alpha"', host_order
+assert host_order["plainSource"] == '"Zeta"', host_order
+print("PASS model picker: default arrangement flattens the host's own order")
