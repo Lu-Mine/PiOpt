@@ -488,19 +488,27 @@ test("发送键左边的 chip 也译成中文，而且不先闪一帧英文", ()
   // chip 在浮窗外面：单独找它、单独换绑。
   assert.match(source, /const CHIP_SELECTOR = "\.composer-model-thinking-chip";/);
   assert.match(source, /const CHIP_LEVEL_SELECTOR = "\.composer-model-thinking-level";/);
-  assert.match(source, /const level = document\.querySelector\(`\$\{CHIP_SELECTOR\} \$\{CHIP_LEVEL_SELECTOR\}`\);/);
-  // 盯着那枚 span 自己：观察者回调早于绘制，换档那一帧就是中文。
-  assert.match(source, /chipObserver = new MutationObserver\(\(\) => applyLevel\(level\)\);/);
-  assert.match(source, /chipObserver\.observe\(level, \{ childList: true, characterData: true, subtree: true \}\);/);
+  assert.match(source, /const chip = document\.querySelector\(CHIP_SELECTOR\);/);
+  assert.match(source, /const level = chip\.querySelector\(CHIP_LEVEL_SELECTOR\);/);
+  // 盯整枚 chip 而不是那枚 span：React 换档时可能把里面的 span 整个换掉，
+  // 盯 span 会盯到一个已经不在文档里的节点，之后就不再有任何回调。
+  assert.match(source, /chipObserver\.observe\(chip, \{ childList: true, characterData: true, subtree: true \}\);/);
+  assert.match(source, /const next = chip\.querySelector\(CHIP_LEVEL_SELECTOR\);/);
+  assert.doesNotMatch(source, /chipObserver\.observe\(level,/);
   // 从面板切回来、窗口重新获得焦点时补一眼（那时设置才刚写进去）。
   assert.match(source, /document\.addEventListener\("focusin", onAttention, true\);/);
   assert.match(source, /window\.addEventListener\("focus", onAttention\);/);
   // 刻度在译文写完之前先藏着：菜单一挂上 zh，没处理过的格子就是 visibility:hidden。
   assert.match(source, /const LEVELS_ATTR = "data-piopt-mp-levels";/);
   assert.ok(source.includes(`.composer-model-menu[\${LEVELS_ATTR}="zh"] .composer-thinking-tick:not([\${LEVEL_ATTR}]){visibility:hidden}`));
-  // 滑杆那块的变化在观察者里同步译完，不排进 40ms 之后的重建。
+  // 滑杆那块的变化在观察者里同步译完，不排进 40ms 之后的重建；而且整批扫完才决定
+  // 要不要重建 —— 半路 return 会把同一批里的滑杆记录丢掉（拖动时就漏成英文）。
   assert.match(source, /if \(touchesThinking\(record\)\) \{/);
   assert.match(source, /if \(translateThinking\) localizeThinking\(element\);/);
+  assert.match(source, /let needsSync = false;/);
+  assert.match(source, /if \(needsSync\) scheduleSync\(\);/);
+  // chip 每一批都补看一眼（它不在浮窗这棵子树里）。
+  assert.match(source, /if \(translateThinking\) syncChip\(\);/);
 });
 
 test("两项改写与排列方式一起从主进程读回来", () => {

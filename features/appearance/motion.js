@@ -354,9 +354,15 @@ function buildThemeCss(input = {}, base = "dark") {
     ? `.composer-thinking-slider .composer-thinking-thumb{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),transform var(--pm-fast) var(--pm-ease-symmetric)}
 .composer-thinking-slider .composer-thinking-rail::after{transition:left var(--pm-base) cubic-bezier(.34,1.44,.64,1),width var(--pm-base) cubic-bezier(.34,1.44,.64,1),background-color var(--pm-fast) var(--pm-ease-standard)}
 .composer-thinking-slider .composer-thinking-dot.active{animation:pm-thinking-snap var(--pm-base) var(--pm-ease-out) backwards}
+/* 拖动中也要「吸」：宿主在拖动态把过渡关成 none，这里用更具体的选择器把它压回来。
+   reduced 预设只留普通过渡，没有过冲。 */
+.composer-thinking-slider[data-dragging].composer-thinking-slider .composer-thinking-rail>.composer-thinking-thumb{transition:left var(--pm-fast) cubic-bezier(.34,1.44,.64,1),transform var(--pm-fast) var(--pm-ease-symmetric)}
+.composer-thinking-slider[data-dragging].composer-thinking-slider .composer-thinking-rail::after{transition:left var(--pm-fast) cubic-bezier(.34,1.44,.64,1),width var(--pm-fast) cubic-bezier(.34,1.44,.64,1)}
 @keyframes pm-thinking-snap{0%{transform:scale(.55)}55%{transform:scale(1.45)}100%{transform:scale(1)}}`
     : `.composer-thinking-slider .composer-thinking-thumb{transition:left var(--pm-fast) var(--pm-ease-symmetric)}
-.composer-thinking-slider .composer-thinking-rail::after{transition:width var(--pm-fast) var(--pm-ease-symmetric)}`;
+.composer-thinking-slider .composer-thinking-rail::after{transition:width var(--pm-fast) var(--pm-ease-symmetric)}
+.composer-thinking-slider[data-dragging].composer-thinking-slider .composer-thinking-rail>.composer-thinking-thumb{transition:left var(--pm-fast) var(--pm-ease-symmetric)}
+.composer-thinking-slider[data-dragging].composer-thinking-slider .composer-thinking-rail::after{transition:width var(--pm-fast) var(--pm-ease-symmetric)}`;
 
   const reducedMedia = config.followReducedMotion
     ? `@media(prefers-reduced-motion:reduce){

@@ -660,6 +660,11 @@ test("the reasoning slider snaps to its stops only while motion optimization is 
   // 选择器带上滑杆父级：通用 :is(…) 列表里 `.update-notice-progress>span` 是「类 + 类型」，
   // :is() 取其中最具体的那一个，只写一个类压不过它。
   assert.match(css, /\.composer-thinking-slider \.composer-thinking-thumb\{transition:left/);
+  // 拖动中也要吸附：宿主在拖动态把过渡关成 none，这里用更具体的选择器压回来。
+  assert.match(
+    css,
+    /\.composer-thinking-slider\[data-dragging\]\.composer-thinking-slider \.composer-thinking-rail>\.composer-thinking-thumb\{transition:left var\(--pm-fast\) cubic-bezier\(\.34,1\.44,\.64,1\)/
+  );
   // 不加 !important：拖动中宿主的 `[data-dragging]` 规则特异性更高，指针到哪到哪。
   assert.doesNotMatch(css, /\.composer-thinking-thumb\{transition:[^}]*!important/);
   // reduced 预设只有普通过渡，不做过冲。

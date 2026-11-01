@@ -887,36 +887,37 @@ function localizeThinking(menuElement) {
 
 /*
  * 档位文字不只在浮窗里：发送键左边那枚 chip 写着同一个词，它在浮窗外面，宿主每次
- * 换档都会重渲染这一小段。这里盯着那枚 span 自己（文本与子节点），观察者回调早于
- * 绘制，所以换档的那一帧就是中文，不会先闪一下英文。
+ * 换档都会重渲染这一小段。这里盯着**整枚 chip**（不是那枚 span）：React 换档时可能
+ * 把里面的 span 整个换掉，盯 span 会盯着一个已经不在文档里的节点，之后无论怎么换档
+ * 都不再有回调 —— 于是 chip 就停在英文上。盯 chip 则每次都重新取一次 span。
  *
- * chip 会被整只是替换（换模型、换会话），所以每次有机会都重新找一遍、重新换绑。
+ * 观察者回调早于绘制，所以换档的那一帧就是中文，不会先闪一下英文。
  */
-let chipLevel = null;
+let chipHost = null;
 let chipObserver = null;
 
 function syncChip() {
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
-  const level = document.querySelector(`${CHIP_SELECTOR} ${CHIP_LEVEL_SELECTOR}`);
-  if (!level) {
-    if (chipObserver) {
-      chipObserver.disconnect();
-      chipObserver = null;
-    }
-    chipLevel = null;
+  const chip = document.querySelector(CHIP_SELECTOR);
+  if (!chip) {
+    forgetChip();
     return;
   }
+  const level = chip.querySelector(CHIP_LEVEL_SELECTOR);
   if (!translateThinking) {
-    restoreLevel(level);
+    if (level) restoreLevel(level);
     return;
   }
-  if (level !== chipLevel && typeof MutationObserver === "function") {
+  if (chip !== chipHost && typeof MutationObserver === "function") {
     if (chipObserver) chipObserver.disconnect();
-    chipObserver = new MutationObserver(() => applyLevel(level));
-    chipObserver.observe(level, { childList: true, characterData: true, subtree: true });
+    chipObserver = new MutationObserver(() => {
+      const next = chip.querySelector(CHIP_LEVEL_SELECTOR);
+      if (next) applyLevel(next);
+    });
+    chipObserver.observe(chip, { childList: true, characterData: true, subtree: true });
+    chipHost = chip;
   }
-  chipLevel = level;
-  applyLevel(level);
+  if (level) applyLevel(level);
 }
 
 function forgetChip() {
@@ -924,7 +925,7 @@ function forgetChip() {
     chipObserver.disconnect();
     chipObserver = null;
   }
-  chipLevel = null;
+  chipHost = null;
 }
 
 /** 这一批 mutation 碰的是不是推理强度滑杆（宿主也可能整块换成新的）。 */
@@ -1108,10 +1109,11 @@ function unbindMenu() {
 function bindMenu(element) {
   unbindMenu();
   menu = element;
-
   if (typeof MutationObserver === "function") {
     listObserver = new MutationObserver((records) => {
       if (building) return;
+      let needsSync = false;
+      let highlight = false;
       for (const record of records) {
         if (isOurs(record)) continue;
         const node = record.target;
@@ -1120,18 +1122,25 @@ function bindMenu(element) {
         // 我们自己的译文写回去，都只在这块里动，别牵动一次整份重建。译文必须在这一批
         // mutation 里同步写完 —— 观察者回调早于绘制，拖到下一次 sync（40ms 之后）
         // 就会先闪一帧英文。
+        //
+        // 这里不能一遇到别的记录就 return：同一批提交里 list、滑杆与 chip 的改动是
+        // 一起到的，先撞上一行模型列表就把后面的滑杆记录丢掉，那样才会「拖动时偶尔
+        // 还是英文」。整批扫完，最后统一决定要不要重建。
         if (touchesThinking(record)) {
           if (translateThinking) localizeThinking(element);
           continue;
         }
         // 只是键盘高亮换了一行：跟着挪一下，别整份重建。
         if (record.type === "attributes" && record.attributeName === "class") {
-          syncHighlight(element.querySelector(LIST_SELECTOR));
+          highlight = true;
           continue;
         }
-        scheduleSync();
-        return;
+        needsSync = true;
       }
+      // chip 在浮窗外面：每一批都顺手看一眼（一次 querySelector），换绑也不贵。
+      if (translateThinking) syncChip();
+      if (highlight) syncHighlight(element.querySelector(LIST_SELECTOR));
+      if (needsSync) scheduleSync();
     });
     listObserver.observe(element, {
       childList: true,
