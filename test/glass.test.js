@@ -169,17 +169,27 @@ test("the stylesheet carries its marker and the three material surfaces", () => 
   assert.match(css, /@supports not \(\(backdrop-filter/);
 });
 
-test("glass never uses a transform", () => {
+test("glass never leaves a transform on an element", () => {
   // A transform — even one that finishes — becomes the containing block for
   // `position: fixed` descendants, which is what moved the host's context menu
   // the last time a theme layer added one.
   //
-  // Only property declarations are checked: the word is allowed in comments,
-  // which is where most of this file's warnings about it live. Strip the
-  // comments first so prose cannot fail a rule about behaviour.
+  // Keyframes are exempt: the popup entrance lifts a leaf popup 4px with
+  // `backwards`, so nothing is left on the element once it has run. Only resting
+  // declarations are checked, and comments are stripped first so prose cannot
+  // fail a rule about behaviour.
   const css = glass.buildGlassCss({ enabled: true, preset: "deep", intensity: 1.6 });
-  const declarations = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const declarations = css
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*\}/g, "");
   assert.doesNotMatch(declarations, /(^|[;{])\s*(?:-webkit-)?transform\s*:/);
+
+  // The moving entrance must never touch opacity, and neither may the element
+  // itself: an element at opacity < 1 is a Backdrop Root, so the frosting would
+  // only land on the last frame of the fade — the "twitch" this guards.
+  const entrance = css.match(/@keyframes pg-popup-in\{(?:[^{}]*\{[^{}]*\})*\}/);
+  assert.ok(entrance, "the popup entrance keyframes must exist");
+  assert.doesNotMatch(entrance[0], /opacity/);
 });
 
 test("no blur lands on a container that owns the host's popups", () => {
