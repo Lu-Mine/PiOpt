@@ -27,6 +27,7 @@ test("manifest keeps every feature command set", () => {
     "pi-modify.open",
     "gateway.open",
     "piopt.glass",
+    "remote.open",
   ]);
   // A command still runs after onStartup without an activation event, but the
   // two lists describe one surface and are meant to stay in step.
@@ -49,6 +50,8 @@ test("agent tools and settings survive the merge", () => {
     "gateway_status",
     "list_plugin_updates",
     "prepare_plugin_update",
+    "remote_control",
+    "remote_status",
   ]);
   const keys = manifest.contributes.settings.map((item) => item.key).sort();
   assert.deepEqual(keys, ["dataDir", "gatewayProbeEnabled", "gatewayRoot", "mirrorRef", "mirrorRepo"]);
@@ -72,7 +75,7 @@ test("host routes panel channels to the owning feature", () => {
 
 test("every feature is composed by the host entry", () => {
   const entry = require("../main.js");
-  for (const name of ["market", "appearance", "behavior", "gateway"]) {
+  for (const name of ["market", "appearance", "behavior", "gateway", "remote"]) {
     assert.ok(entry._features[name], name);
   }
   // Motion and the material are one feature, so there is nothing left to wire
@@ -113,6 +116,8 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
   assert.match(html, /id="section-glass"/);
   assert.doesNotMatch(html, /id="view-motion"/);
   assert.doesNotMatch(html, /id="view-glass"/);
+  // 手机屏是一页设置式界面，内容由 remote.js 渲染，HTML 里只留空壳。
+  assert.match(html, /id="view-remote"[^>]*><\/section>/);
 });
 
 test("panel opts into the paint-through chrome that has no development hint", () => {
@@ -153,11 +158,13 @@ test("feature styles are scoped so the views cannot collide", () => {
   assert.match(read("renderer/market.css"), /@scope \(#view-market\)/);
   assert.match(read("renderer/appearance.css"), /@scope \(#view-appearance\)/);
   assert.match(read("renderer/behavior.css"), /@scope \(#view-behavior\)/);
+  assert.match(read("renderer/remote.css"), /@scope \(#view-remote\)/);
   for (const file of [
     "renderer/market.css",
     "renderer/appearance.css",
     "renderer/behavior.css",
     "renderer/gateway.css",
+    "renderer/remote.css",
   ]) {
     const css = read(file);
     assert.equal(!/(^|\n)\s*:root\s*\{/.test(css), true, `${file} must not redefine host root tokens`);
@@ -254,14 +261,14 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   const tabsStart = html.indexOf('class="rail-tabs" role="tablist"');
   const toggleStart = html.indexOf('id="railToggle"');
   assert.ok(toggleStart > navStart && tabsStart > toggleStart);
-  for (const name of ["外观", "行为", "AI 网关", "插件市场"]) {
+  for (const name of ["外观", "行为", "AI 网关", "插件市场", "手机"]) {
     assert.ok(html.includes(`<span class="rail-label">${name}</span>`), name);
   }
   // The rows are read top to bottom in this order, and the shortcut numbers
   // follow it, so the markup is the one place the order is written down.
   assert.deepEqual(
     [...html.matchAll(/data-feature="([a-z]+)"/g)].map((match) => match[1]),
-    ["appearance", "behavior", "gateway", "market"]
+    ["appearance", "behavior", "gateway", "market", "remote"]
   );
 
   const css = read("renderer/base.css");
@@ -290,14 +297,14 @@ test("the rail opens and closes from a toggle above the tabs", () => {
 
 test("every rail row has a keyboard shortcut and a shell view", () => {
   const shell = read("renderer/shell.js");
-  // Alt+1..4 must cover exactly the four views the shell knows about, in the
+  // Alt+1..5 must cover exactly the five views the shell knows about, in the
   // same order the rail shows them.
-  assert.match(shell, /if \(!\["1", "2", "3", "4"\]\.includes\(event\.key\)\) return;/);
-  assert.match(shell, /show\(\{ 1: "appearance", 2: "behavior", 3: "gateway", 4: "market" \}\[event\.key\], true\);/);
-  for (const feature of ["market", "appearance", "behavior", "gateway"]) {
+  assert.match(shell, /if \(!\["1", "2", "3", "4", "5"\]\.includes\(event\.key\)\) return;/);
+  assert.match(shell, /show\(\{ 1: "appearance", 2: "behavior", 3: "gateway", 4: "market", 5: "remote" \}\[event\.key\], true\);/);
+  for (const feature of ["market", "appearance", "behavior", "gateway", "remote"]) {
     assert.match(shell, new RegExp(`${feature}: document\\.getElementById\\("view-${feature}"\\)`));
   }
-  assert.match(shell, /const KNOWN = \[\"appearance\", \"behavior\", \"gateway\", \"market\"\];/);
+  assert.match(shell, /const KNOWN = \["appearance", "behavior", "gateway", "market", "remote"\];/);
   assert.match(shell, /scrollToSection/);
 });
 

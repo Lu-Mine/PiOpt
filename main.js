@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * PiOpt host entry: one plugin, four views.
+ * PiOpt host entry: one plugin, five views.
  *
  * Each feature under features/ keeps its own lifecycle, commands, agent tools
  * and panel channels; this file only composes them and routes panel traffic by
@@ -15,8 +15,9 @@ const market = require("./features/market/index.js");
 const appearance = require("./features/appearance/index.js");
 const behavior = require("./features/behavior/index.js");
 const gateway = require("./features/gateway/index.js");
+const remote = require("./features/remote/index.js");
 
-const FEATURES = { market, appearance, behavior, gateway };
+const FEATURES = { market, appearance, behavior, gateway, remote };
 const PANEL_COMMAND = "piopt.open";
 
 function featureFor(channel) {
@@ -24,6 +25,7 @@ function featureFor(channel) {
   if (channel.startsWith("market.")) return FEATURES.market;
   if (channel.startsWith("behavior.")) return FEATURES.behavior;
   if (channel.startsWith("gateway.")) return FEATURES.gateway;
+  if (channel.startsWith("remote.")) return FEATURES.remote;
   // `motion.*` and `glass.*` are the pre-merge names of the two halves; the
   // feature answers them so a panel window that outlived the reload still works.
   if (/^(appearance|motion|glass)\./.test(channel)) return FEATURES.appearance;
@@ -68,6 +70,7 @@ async function onLoad() {
   await appearance.onLoad();
   await behavior.onLoad();
   await gateway.onLoad();
+  await remote.onLoad();
   await market.onLoad();
   await pi.commands.register({
     id: PANEL_COMMAND,
@@ -80,6 +83,12 @@ async function onLoad() {
     title: "网关: 打开 AI 网关面板",
     keywords: ["gateway", "网关", "模型", "积分"],
     run: () => openPanel("gateway"),
+  });
+  await pi.commands.register({
+    id: "remote.open",
+    title: "PiOpt: 打开手机控制",
+    keywords: ["remote", "phone", "mobile", "手机", "局域网", "配对"],
+    run: () => openPanel("remote"),
   });
 }
 
@@ -94,9 +103,15 @@ async function onUnload() {
   } catch {
     /* already gone */
   }
+  try {
+    await pi.commands.unregister("remote.open");
+  } catch {
+    /* already gone */
+  }
   await behavior.onUnload();
   await appearance.onUnload();
   await gateway.onUnload();
+  await remote.onUnload();
   await market.onUnload();
 }
 

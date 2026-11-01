@@ -1,0 +1,130 @@
+/* 手机 view — a settings page, so it borrows the settings page's own rows. */
+@scope (#view-remote) {
+  :scope {
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--ds-bg-primary);
+  }
+
+  :scope ::selection {
+    background: color-mix(in oklab, var(--ds-accent) 26%, transparent);
+    color: var(--ds-text-primary);
+  }
+
+  .rm-scroll {
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--ds-text-primary) 18%, transparent) transparent;
+  }
+
+  .rm-scroll::-webkit-scrollbar { width: 10px; }
+
+  .rm-scroll::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+    background-color: color-mix(in oklab, var(--ds-text-primary) 18%, transparent);
+  }
+
+  /* The state chip rides the heading's right edge instead of adding a row. */
+  .appearance-heading .ui-chip {
+    margin-left: auto;
+    flex: none;
+  }
+
+  .rm-chip-on {
+    color: var(--ds-accent);
+    background: color-mix(in oklab, var(--ds-accent) 14%, transparent);
+  }
+
+  .rm-chip-off {
+    color: var(--ds-text-secondary);
+    background: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+  }
+
+  .rm-url-row {
+    align-items: flex-start;
+  }
+
+  .rm-url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    color: var(--ds-text-primary);
+    word-break: break-all;
+    user-select: all;
+  }
+
+  .rm-url-extra {
+    margin-top: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    opacity: 0.7;
+    word-break: break-all;
+  }
+
+  .rm-code-row {
+    align-items: center;
+  }
+
+  .rm-code-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+  }
+
+  .rm-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ds-text-primary);
+    user-select: all;
+  }
+
+  .rm-port {
+    width: 96px;
+    padding: 6px 9px;
+    border: 1px solid color-mix(in oklab, var(--ds-text-primary) 14%, transparent);
+    border-radius: 8px;
+    background: var(--ds-bg-secondary, transparent);
+    color: var(--ds-text-primary);
+    font: inherit;
+    font-size: 13px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rm-port:focus {
+    outline: 2px solid color-mix(in oklab, var(--ds-accent) 32%, transparent);
+    border-color: var(--ds-accent);
+  }
+
+  .rm-notes-row {
+    display: block;
+    padding-top: 12px;
+    padding-bottom: 14px;
+  }
+
+  .rm-notes p {
+    margin: 0;
+    color: var(--ds-text-secondary);
+    font-size: 12.5px;
+    line-height: 1.7;
+  }
+
+  .rm-notes p + p {
+    margin-top: 6px;
+  }
+
+  .rm-flash {
+    margin: 0;
+    padding: 8px 0 0;
+    color: var(--ds-text-secondary);
+    font-size: 12.5px;
+  }
+}

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e1013" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
+    <title>PiOpt 手机</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <button type="button" class="icon" id="back" aria-label="返回" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" />
+        </svg>
+      </button>
+      <div class="brand">
+        <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="brand-title" id="title">PiOpt</span>
+      </div>
+      <button type="button" class="icon" id="refresh" aria-label="刷新" hidden>
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+          <path d="M20 4v5h-5" />
+        </svg>
+      </button>
+    </header>
+
+    <main id="main">
+      <section id="gate" class="gate">
+        <h1>配对这台电脑</h1>
+        <p>在 PiOpt → 手机 里打开手机控制，输入面板上显示的六位配对码。</p>
+        <form id="pair-form" autocomplete="off">
+          <input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" aria-label="配对码" />
+          <input id="device" maxlength="24" placeholder="这台手机的名字（可选）" aria-label="设备名称" />
+          <button type="submit" class="primary">配对</button>
+        </form>
+        <p class="error" id="gate-error" role="alert" hidden></p>
+      </section>
+
+      <section id="list" hidden>
+        <ul id="sessions" class="sessions"></ul>
+        <p class="empty" id="sessions-empty" hidden>这台电脑上还没有会话。</p>
+      </section>
+
+      <section id="detail" hidden>
+        <div id="messages" class="messages" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <form id="composer" class="composer" hidden>
+      <textarea id="input" rows="1" placeholder="给这个会话发指令" aria-label="指令"></textarea>
+      <button type="submit" class="send" aria-label="发送">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 12h15" /><path d="M13 6l6 6-6 6" />
+        </svg>
+      </button>
+      <button type="button" class="stop" id="stop" hidden>停止</button>
+    </form>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

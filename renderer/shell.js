@@ -21,9 +21,10 @@
     behavior: document.getElementById("view-behavior"),
     gateway: document.getElementById("view-gateway"),
     market: document.getElementById("view-market"),
+    remote: document.getElementById("view-remote"),
   };
-  const booted = { appearance: false, behavior: false, gateway: false, market: false };
-  const KNOWN = ["appearance", "behavior", "gateway", "market"];
+  const booted = { appearance: false, behavior: false, gateway: false, market: false, remote: false };
+  const KNOWN = ["appearance", "behavior", "gateway", "market", "remote"];
   // Sections inside the appearance view, each with the id it scrolls to.
   const SECTIONS = ["motion", "glass"];
   let current = "market";
@@ -121,6 +122,7 @@
       behavior: window.PiOptBehavior,
       gateway: window.PiOptGateway,
       market: window.PiOptMarket,
+      remote: window.PiOptRemote,
     }[feature];
     const tab = tabs.find((item) => item.dataset.feature === feature);
     if (!api || typeof api.boot !== "function") {
@@ -254,9 +256,9 @@
 
   document.addEventListener("keydown", (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
-    if (!["1", "2", "3", "4"].includes(event.key)) return;
+    if (!["1", "2", "3", "4", "5"].includes(event.key)) return;
     event.preventDefault();
-    show({ 1: "appearance", 2: "behavior", 3: "gateway", 4: "market" }[event.key], true);
+    show({ 1: "appearance", 2: "behavior", 3: "gateway", 4: "market", 5: "remote" }[event.key], true);
   });
 
   let stored = null;

@@ -1,13 +1,13 @@
 ---
 name: PiOpt control console
-description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, wants to tune PI-Desktop interface motion and animation presets, or asks for frosted glass, Mica, translucency or a window material on the interface.
+description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, wants to tune PI-Desktop interface motion and animation presets, or asks for frosted glass, Mica, translucency or a window material on the interface, or wants to drive PI-Desktop from a phone on the same Wi-Fi.
 ---
 
 # PiOpt
 
-PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 / AI 网关 /
-插件市场 (rail rows, `Alt+1` to `Alt+4`). There is no Agent tool for any of
-them: they are panel settings.
+PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网关 /
+插件市场 / 手机 (rail rows, `Alt+1` to `Alt+5`). Only 手机 has Agent tools
+(`remote_status`, `remote_control`); the other rows are panel settings.
 
 - **外观 (appearance)** — how the window looks, in one view with two sections:
   **界面动效** (a master switch, a kill-all-animations switch, and strength /
@@ -45,6 +45,34 @@ them: they are panel settings.
   accounts and credentials feed them, and how much has actually been used.
 - **插件市场 (market)** — the download-and-verify half of a plugin update.
   Installing stays a user action in the Plugins page.
+- **手机 (remote)** — a LAN gateway for a phone on the same Wi-Fi: one switch,
+  one address, one six-digit pairing code. A paired phone reads sessions,
+  sends a prompt and stops a running turn; approvals stay on the desktop.
+
+## Remote: when to use
+
+- The user wants to reach this PI-Desktop from a phone on the same Wi-Fi, or
+  asks whether that is possible at all.
+- The gateway is on but the phone cannot open the address or cannot pair.
+
+### Remote rules
+
+1. The switch starts it: **PiOpt → 手机 → 开启手机控制** (or the `remote_control`
+   Agent tool with `start` / `stop` / `rotate-code`). Never offer to open the port
+   by hand or start a second server; turning it on means the LAN can drive the
+   machine, so say that when you offer it.
+2. Pairing uses the six-digit code shown in the panel, not a password the user
+   invents. Rotating the code invalidates only that code; phones already in
+   已配对设备 keep working until they are removed there.
+3. The phone can list sessions, read one transcript, send a prompt and abort a
+   turn. It cannot approve anything: `tool/resolvePermission`,
+   `agent/askTool/resolve` and `plans/resolve` are `dangerous` and stay on the
+   desktop. Do not promise remote approval.
+4. If the phone cannot reach the address, that is the Windows firewall or the
+   access point's client isolation — the plugin cannot fix either. Check that the
+   address is a LAN one (`127.0.0.1` there means no usable interface was found).
+5. Changing the port restarts the gateway once; paired phones keep their tokens,
+   they only need the new address.
 
 ## Gateway: what the page does, and what it refuses to fake
 
