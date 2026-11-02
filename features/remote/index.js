@@ -401,6 +401,53 @@ function normalizeProjects(raw) {
   return projects;
 }
 
+// The host refuses to fork a session with an active turn unless it is told where
+// to cut, which is exactly the case 从这里重新问 runs in: fork up to a message
+// while the session is still working.
+async function forkSession(sessionId, options) {
+  const input = { sessionId };
+  const through = options && typeof options.throughMessageId === "string" ? options.throughMessageId.trim() : "";
+  const title = options && typeof options.title === "string" ? options.title.trim() : "";
+  if (through) input.throughMessageId = through;
+  if (title) input.title = title;
+  let result = null;
+  try {
+    result = await desktopInvoke("session/fork", [input]);
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    // The host refuses to cut a session whose turn is still active.
+    if (/cannot fork a running session/i.test(message)) {
+      throw new Error("这个会话正在运行，等这一轮结束再重问");
+    }
+    throw error;
+  }
+  const session = (result && (result.session || result)) || {};
+  const id = String(session.id || session.sessionId || "").trim();
+  if (!id) throw new Error("分叉没有返回会话");
+  transcriptCache.delete(id);
+  return {
+    id,
+    title: String(session.title || title || ""),
+    projectPath: String(session.projectPath || ""),
+  };
+}
+
+// `agent/getStatus` is the only honest answer to "is this session busy": the
+// `running` flag on a session row does not follow an active turn.
+async function readAgentStatus(sessionId) {
+  try {
+    const status = await desktopInvoke("agent/getStatus", [{ sessionId }]);
+    return {
+      isRunning: Boolean(status && status.isRunning),
+      currentTurnId: status && status.currentTurnId ? String(status.currentTurnId) : "",
+      pendingConfirmations:
+        status && Array.isArray(status.pendingToolConfirmations) ? status.pendingToolConfirmations.length : 0,
+    };
+  } catch {
+    return { isRunning: false, currentTurnId: "", pendingConfirmations: 0 };
+  }
+}
+
 async function listProjects() {
   let raw = null;
   let failure = null;
@@ -675,12 +722,13 @@ async function readSession(sessionId, options) {
   if (!meta.title || meta.title === "未命名会话") {
     meta.title = meta.preview ? meta.preview.slice(0, 40) : `会话 ${sessionId.slice(0, 8)}`;
   }
-  const pending = await readPending(sessionId);
+  const [pending, status] = await Promise.all([readPending(sessionId), readAgentStatus(sessionId)]);
   return {
     session: meta,
     messages,
     omitted,
-    running: Boolean(meta.running),
+    running: status.isRunning,
+    currentTurnId: status.currentTurnId,
     pending,
   };
 }
@@ -878,6 +926,8 @@ async function startServer() {
       sessions: (options) => listSessions(options),
       projects: () => listProjects(),
       createSession: (input) => createNewSession(input),
+      fork: (sessionId, input) => forkSession(sessionId, input),
+      agentStatus: (sessionId) => readAgentStatus(sessionId),
       session: (sessionId, options) => readSession(sessionId, options),
       prompt: (sessionId, content) => sendPrompt(sessionId, content),
       abort: (sessionId) => abortSession(sessionId),
@@ -1051,6 +1101,8 @@ module.exports = {
     normalizeProjects,
     listProjects,
     createNewSession,
+    forkSession,
+    readAgentStatus,
     readSession,
     startServer,
     stopServer,

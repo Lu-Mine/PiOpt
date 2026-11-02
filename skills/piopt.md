@@ -69,6 +69,12 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    with no project (临时聊天) or one of the host's project folders. Projects are
    folders, not ids — a new session is just `session/create` with or without a
    `projectPath`, and mode, model and permission mode come from the host default.
+   Long-pressing one of the user's own messages offers 从这里重新问: it forks the
+   session through the message before it (`session/fork` keeps everything up to
+   and including the cut, and the message ids are regenerated), then puts that
+   message's text back in the composer. The original session is untouched. The
+   host refuses to fork a session with an active turn — the phone says so instead
+   of retrying.
    It can list sessions, read one transcript, send a prompt and abort a turn. The transcript renders like the host window: the user's message is the
    only bubble, the agent's text fills the page as Markdown, thinking folds into
    a 思考 row and every tool call folds into one row (name, target, duration,

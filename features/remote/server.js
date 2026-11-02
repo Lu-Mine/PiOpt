@@ -290,7 +290,7 @@ function createRemoteServer(options) {
       return;
     }
 
-    const sessionMatch = pathname.match(/^\/api\/session\/([^/]+)(?:\/(prompt|abort))?$/);
+    const sessionMatch = pathname.match(/^\/api\/session\/([^/]+)(?:\/(prompt|abort|fork))?$/);
     if (sessionMatch) {
       const sessionId = parseSessionId(sessionMatch[1]);
       if (!sessionId) {
@@ -315,6 +315,13 @@ function createRemoteServer(options) {
         }
         const result = await api.prompt(sessionId, content.slice(0, 20000));
         json(res, 200, { ok: true, ...result });
+        return;
+      }
+      if (action === "fork") {
+        const body = await readBody(req);
+        const throughMessageId = typeof body.throughMessageId === "string" ? body.throughMessageId.trim() : "";
+        const session = await api.fork(sessionId, { throughMessageId, title: typeof body.title === "string" ? body.title : "" });
+        json(res, 200, { session });
         return;
       }
       const result = await api.abort(sessionId);

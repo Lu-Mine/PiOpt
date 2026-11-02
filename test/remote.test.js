@@ -673,3 +673,94 @@ test("the gateway exposes projects and session creation behind the token", async
     await server.close();
   }
 });
+
+test("a fork asks the host to cut at a message and reports running state separately", async () => {
+  const saved = global.pi;
+  const calls = [];
+  global.pi = {
+    desktop: {
+      invoke: async ({ operation, args }) => {
+        calls.push([operation, args]);
+        if (operation === "session/fork") return { session: { id: "fork-1", title: "重问" } };
+        if (operation === "agent/getStatus") {
+          return { isRunning: true, currentTurnId: "turn-9", pendingToolConfirmations: [{ id: "c1" }] };
+        }
+        throw new Error(`unexpected ${operation}`);
+      },
+    },
+  };
+  try {
+    const forked = await internals.forkSession("s1", { throughMessageId: "m2", title: "重问" });
+    assert.equal(forked.id, "fork-1");
+    assert.deepEqual(calls.at(-1), ["session/fork", [{ sessionId: "s1", throughMessageId: "m2", title: "重问" }]]);
+
+    // No cut point and no title: only the session id travels.
+    await internals.forkSession("s1", {});
+    assert.deepEqual(calls.at(-1), ["session/fork", [{ sessionId: "s1" }]]);
+
+    const status = await internals.readAgentStatus("s1");
+    assert.deepEqual(status, { isRunning: true, currentTurnId: "turn-9", pendingConfirmations: 1 });
+  } finally {
+    global.pi = saved;
+  }
+
+  global.pi = { desktop: { invoke: async () => ({}) } };
+  try {
+    await assert.rejects(() => internals.forkSession("s1", {}), /分叉没有返回会话/);
+  } finally {
+    global.pi = saved;
+  }
+
+  global.pi = {
+    desktop: {
+      invoke: async () => {
+        throw new Error("no status");
+      },
+    },
+  };
+  try {
+    assert.deepEqual(await internals.readAgentStatus("s1"), {
+      isRunning: false,
+      currentTurnId: "",
+      pendingConfirmations: 0,
+    });
+  } finally {
+    global.pi = saved;
+  }
+});
+
+test("the gateway exposes the fork route behind the token", async () => {
+  const forked = [];
+  const server = await withServer({
+    api: {
+      sessions: async () => [],
+      session: async () => null,
+      prompt: async () => ({}),
+      abort: async () => ({}),
+      projects: async () => [],
+      createSession: async () => ({ id: "new-1" }),
+      fork: async (sessionId, input) => {
+        forked.push([sessionId, input]);
+        return { id: "fork-1", title: "重问" };
+      },
+      agentStatus: async () => ({ isRunning: false }),
+      snapshot: async () => ({ sessions: [] }),
+    },
+  });
+  const headers = { "x-pi-device": "tok-abc", "Content-Type": "application/json" };
+  try {
+    const unauth = await fetch(`${server.base}/api/session/s1/fork`, { method: "POST", body: "{}" });
+    assert.equal(unauth.status, 401);
+
+    const response = await fetch(`${server.base}/api/session/s1/fork`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ throughMessageId: "m2", title: "重问" }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).session, { id: "fork-1", title: "重问" });
+    assert.deepEqual(forked.at(-1), ["s1", { throughMessageId: "m2", title: "重问" }]);
+  } finally {
+    await server.close();
+  }
+});

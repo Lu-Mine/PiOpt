@@ -19,6 +19,10 @@
     sheet: document.getElementById("sheet"),
     sheetList: document.getElementById("sheet-list"),
     sheetClose: document.getElementById("sheet-close"),
+    actions: document.getElementById("actions"),
+    actRerun: document.getElementById("act-rerun"),
+    actCopy: document.getElementById("act-copy"),
+    actCancel: document.getElementById("act-cancel"),
     title: document.getElementById("title"),
     gate: document.getElementById("gate"),
     gateForm: document.getElementById("pair-form"),
@@ -47,6 +51,9 @@
     stream: null,
     busy: false,
     scrollPinned: true,
+    messages: [],
+    actionMessage: null,
+    sessionProjectPath: "",
     // Which folded blocks the reader opened, keyed by transcript position.
     open: new Set(),
   };
@@ -274,6 +281,7 @@
   function renderMessages(messages, omitted) {
     const nearBottom = el.messages.scrollHeight - el.messages.scrollTop - el.messages.clientHeight < 90;
     el.messages.replaceChildren();
+    state.messages = messages;
     // The view always starts at the question the conversation opened with; what it
     // jumped over on the way there is stated once, at the top.
     if (omitted > 0) el.messages.append(mk("div", "omitted", `省略了 ${omitted} 条更早的消息`));
@@ -305,6 +313,7 @@
 
   function userTurn(message) {
     const bubble = mk("div", "bubble");
+    if (message.id) bubble.dataset.messageId = message.id;
     for (const block of message.blocks || []) {
       if (block.kind === "text") bubble.append(markdownNode(block.text));
       else if (block.kind === "attachment") bubble.append(attachmentChip(block));
@@ -461,6 +470,7 @@
     const payload = await call(`/api/session/${encodeURIComponent(state.sessionId)}?limit=80`);
     // The list already knows a better title than the single-session call does
     // (that one reports the user-set title, which is usually empty).
+    if (payload.session) state.sessionProjectPath = payload.session.projectPath || "";
     if (payload.session && payload.session.title && !state.sessionTitle) {
       state.sessionTitle = payload.session.title;
     }
@@ -489,10 +499,12 @@
 
   // The host keys a project by its folder, so the choice is a folder or nothing.
   // "临时聊天" is not a special mode: it is the same call without a path.
-  function closeSheet() {
+  function closeOverlays() {
     el.sheet.hidden = true;
+    el.actions.hidden = true;
     el.scrim.hidden = true;
     delete document.body.dataset.sheet;
+    state.actionMessage = null;
   }
 
   function sheetRow(name, detail, projectPath) {
@@ -506,6 +518,127 @@
     });
     li.append(button);
     return li;
+  }
+
+  // ------------------------------------------------------- message actions
+
+  // Long press a message on a phone; right click is the same thing in a desktop
+  // browser. Only the user's own messages have a bubble, so only they get this.
+  function messageFromNode(node) {
+    const bubble = node && node.closest ? node.closest(".bubble") : null;
+    if (!bubble || !bubble.dataset.messageId) return null;
+    return state.messages.find((row) => row.id === bubble.dataset.messageId) || null;
+  }
+
+  function openActions(message) {
+    if (!message || !message.id || state.busy) return;
+    state.actionMessage = message;
+    el.sheet.hidden = true;
+    el.actions.hidden = false;
+    el.scrim.hidden = false;
+    document.body.dataset.sheet = "open";
+  }
+
+  // The whole text of one message: the flat body when the host sent one, else the
+  // text blocks it was built from.
+  function messageText(message) {
+    if (!message) return "";
+    if (typeof message.text === "string" && message.text.trim()) return message.text.trim();
+    return (message.blocks || [])
+      .filter((block) => block.kind === "text" && typeof block.text === "string")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+  }
+
+  function forkTitle(title) {
+    return `${String(title || "会话").slice(0, 40)} · 重问`;
+  }
+
+  // A tool call id is a valid message id, but the host has been picky about cut
+  // points; falling back to the nearest non-tool message keeps the same place.
+  function lastTextMessage(messages, index) {
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const row = messages[cursor];
+      if (row.role !== "tool" && row.id) return row;
+    }
+    return null;
+  }
+
+  // 从这里重新问: fork up to the message before this one, then put this one's text
+  // back in the composer. The fork keeps the project; the original is untouched.
+  async function rerunFrom(message) {
+    if (!message || state.busy) return;
+    const text = messageText(message);
+    const index = state.messages.findIndex((row) => row.id === message.id);
+    const before = index > 0 ? state.messages[index - 1] : null;
+    closeOverlays();
+    state.busy = true;
+    el.title.textContent = "正在分叉…";
+    try {
+      let session = null;
+      if (before && before.id) {
+        try {
+          const payload = await call(`/api/session/${encodeURIComponent(state.sessionId)}/fork`, {
+            body: { throughMessageId: before.id, title: forkTitle(state.sessionTitle) },
+          });
+          session = payload.session;
+        } catch (error) {
+          if (error && error.handled) return;
+          const fallback = lastTextMessage(state.messages, index);
+          if (!fallback) throw error;
+          const payload = await call(`/api/session/${encodeURIComponent(state.sessionId)}/fork`, {
+            body: { throughMessageId: fallback.id, title: forkTitle(state.sessionTitle) },
+          });
+          session = payload.session;
+        }
+      } else {
+        // Nothing before the opening question: an empty session is the cut.
+        const payload = await call("/api/sessions", { body: { projectPath: state.sessionProjectPath || "" } });
+        session = payload.session;
+      }
+      if (!session || !session.id) throw new Error("宿主没有返回会话");
+      await loadSessions().catch(() => {});
+      await openSession(session.id, session.title || "重问");
+      el.input.value = text;
+      el.input.dispatchEvent(new Event("input"));
+      el.input.focus();
+      flash("已回到这条之前，改完发送");
+    } catch (error) {
+      if (!error.handled) {
+        showDetail();
+        flash(error && error.message ? error.message : "分叉失败");
+      }
+    } finally {
+      state.busy = false;
+    }
+  }
+
+  // The page is served over plain http on the LAN — not a secure context — so the
+  // clipboard API is usually absent: fall back to the selection copy.
+  async function copyMessage(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through */
+    }
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.append(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      return ok;
+    } catch {
+      return false;
+    }
   }
 
   async function openSheet() {
@@ -544,7 +677,7 @@
   async function createSession(projectPath) {
     if (state.busy) return;
     state.busy = true;
-    closeSheet();
+    closeOverlays();
     el.title.textContent = "正在新建…";
     try {
       const payload = await call("/api/sessions", { body: { projectPath } });
@@ -581,6 +714,8 @@
     try {
       await call(`/api/session/${encodeURIComponent(state.sessionId)}/prompt`, { body: { content } });
       await loadSession();
+      // A prompt sent while a turn is active is queued by the host, not dropped.
+      if (state.running) flash("已排队，等这一轮结束");
     } catch (error) {
       if (!error.handled) {
         el.input.value = content;
@@ -650,10 +785,53 @@
     openSheet();
   });
 
-  el.sheetClose.addEventListener("click", closeSheet);
-  el.scrim.addEventListener("click", closeSheet);
+  el.sheetClose.addEventListener("click", closeOverlays);
+
+  el.actRerun.addEventListener("click", () => {
+    rerunFrom(state.actionMessage);
+  });
+
+  el.actCopy.addEventListener("click", async () => {
+    const message = state.actionMessage;
+    closeOverlays();
+    if (!message) return;
+    const ok = await copyMessage(messageText(message));
+    flash(ok ? "已复制" : "复制失败，请手动选择");
+  });
+
+  el.actCancel.addEventListener("click", closeOverlays);
+
+  let pressTimer = null;
+  const cancelPress = () => {
+    if (!pressTimer) return;
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+  el.messages.addEventListener(
+    "touchstart",
+    (event) => {
+      const message = messageFromNode(event.target);
+      if (!message) return;
+      cancelPress();
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        openActions(message);
+      }, 450);
+    },
+    { passive: true }
+  );
+  el.messages.addEventListener("touchend", cancelPress);
+  el.messages.addEventListener("touchmove", cancelPress);
+  el.messages.addEventListener("touchcancel", cancelPress);
+  el.messages.addEventListener("contextmenu", (event) => {
+    const message = messageFromNode(event.target);
+    if (!message) return;
+    event.preventDefault();
+    openActions(message);
+  });
+  el.scrim.addEventListener("click", closeOverlays);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !el.sheet.hidden) closeSheet();
+    if (event.key === "Escape" && !el.sheet.hidden) closeOverlays();
   });
 
   el.refresh.addEventListener("click", () => {
