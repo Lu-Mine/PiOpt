@@ -159,22 +159,126 @@ function normalizeSessionRow(raw) {
   };
 }
 
+const BLOCK_TEXT_LIMIT = 4000;
+const TOOL_TEXT_LIMIT = 1500;
+
+function clipText(value, limit) {
+  const text = typeof value === "string" ? value : "";
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+function toolResultText(result) {
+  if (!result) return "";
+  if (typeof result === "string") return result;
+  const parts = [];
+  if (Array.isArray(result.content)) {
+    for (const item of result.content) {
+      if (item && typeof item.text === "string") parts.push(item.text);
+      else if (item && typeof item.type === "string") parts.push(`〔${item.type}〕`);
+    }
+  }
+  if (!parts.length && typeof result.text === "string") parts.push(result.text);
+  if (!parts.length) {
+    try {
+      parts.push(JSON.stringify(result, null, 2));
+    } catch {
+      /* a circular result is not worth a page error */
+    }
+  }
+  return parts.join("\n");
+}
+
+// The single line a collapsed tool row shows: what the call was aimed at.
+function toolSummary(args) {
+  if (!args || typeof args !== "object") return "";
+  const keys = ["path", "file_path", "command", "query", "pattern", "url", "task", "description", "name"];
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) return clipText(value.trim().replace(/\s+/g, " "), 72);
+  }
+  const first = Object.values(args).find((value) => typeof value === "string" && value.trim());
+  return typeof first === "string" ? clipText(first.trim().replace(/\s+/g, " "), 72) : "";
+}
+
+// The transcript is rendered from blocks, not from a flattened string: thinking,
+// tool calls and attachments each get their own shape on the phone exactly as
+// they do in the host window.
+function normalizeBlocks(blocks) {
+  if (typeof blocks === "string") {
+    return blocks.trim() ? [{ kind: "text", text: clipText(blocks, BLOCK_TEXT_LIMIT) }] : [];
+  }
+  if (!Array.isArray(blocks)) return [];
+  const out = [];
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
+    const type = String(block.type || "");
+    if ((type === "text" || type === "markdown") && typeof block.text === "string" && block.text.trim()) {
+      out.push({ kind: "text", text: clipText(block.text, BLOCK_TEXT_LIMIT) });
+      continue;
+    }
+    if (type === "thinking" && typeof block.text === "string" && block.text.trim()) {
+      out.push({ kind: "thinking", text: clipText(block.text, BLOCK_TEXT_LIMIT) });
+      continue;
+    }
+    if (type === "tool_call" || type === "tool-call" || type === "tool_use") {
+      const args = block.args !== undefined ? block.args : block.input;
+      let argsText = "";
+      try {
+        argsText = clipText(JSON.stringify(args === undefined ? null : args, null, 2), TOOL_TEXT_LIMIT);
+      } catch {
+        argsText = "";
+      }
+      out.push({
+        kind: "tool",
+        id: String(block.callId || block.id || ""),
+        name: String(block.name || block.toolName || "工具"),
+        status: String(block.status || ""),
+        isError: block.isError === true,
+        durationMs: Number.isFinite(block.durationMs) ? block.durationMs : null,
+        summary: toolSummary(args),
+        args: argsText,
+        result: clipText(toolResultText(block.result !== undefined ? block.result : block.output), TOOL_TEXT_LIMIT),
+      });
+      continue;
+    }
+    if (type === "attachment") {
+      out.push({
+        kind: "attachment",
+        name: String(block.name || "附件"),
+        mediaKind: String(block.kind || ""),
+        mime: String(block.mimeType || ""),
+      });
+    }
+  }
+  return out;
+}
+
 function normalizeMessages(raw) {
   const rows = Array.isArray(raw) ? raw : Array.isArray(raw && raw.messages) ? raw.messages : [];
   const messages = [];
   for (const row of rows) {
     if (!row || typeof row !== "object") continue;
     const role = String(row.role || row.type || "").toLowerCase();
-    if (!["user", "assistant", "system"].includes(role)) continue;
-    if (role === "system") continue;
-    const text = textOfBlocks(row.blocks !== undefined ? row.blocks : row.content);
-    if (!text) continue;
+    if (!["user", "assistant", "tool"].includes(role)) continue;
+    const blocks = normalizeBlocks(row.blocks !== undefined ? row.blocks : row.content);
+    if (!blocks.length) continue;
+    const text = blocks
+      .filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    const meta = row.meta && typeof row.meta === "object" ? row.meta : {};
     messages.push({
       id: String(row.id || ""),
       role,
-      text: text.length > 8000 ? `${text.slice(0, 8000)}…` : text,
+      blocks,
+      // Flat text stays for the list preview and any reader that wants a body.
+      text: clipText(text, BLOCK_TEXT_LIMIT),
       createdAt: row.createdAt || null,
-      status: row.meta && row.meta.status ? String(row.meta.status) : "",
+      status: meta.status ? String(meta.status) : "",
+      agentName: meta.agentName ? String(meta.agentName) : "",
+      parentToolCallId: meta.parentToolCallId ? String(meta.parentToolCallId) : "",
+      durationMs: Number.isFinite(meta.responseDurationMs) ? meta.responseDurationMs : null,
     });
   }
   return messages;

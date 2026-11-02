@@ -66,7 +66,10 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    typing the address the panel prints). Rotating the code invalidates only that code; phones already in
    已配对设备 keep working until they are removed there.
 3. The phone can list sessions, read one transcript, send a prompt and abort a
-   turn. It also shows what a session is waiting for — `agent/pendingInteractive`
+   turn. The transcript renders like the host window: the user's message is the
+   only bubble, the agent's text fills the page as Markdown, thinking folds into
+   a 思考 row and every tool call folds into one row (name, target, duration,
+   expandable args and result). It also shows what a session is waiting for — `agent/pendingInteractive`
    and `plans/pending` are `read`, so the list marks 等你回答 and the transcript
    view prints the question. It cannot answer any of it: `tool/resolvePermission`,
    `agent/askTool/resolve` and `plans/resolve` are `dangerous` and come back to a

@@ -42,6 +42,8 @@
     stream: null,
     busy: false,
     scrollPinned: true,
+    // Which folded blocks the reader opened, keyed by transcript position.
+    open: new Set(),
   };
 
   function readToken() {
@@ -258,22 +260,130 @@
 
   // ----------------------------------------------------------------- detail
 
+  // The host window draws only the user's message as a bubble; the agent's side
+  // is the page itself. The phone does the same: `.bubble` on the right for the
+  // user, full-width blocks for everything the agent produced.
   function renderMessages(messages) {
-    const atBottom = el.messages.scrollHeight - el.messages.scrollTop - el.messages.clientHeight < 80;
+    const nearBottom = el.messages.scrollHeight - el.messages.scrollTop - el.messages.clientHeight < 90;
     el.messages.replaceChildren();
     for (const message of messages) {
-      const node = document.createElement("div");
-      node.className = `msg ${message.role === "user" ? "user" : "assistant"}`;
-      const who = document.createElement("span");
-      who.className = "who";
-      who.textContent = message.role === "user" ? "我" : "Agent";
-      node.append(who);
-      node.append(document.createTextNode(message.text));
-      el.messages.append(node);
+      el.messages.append(message.role === "user" ? userTurn(message) : agentTurn(message));
     }
-    if (atBottom || state.scrollPinned) {
-      el.messages.scrollTop = el.messages.scrollHeight;
+    if (nearBottom || state.scrollPinned) el.messages.scrollTop = el.messages.scrollHeight;
+  }
+
+  // `el` above is the element cache; this is the factory the renderers use.
+  function mk(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function markdownNode(text) {
+    const host = mk("div", "md");
+    if (window.PiOptMd) host.append(window.PiOptMd.render(text));
+    else host.textContent = text;
+    return host;
+  }
+
+  function attachmentChip(block) {
+    const label = block.mediaKind === "image" ? "图片" : block.mediaKind === "file" ? "文件" : "附件";
+    return mk("span", "chip-attachment", `${label} · ${block.name || ""}`);
+  }
+
+  function userTurn(message) {
+    const bubble = mk("div", "bubble");
+    for (const block of message.blocks || []) {
+      if (block.kind === "text") bubble.append(markdownNode(block.text));
+      else if (block.kind === "attachment") bubble.append(attachmentChip(block));
     }
+    if (!bubble.childNodes.length && message.text) bubble.append(markdownNode(message.text));
+    return bubble;
+  }
+
+  function durationLabel(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return "";
+    if (ms < 1000) return `${Math.round(ms)} ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
+    return `${Math.round(ms / 60_000)} min`;
+  }
+
+  function firstLine(text) {
+    const line = String(text || "").trim().split("\n")[0].replace(/\s+/g, " ");
+    return line.length > 64 ? `${line.slice(0, 64)}…` : line;
+  }
+
+  // Collapsed panels keep their state across the 3 s refresh, keyed by position
+  // in the transcript: a re-render must not close what the reader opened.
+  function fold(className, key, summaryParts, buildBody) {
+    const details = document.createElement("details");
+    details.className = `fold ${className}`;
+    details.open = state.open.has(key);
+    const summary = document.createElement("summary");
+    for (const part of summaryParts) summary.append(part);
+    details.append(summary);
+    const chevron = document.createElement("span");
+    chevron.className = "chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    summary.prepend(chevron);
+    details.addEventListener("toggle", () => {
+      if (details.open) state.open.add(key);
+      else state.open.delete(key);
+    });
+    details.append(buildBody());
+    return details;
+  }
+
+  function thinkingBlock(block, key) {
+    const summary = [
+      mk("span", "fold-label", "思考"),
+      mk("span", "fold-preview", firstLine(block.text)),
+    ];
+    return fold("fold-thinking", key, summary, () => {
+      const body = mk("div", "fold-body");
+      body.append(mk("div", "thinking-text", block.text));
+      return body;
+    });
+  }
+
+  function toolBlock(block, key) {
+    const summary = [
+      mk("span", "tool-name", block.name || "工具"),
+      mk("span", "tool-target", block.summary || ""),
+    ];
+    const stateLabel = block.isError ? "失败" : durationLabel(block.durationMs);
+    if (stateLabel) summary.push(mk("span", `tool-state${block.isError ? " is-error" : ""}`, stateLabel));
+    return fold("fold-tool", key, summary, () => {
+      const body = mk("div", "fold-body");
+      const addPre = (caption, text) => {
+        if (!text) return;
+        body.append(mk("div", "fold-caption", caption));
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        code.textContent = text;
+        pre.append(code);
+        body.append(pre);
+      };
+      addPre("参数", block.args && block.args !== "null" ? block.args : "");
+      addPre(block.isError ? "错误" : "结果", block.result || "");
+      if (!body.childNodes.length) body.append(mk("div", "fold-empty", "没有可展开的内容"));
+      return body;
+    });
+  }
+
+  function agentTurn(message) {
+    const turn = mk("div", "turn");
+    if (message.agentName) turn.append(mk("div", "turn-agent", message.agentName));
+    (message.blocks || []).forEach((block, index) => {
+      const key = `${message.id || message.createdAt || "m"}:${index}`;
+      if (block.kind === "text") turn.append(markdownNode(block.text));
+      else if (block.kind === "thinking") turn.append(thinkingBlock(block, key));
+      else if (block.kind === "tool") turn.append(toolBlock(block, key));
+      else if (block.kind === "attachment") turn.append(attachmentChip(block));
+    });
+    if (!turn.childNodes.length && message.text) turn.append(markdownNode(message.text));
+    return turn;
   }
 
   // A turn that stopped to ask something is the one state the phone cannot

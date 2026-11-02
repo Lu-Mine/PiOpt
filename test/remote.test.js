@@ -87,7 +87,12 @@ test("a transcript keeps user and assistant text and drops system rows", () => {
   assert.equal(messages.length, 2);
   assert.equal(messages[0].role, "user");
   assert.equal(messages[0].text, "你好");
-  assert.equal(messages[1].text, "先看一下\n〔Read〕");
+  // Blocks keep their shape: the tool call is a tool block, not text glued onto
+  // the message body.
+  assert.deepEqual(messages[1].blocks.map((block) => block.kind), ["text", "tool"]);
+  assert.equal(messages[1].blocks[0].text, "先看一下");
+  assert.equal(messages[1].blocks[1].name, "Read");
+  assert.equal(messages[1].text, "先看一下");
 });
 
 test("an overlong block is truncated instead of shipped whole", () => {
