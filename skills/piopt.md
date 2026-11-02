@@ -69,7 +69,9 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    turn. The transcript renders like the host window: the user's message is the
    only bubble, the agent's text fills the page as Markdown, thinking folds into
    a 思考 row and every tool call folds into one row (name, target, duration,
-   expandable args and result). It also shows what a session is waiting for — `agent/pendingInteractive`
+   expandable args and result). A long transcript still opens with the first
+   question: the reader starts at byte 0, keeps the head message and the recent
+   tail, and states how many messages it skipped. It also shows what a session is waiting for — `agent/pendingInteractive`
    and `plans/pending` are `read`, so the list marks 等你回答 and the transcript
    view prints the question. It cannot answer any of it: `tool/resolvePermission`,
    `agent/askTool/resolve` and `plans/resolve` are `dangerous` and come back to a

@@ -263,9 +263,12 @@
   // The host window draws only the user's message as a bubble; the agent's side
   // is the page itself. The phone does the same: `.bubble` on the right for the
   // user, full-width blocks for everything the agent produced.
-  function renderMessages(messages) {
+  function renderMessages(messages, omitted) {
     const nearBottom = el.messages.scrollHeight - el.messages.scrollTop - el.messages.clientHeight < 90;
     el.messages.replaceChildren();
+    // The view always starts at the question the conversation opened with; what it
+    // jumped over on the way there is stated once, at the top.
+    if (omitted > 0) el.messages.append(mk("div", "omitted", `省略了 ${omitted} 条更早的消息`));
     for (const message of messages) {
       el.messages.append(message.role === "user" ? userTurn(message) : agentTurn(message));
     }
@@ -433,7 +436,7 @@
       state.sessionTitle = payload.session.title;
     }
     if (!el.detail.hidden) el.title.textContent = state.sessionTitle || "会话";
-    renderMessages(payload.messages || []);
+    renderMessages(payload.messages || [], Number(payload.omitted) || 0);
     renderPending(payload.pending);
     setRunning(payload.running);
   }

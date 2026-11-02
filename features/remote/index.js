@@ -412,73 +412,120 @@ async function attachWaiting(sessions) {
 // for it and no new permission is claimed. Only the tail is read (the last
 // 256 KB, cached until the file's size changes) because a long session runs to
 // megabytes and the phone shows a few dozen turns.
-const TRANSCRIPT_WINDOW_BYTES = 256 * 1024;
+// A session's jsonl is its transcript. Reading it is incremental: the cache
+// holds the byte offset already parsed plus the tail of a line that was not
+// complete yet, so a poll after one new message parses one line, not the file.
+//
+// The read starts at byte 0 rather than at a tail window: the first message is
+// the question the conversation is about, and a phone that jumped in at the last
+// 256 KB showed a transcript with no opening question at all.
 const TRANSCRIPT_CACHE_LIMIT = 40;
+const TRANSCRIPT_KEEP = 900;
 const transcriptCache = new Map();
 
 function transcriptPaths(sessionId) {
   const paths = [];
+  const base = String(state.transcriptDir || "").trim();
+  if (base) paths.push(path.join(base, `${sessionId}.jsonl`));
   const fromEnv = String(process.env.PI_DESKTOP_DATA_DIR || "").trim();
   if (fromEnv) paths.push(path.join(fromEnv, "sessions", `${sessionId}.jsonl`));
   paths.push(path.join(os.homedir(), ".pi-desktop", "sessions", `${sessionId}.jsonl`));
   return paths;
 }
 
-function parseTranscript(text) {
-  const rows = [];
-  for (const line of String(text).split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      rows.push(JSON.parse(trimmed));
-    } catch {
-      /* a half line at the window edge */
-    }
-  }
-  return normalizeMessages(rows);
-}
-
-function readTranscript(sessionId, limit) {
+function transcriptFile(sessionId) {
   for (const file of transcriptPaths(sessionId)) {
-    let size = 0;
     try {
-      size = fs.statSync(file).size;
+      fs.statSync(file);
+      return file;
     } catch {
       continue;
     }
-    if (!Number.isFinite(size) || size <= 0) continue;
+  }
+  return "";
+}
 
-    const cached = transcriptCache.get(sessionId);
-    if (cached && cached.size === size) return cached.messages.slice(-limit);
+function appendLines(entry, bytes) {
+  const joined = entry.pending && entry.pending.length ? Buffer.concat([entry.pending, bytes]) : bytes;
+  let from = 0;
+  let index;
+  while ((index = joined.indexOf(0x0a, from)) !== -1) {
+    const line = joined.subarray(from, index).toString("utf8").trim();
+    from = index + 1;
+    if (!line) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const [message] = normalizeMessages([row]);
+    if (message) entry.messages.push(message);
+  }
+  entry.pending = Buffer.from(joined.subarray(from));
+}
 
-    const window = Math.min(size, TRANSCRIPT_WINDOW_BYTES);
-    const offset = size - window;
+function trimTranscript(entry) {
+  if (entry.messages.length <= TRANSCRIPT_KEEP) return;
+  const firstUser = entry.messages.findIndex((message) => message.role === "user");
+  const keepHead = firstUser >= 0 && firstUser < entry.messages.length - TRANSCRIPT_KEEP;
+  const head = keepHead ? entry.messages[firstUser] : null;
+  const tail = entry.messages.slice(-TRANSCRIPT_KEEP);
+  entry.dropped += entry.messages.length - tail.length - (head ? 1 : 0);
+  entry.messages = head ? [head, ...tail] : tail;
+}
+
+function readTranscript(sessionId) {
+  const file = transcriptFile(sessionId);
+  if (!file) return null;
+  let size = 0;
+  try {
+    size = fs.statSync(file).size;
+  } catch {
+    return null;
+  }
+  const cached = transcriptCache.get(sessionId);
+  if (cached && cached.size === size) return cached;
+  if (!cached && transcriptCache.size >= TRANSCRIPT_CACHE_LIMIT) transcriptCache.clear();
+
+  const entry = cached || { size: 0, messages: [], pending: Buffer.alloc(0), dropped: 0 };
+  const from = cached ? cached.size : 0;
+  if (size > from) {
     let bytes = null;
     try {
       const fd = fs.openSync(file, "r");
       try {
-        const buffer = Buffer.alloc(window);
-        bytes = buffer.subarray(0, fs.readSync(fd, buffer, 0, window, offset));
+        const buffer = Buffer.alloc(size - from);
+        bytes = buffer.subarray(0, fs.readSync(fd, buffer, 0, buffer.length, from));
       } finally {
         fs.closeSync(fd);
       }
     } catch {
       bytes = null;
     }
-    if (!bytes || !bytes.length) continue;
-
-    let text = Buffer.from(bytes).toString("utf8");
-    if (offset > 0) {
-      // The window almost certainly starts mid-line.
-      const cut = text.indexOf("\n");
-      text = cut === -1 ? "" : text.slice(cut + 1);
-    }
-    const messages = parseTranscript(text);
-    if (transcriptCache.size >= TRANSCRIPT_CACHE_LIMIT) transcriptCache.clear();
-    transcriptCache.set(sessionId, { size, messages });
-    return messages.slice(-limit);
+    if (bytes) appendLines(entry, bytes);
   }
-  return [];
+  entry.size = size;
+  trimTranscript(entry);
+  transcriptCache.set(sessionId, entry);
+  return entry;
+}
+
+// The last `limit` messages, always including the opening question, plus how
+// many messages were skipped between that question and the window.
+function transcriptView(entry, limit) {
+  if (!entry) return { messages: [], omitted: 0 };
+  const all = entry.messages;
+  const start = Math.max(0, all.length - limit);
+  if (start === 0) return { messages: all.slice(), omitted: entry.dropped };
+  const firstUser = all.findIndex((message) => message.role === "user");
+  if (firstUser >= 0 && firstUser < start) {
+    return {
+      messages: [all[firstUser], ...all.slice(start)],
+      omitted: start - firstUser - 1 + entry.dropped,
+    };
+  }
+  return { messages: all.slice(start), omitted: entry.dropped + start };
 }
 
 async function readSession(sessionId, options) {
@@ -501,10 +548,14 @@ async function readSession(sessionId, options) {
   // argument shapes over time. Try them in order and keep whatever arrives: a
   // phone that shows the header with no messages beats an error page.
   let messages = [];
+  let omitted = 0;
   try {
-    messages = readTranscript(sessionId, limit);
+    const view = transcriptView(readTranscript(sessionId), limit);
+    messages = view.messages;
+    omitted = view.omitted;
   } catch {
     messages = [];
+    omitted = 0;
   }
   for (const container of [bundle, bundle && bundle.session]) {
     if (messages.length) break;
@@ -533,9 +584,9 @@ async function readSession(sessionId, options) {
   const pending = await readPending(sessionId);
   return {
     session: meta,
-    messages: messages.slice(-limit),
+    messages,
+    omitted,
     running: Boolean(meta.running),
-    truncated: messages.length > limit,
     pending,
   };
 }
@@ -896,7 +947,10 @@ module.exports = {
     normalizeAsks,
     normalizePermissions,
     normalizePlans,
-    readPending,
+    readPending,
+    readTranscript,
+    transcriptView,
+    transcriptCache,
     listSessions,
     readSession,
     startServer,
