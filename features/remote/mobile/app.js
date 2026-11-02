@@ -320,6 +320,22 @@
     return `${Math.round(ms / 60_000)} min`;
   }
 
+  // A reply carries the moment it landed, in the reader's own clock: time alone
+  // for today, one word for yesterday, a date once it is older than that.
+  function timeLabel(iso) {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return "";
+    const pad = (value) => String(value).padStart(2, "0");
+    const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    const now = new Date();
+    if (date.toDateString() === now.toDateString()) return clock;
+    const yesterday = new Date(now.getTime() - 86_400_000);
+    if (date.toDateString() === yesterday.toDateString()) return `昨天 ${clock}`;
+    const day = `${date.getMonth() + 1}月${date.getDate()}日`;
+    return date.getFullYear() === now.getFullYear() ? `${day} ${clock}` : `${date.getFullYear()}年${day} ${clock}`;
+  }
+
   function firstLine(text) {
     const line = String(text || "").trim().split("\n")[0].replace(/\s+/g, " ");
     return line.length > 64 ? `${line.slice(0, 64)}…` : line;
@@ -394,6 +410,11 @@
       else if (block.kind === "attachment") turn.append(attachmentChip(block));
     });
     if (!turn.childNodes.length && message.text) turn.append(markdownNode(message.text));
+    // Only a reply is stamped; a tool row already carries its duration.
+    if (message.role === "assistant") {
+      const stamp = timeLabel(message.createdAt);
+      if (stamp) turn.append(mk("div", "turn-time", stamp));
+    }
     return turn;
   }
 
