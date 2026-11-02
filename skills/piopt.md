@@ -65,8 +65,11 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    invents; the phone reaches the page by scanning the QR the panel draws (or by
    typing the address the panel prints). Rotating the code invalidates only that code; phones already in
    已配对设备 keep working until they are removed there.
-3. The phone can list sessions, read one transcript, send a prompt and abort a
-   turn. The transcript renders like the host window: the user's message is the
+3. The phone can also start a session: the ＋ in the session list offers a chat
+   with no project (临时聊天) or one of the host's project folders. Projects are
+   folders, not ids — a new session is just `session/create` with or without a
+   `projectPath`, and mode, model and permission mode come from the host default.
+   It can list sessions, read one transcript, send a prompt and abort a turn. The transcript renders like the host window: the user's message is the
    only bubble, the agent's text fills the page as Markdown, thinking folds into
    a 思考 row and every tool call folds into one row (name, target, duration,
    expandable args and result). A long transcript still opens with the first

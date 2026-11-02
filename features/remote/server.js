@@ -271,6 +271,25 @@ function createRemoteServer(options) {
       return;
     }
 
+    if (pathname === "/api/projects" && req.method === "GET") {
+      json(res, 200, { projects: await api.projects() });
+      return;
+    }
+
+    // Creating a session is a write, so it is POST and it carries only the folder
+    // (or nothing, for a chat with no project).
+    if (pathname === "/api/sessions" && req.method === "POST") {
+      const body = await readBody(req);
+      const projectPath = typeof body.projectPath === "string" ? body.projectPath.trim() : "";
+      if (projectPath && (!projectPath.includes("/") && !projectPath.includes("\\"))) {
+        json(res, 400, { error: "项目路径不合法" });
+        return;
+      }
+      const session = await api.createSession({ projectPath, title: typeof body.title === "string" ? body.title : "" });
+      json(res, 200, { session });
+      return;
+    }
+
     const sessionMatch = pathname.match(/^\/api\/session\/([^/]+)(?:\/(prompt|abort))?$/);
     if (sessionMatch) {
       const sessionId = parseSessionId(sessionMatch[1]);

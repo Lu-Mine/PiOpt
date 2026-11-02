@@ -577,3 +577,99 @@ test("the settings-era device array is adopted once and never read again", async
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("projects are normalized across shapes and keyed by folder", () => {
+  const rows = internals.normalizeProjects({
+    projects: [
+      { path: "E:/a/PiOpt", name: "PiOpt", lastOpenedAt: 2 },
+      "E:/a/Synconym",
+      { projectPath: "E:/a/PiOpt" },
+      { root: "" },
+      { path: "E:/a/Polumix", title: "Polumix", updatedAt: 3 },
+    ],
+  });
+  assert.deepEqual(rows.map((row) => row.path), ["E:/a/Polumix", "E:/a/PiOpt", "E:/a/Synconym"]);
+  assert.equal(rows[0].name, "Polumix");
+  // A bare string still gets a readable name from its last folder.
+  assert.equal(rows[2].name, "Synconym");
+  assert.deepEqual(internals.normalizeProjects(null), []);
+});
+
+test("a new session carries the folder, or nothing for a chat with no project", async () => {
+  const saved = global.pi;
+  const calls = [];
+  global.pi = {
+    desktop: {
+      invoke: async ({ operation, args }) => {
+        calls.push([operation, args]);
+        if (operation === "session/create") return { session: { id: "new-1", title: "New task" } };
+        throw new Error(`unexpected ${operation}`);
+      },
+    },
+  };
+  try {
+    const withProject = await internals.createNewSession({ projectPath: "E:/a/PiOpt" });
+    assert.deepEqual(calls.at(-1), ["session/create", [{ projectPath: "E:/a/PiOpt" }]]);
+    assert.equal(withProject.id, "new-1");
+
+    await internals.createNewSession({});
+    // No projectPath key at all — that is what makes it a chat with no project.
+    assert.deepEqual(calls.at(-1), ["session/create", [{}]]);
+  } finally {
+    global.pi = saved;
+  }
+
+  global.pi = {
+    desktop: {
+      invoke: async () => ({ session: {} }),
+    },
+  };
+  try {
+    await assert.rejects(() => internals.createNewSession({}), /没有返回 id/);
+  } finally {
+    global.pi = saved;
+  }
+});
+
+test("the gateway exposes projects and session creation behind the token", async () => {
+  const server = await withServer({
+    api: {
+      sessions: async () => [],
+      session: async () => null,
+      prompt: async () => ({}),
+      abort: async () => ({}),
+      projects: async () => [{ path: "E:/a/PiOpt", name: "PiOpt" }],
+      createSession: async ({ projectPath }) => ({ id: "new-9", title: "New task", projectPath }),
+      snapshot: async () => ({ sessions: [] }),
+    },
+  });
+  const headers = { "x-pi-device": "tok-abc", "Content-Type": "application/json" };
+  try {
+    const unauth = await fetch(`${server.base}/api/projects`);
+    assert.equal(unauth.status, 401);
+
+    const projects = await fetch(`${server.base}/api/projects`, { headers });
+    assert.equal(projects.status, 200);
+    assert.deepEqual((await projects.json()).projects, [{ path: "E:/a/PiOpt", name: "PiOpt" }]);
+
+    const created = await fetch(`${server.base}/api/sessions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ projectPath: "E:/a/PiOpt" }),
+    });
+    assert.equal(created.status, 200);
+    assert.equal((await created.json()).session.id, "new-9");
+
+    const bare = await fetch(`${server.base}/api/sessions`, { method: "POST", headers, body: "{}" });
+    assert.equal(bare.status, 200);
+
+    const junk = await fetch(`${server.base}/api/sessions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ projectPath: "not-a-path" }),
+    });
+    assert.equal(junk.status, 400);
+  } finally {
+    await server.close();
+  }
+});

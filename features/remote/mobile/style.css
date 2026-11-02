@@ -633,3 +633,103 @@ main {
   background: currentColor;
   animation: pulse 1.4s ease-in-out infinite;
 }
+
+/* ---- new session sheet --------------------------------------------------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(6, 8, 12, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  max-height: 72vh;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -8px 32px rgba(6, 8, 12, 0.28);
+  animation: sheet-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(14%);
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet { animation: none; }
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 6px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sheet-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sheet-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.sheet-list button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 13px 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-list button:active {
+  background: var(--surface-2);
+}
+
+.sheet-name {
+  font-weight: 550;
+}
+
+.sheet-detail {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-loading {
+  padding: 13px 18px;
+  color: var(--text-dim);
+  font-size: 13px;
+}

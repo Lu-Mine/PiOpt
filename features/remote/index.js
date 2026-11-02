@@ -356,6 +356,100 @@ async function readPending(sessionId) {
   return { count: items.length, items: items.slice(0, PENDING_ITEM_LIMIT) };
 }
 
+// ---------------------------------------------------------------- projects
+
+// The host keys a project by its folder, not by an id: `session/create` takes a
+// `projectPath`, and leaving it out is exactly how the host makes a session with
+// no project (临时聊天).
+function normalizeProjects(raw) {
+  const rows = Array.isArray(raw)
+    ? raw
+    : raw && Array.isArray(raw.projects)
+      ? raw.projects
+      : raw && Array.isArray(raw.items)
+        ? raw.items
+        : [];
+  const seen = new Set();
+  const projects = [];
+  for (const row of rows) {
+    if (row && typeof row === "string") {
+      const path = row.trim();
+      if (!path || seen.has(path)) continue;
+      seen.add(path);
+      projects.push({ path, name: path.split(/[\/]/).filter(Boolean).pop() || path });
+      continue;
+    }
+    if (!row || typeof row !== "object") continue;
+    const value = String(row.path || row.projectPath || row.root || row.folder || "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    projects.push({
+      path: value,
+      name: String(row.name || row.title || value.split(/[\/]/).filter(Boolean).pop() || value),
+      lastOpenedAt: row.lastOpenedAt || row.updatedAt || null,
+    });
+  }
+  // The host reports the stamp as epoch milliseconds in one place and as an ISO
+  // string in another; normalise before sorting so both order correctly.
+  const stamp = (row) => {
+    const value = row && row.lastOpenedAt;
+    if (typeof value === "number") return value;
+    const parsed = Date.parse(String(value || ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  projects.sort((a, b) => stamp(b) - stamp(a));
+  return projects;
+}
+
+async function listProjects() {
+  let raw = null;
+  let failure = null;
+  try {
+    raw = await desktopInvoke("project/list", []);
+  } catch (error) {
+    failure = error;
+  }
+  // A host that cannot list projects still has sessions that name one; deriving
+  // the list from them keeps 新建会话 usable for projects already in use.
+  if (!raw) {
+    try {
+      const sessions = await listSessions({ limit: 200 });
+      return normalizeProjects(sessions.filter((row) => row.projectPath).map((row) => ({ path: row.projectPath })));
+    } catch {
+      throw new Error(`读不到项目列表: ${failure && failure.message ? failure.message : "宿主没有回答"}`);
+    }
+  }
+  return normalizeProjects(raw);
+}
+
+// A new session carries the project folder, or nothing at all for a chat with no
+// project. Everything else (mode, permission mode, provider, model) is left to
+// the host's own defaults so the phone creates the same session the desktop
+// would.
+async function createNewSession(options) {
+  const projectPath = options && typeof options.projectPath === "string" ? options.projectPath.trim() : "";
+  const title = options && typeof options.title === "string" ? options.title.trim() : "";
+  const input = {};
+  if (projectPath) input.projectPath = projectPath;
+  if (title) input.title = title;
+  let result = null;
+  try {
+    result = await desktopInvoke("session/create", [input]);
+  } catch (error) {
+    throw new Error(`新建会话失败: ${error && error.message ? error.message : error}`);
+  }
+  const session = (result && (result.session || result)) || {};
+  const id = String(session.id || session.sessionId || "").trim();
+  if (!id) throw new Error("新建会话没有返回 id");
+  // A fresh id has no transcript yet; a stale cache entry would be a bug.
+  transcriptCache.delete(id);
+  return {
+    id,
+    title: String(session.title || ""),
+    projectPath: String(session.projectPath || projectPath || ""),
+  };
+}
+
 async function listSessions(options) {
   const limit = options && Number.isFinite(options.limit) ? options.limit : 60;
   // `pi.session.list` is gated on `session.read.own` — sessions this plugin
@@ -782,6 +876,8 @@ async function startServer() {
     auth: createAuth(),
     api: {
       sessions: (options) => listSessions(options),
+      projects: () => listProjects(),
+      createSession: (input) => createNewSession(input),
       session: (sessionId, options) => readSession(sessionId, options),
       prompt: (sessionId, content) => sendPrompt(sessionId, content),
       abort: (sessionId) => abortSession(sessionId),
@@ -952,6 +1048,9 @@ module.exports = {
     transcriptView,
     transcriptCache,
     listSessions,
+    normalizeProjects,
+    listProjects,
+    createNewSession,
     readSession,
     startServer,
     stopServer,

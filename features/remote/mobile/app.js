@@ -14,6 +14,11 @@
   const el = {
     back: document.getElementById("back"),
     refresh: document.getElementById("refresh"),
+    newSession: document.getElementById("new-session"),
+    scrim: document.getElementById("scrim"),
+    sheet: document.getElementById("sheet"),
+    sheetList: document.getElementById("sheet-list"),
+    sheetClose: document.getElementById("sheet-close"),
     title: document.getElementById("title"),
     gate: document.getElementById("gate"),
     gateForm: document.getElementById("pair-form"),
@@ -104,6 +109,7 @@
     el.composer.hidden = true;
     el.back.hidden = true;
     el.refresh.hidden = true;
+    el.newSession.hidden = true;
     el.title.textContent = "PiOpt";
     if (message) {
       el.gateError.textContent = message;
@@ -122,6 +128,7 @@
     el.pending.hidden = true;
     el.back.hidden = true;
     el.refresh.hidden = false;
+    el.newSession.hidden = false;
     el.title.textContent = "会话";
   }
 
@@ -132,6 +139,7 @@
     el.composer.hidden = false;
     el.back.hidden = false;
     el.refresh.hidden = true;
+    el.newSession.hidden = true;
     el.title.textContent = state.sessionTitle || "会话";
   }
 
@@ -456,6 +464,83 @@
     state.poll = null;
   }
 
+  // ------------------------------------------------------------ new session
+
+  // The host keys a project by its folder, so the choice is a folder or nothing.
+  // "临时聊天" is not a special mode: it is the same call without a path.
+  function closeSheet() {
+    el.sheet.hidden = true;
+    el.scrim.hidden = true;
+    delete document.body.dataset.sheet;
+  }
+
+  function sheetRow(name, detail, projectPath) {
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.append(mk("span", "sheet-name", name));
+    if (detail) button.append(mk("span", "sheet-detail", detail));
+    button.addEventListener("click", () => {
+      createSession(projectPath);
+    });
+    li.append(button);
+    return li;
+  }
+
+  async function openSheet() {
+    if (state.busy) return;
+    el.sheetList.replaceChildren();
+    el.sheet.hidden = false;
+    el.scrim.hidden = false;
+    document.body.dataset.sheet = "open";
+    el.sheetList.append(sheetRow("临时聊天", "不绑定项目", ""));
+    const loading = document.createElement("li");
+    loading.className = "sheet-loading";
+    loading.textContent = "正在读项目…";
+    el.sheetList.append(loading);
+    try {
+      const payload = await call("/api/projects");
+      loading.remove();
+      const projects = payload.projects || [];
+      if (!projects.length) {
+        const empty = document.createElement("li");
+        empty.className = "sheet-loading";
+        empty.textContent = "这台电脑上还没有项目";
+        el.sheetList.append(empty);
+      }
+      for (const project of projects) {
+        el.sheetList.append(sheetRow(project.name, project.path, project.path));
+      }
+    } catch (error) {
+      loading.remove();
+      const failed = document.createElement("li");
+      failed.className = "sheet-loading";
+      failed.textContent = error && error.message ? error.message : "读不到项目列表";
+      el.sheetList.append(failed);
+    }
+  }
+
+  async function createSession(projectPath) {
+    if (state.busy) return;
+    state.busy = true;
+    closeSheet();
+    el.title.textContent = "正在新建…";
+    try {
+      const payload = await call("/api/sessions", { body: { projectPath } });
+      const session = payload.session || {};
+      if (!session.id) throw new Error("宿主没有返回会话");
+      await loadSessions().catch(() => {});
+      await openSession(session.id, session.title || "新会话");
+    } catch (error) {
+      if (!error.handled) {
+        showList();
+        showListError(error && error.message ? error.message : "新建会话失败");
+      }
+    } finally {
+      state.busy = false;
+    }
+  }
+
   async function openSession(id, title) {
     state.sessionId = id;
     state.sessionTitle = title || "会话";
@@ -538,6 +623,16 @@
     state.sessionId = "";
     showList();
     loadSessions().catch(() => {});
+  });
+
+  el.newSession.addEventListener("click", () => {
+    openSheet();
+  });
+
+  el.sheetClose.addEventListener("click", closeSheet);
+  el.scrim.addEventListener("click", closeSheet);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !el.sheet.hidden) closeSheet();
   });
 
   el.refresh.addEventListener("click", () => {
