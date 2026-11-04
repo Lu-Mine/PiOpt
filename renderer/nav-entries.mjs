@@ -273,7 +273,8 @@ function onAttention() {
 }
 
 function onDocumentKeydown() {
-  // 宿主重绘后自己的按钮可能换掉，扫描会在下一帧把它找回来。
+  // 只在功能开着时看键盘：宿主重绘后自己的按钮可能被换掉，扫描会在下一帧找回来。
+  if (!enabled) return;
   scheduleScan();
 }
 
