@@ -253,30 +253,23 @@ body {
   text-align: left;
   cursor: pointer;
 }
-/* Two rectangles: the body, and the tab that makes it a folder. */
-.folder {
-  position: relative;
+/* Local Lucide icons inherit the heading color in both color schemes. */
+.group-mark {
   flex: none;
-  width: 15px;
-  height: 12px;
-  opacity: 0.55;
-}
-.folder::before {
-  content: "";
-  position: absolute;
-  inset: 4px 0 0;
-  border-radius: 2px;
+  width: 16px;
+  height: 16px;
   background: currentColor;
+  opacity: 0.8;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
 }
-.folder::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 7px;
-  height: 6px;
-  border-radius: 2px 2px 0 0;
-  background: currentColor;
+.group-mark--folder {
+  -webkit-mask-image: url("./folder.svg");
+  mask-image: url("./folder.svg");
+}
+.group-mark--temporary {
+  -webkit-mask-image: url("./clock.svg");
+  mask-image: url("./clock.svg");
 }
 .group-head:active { background: var(--surface-2); }
 

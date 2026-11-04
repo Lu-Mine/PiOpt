@@ -30,6 +30,8 @@ const ASSETS = new Map([
   ["/app.js", ["app.js", "application/javascript; charset=utf-8"]],
   ["/markdown.js", ["markdown.js", "application/javascript; charset=utf-8"]],
   ["/style.css", ["style.css", "text/css; charset=utf-8"]],
+  ["/folder.svg", ["folder.svg", "image/svg+xml"]],
+  ["/clock.svg", ["clock.svg", "image/svg+xml"]],
 ]);
 
 const MAX_BODY_BYTES = 64 * 1024;

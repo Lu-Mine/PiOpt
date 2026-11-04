@@ -142,6 +142,12 @@ test("the phone page and its assets are served without a token", async () => {
       const response = await fetch(`${server.base}${asset}`);
       assert.equal(response.status, 200, asset);
     }
+    for (const asset of ["/folder.svg", "/clock.svg"]) {
+      const response = await fetch(`${server.base}${asset}`);
+      assert.equal(response.status, 200, asset);
+      assert.match(response.headers.get("content-type"), /image\/svg\+xml/);
+      assert.match(await response.text(), /<svg/);
+    }
   } finally {
     await server.close();
   }

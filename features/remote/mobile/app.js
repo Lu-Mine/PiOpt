@@ -10,6 +10,7 @@
 
   const TOKEN_KEY = "piopt.remote.token";
   const NAME_KEY = "piopt.remote.device";
+  const COLLAPSED_KEY = "piopt.remote.collapsed";
 
   const el = {
     back: document.getElementById("back"),
@@ -210,8 +211,6 @@
 
   // ------------------------------------------------------------- the list
 
-  const COLLAPSED_KEY = "piopt.remote.collapsed";
-
   function readCollapsed() {
     try {
       const raw = window.localStorage.getItem(COLLAPSED_KEY);
@@ -254,11 +253,16 @@
       const stamp = String(row.updatedAt || "");
       if (stamp > group.latest) group.latest = stamp;
     }
-    return [...groups.values()].sort((a, b) => b.latest.localeCompare(a.latest));
+    // 临时会话 is not a folder, so it does not compete on recency: it stays on top,
+    // where the ＋ button drops a new conversation that belongs to no project.
+    return [...groups.values()].sort((a, b) => {
+      if (a.key === TEMP_GROUP) return -1;
+      if (b.key === TEMP_GROUP) return 1;
+      return b.latest.localeCompare(a.latest);
+    });
   }
 
-  // The folder mark is two rectangles in CSS, not an icon: at 15 px an SVG folder
-  // loses its tab to anti-aliasing and reads as a plain square.
+  // Local Lucide icons distinguish temporary conversations from project folders.
   function groupNode(group) {
     const li = mk("li", "session-group");
     const collapsed = state.collapsed.has(group.key);
@@ -266,7 +270,7 @@
     const head = mk("button", "group-head");
     head.type = "button";
     head.setAttribute("aria-expanded", String(!collapsed));
-    head.append(mk("span", "folder"));
+    head.append(mk("span", group.key === TEMP_GROUP ? "group-mark group-mark--temporary" : "group-mark group-mark--folder"));
     head.append(mk("span", "group-name", group.name));
     head.append(mk("span", "group-arrow"));
 
