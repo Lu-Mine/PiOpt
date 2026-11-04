@@ -57,6 +57,8 @@
     // 正在处理 3s moving without rebuilding the transcript.
     runningSince: 0,
     progressTimer: null,
+    // Project groups the reader folded shut, keyed by folder path.
+    collapsed: readCollapsed(),
     flashing: false,
     token: "",
     sessions: [],
@@ -206,6 +208,103 @@
     return `${date.getMonth() + 1}/${date.getDate()}`;
   }
 
+  // ------------------------------------------------------------- the list
+
+  const COLLAPSED_KEY = "piopt.remote.collapsed";
+
+  function readCollapsed() {
+    try {
+      const raw = window.localStorage.getItem(COLLAPSED_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return new Set(Array.isArray(parsed) ? parsed.filter((key) => typeof key === "string") : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveCollapsed() {
+    try {
+      window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...state.collapsed]));
+    } catch {
+      /* private mode: the set lives in memory only */
+    }
+  }
+
+  // The list is a folder, not a pile: a session belongs to the project it was
+  // started in, and everything without one is 临时会话. Groups are ordered by the
+  // newest session inside them, which is the order the host already gave the rows.
+  const TEMP_GROUP = "~temp";
+
+  function groupSessions(rows) {
+    const groups = new Map();
+    for (const row of rows) {
+      const path = row.projectPath || "";
+      const key = path || TEMP_GROUP;
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          key,
+          name: path ? row.projectName || path.split(/[\\/]/).filter(Boolean).pop() || "项目" : "临时会话",
+          latest: "",
+          rows: [],
+        };
+        groups.set(key, group);
+      }
+      group.rows.push(row);
+      const stamp = String(row.updatedAt || "");
+      if (stamp > group.latest) group.latest = stamp;
+    }
+    return [...groups.values()].sort((a, b) => b.latest.localeCompare(a.latest));
+  }
+
+  // The folder mark is two rectangles in CSS, not an icon: at 15 px an SVG folder
+  // loses its tab to anti-aliasing and reads as a plain square.
+  function groupNode(group) {
+    const li = mk("li", "session-group");
+    const collapsed = state.collapsed.has(group.key);
+
+    const head = mk("button", "group-head");
+    head.type = "button";
+    head.setAttribute("aria-expanded", String(!collapsed));
+    head.append(mk("span", "folder"));
+    head.append(mk("span", "group-name", group.name));
+    head.append(mk("span", "group-arrow"));
+
+    const rows = mk("ul", "group-rows");
+    rows.hidden = collapsed;
+    for (const row of group.rows) rows.append(sessionItem(row));
+
+    head.addEventListener("click", () => {
+      const opening = rows.hidden;
+      rows.hidden = !opening;
+      head.setAttribute("aria-expanded", String(opening));
+      if (opening) state.collapsed.delete(group.key);
+      else state.collapsed.add(group.key);
+      saveCollapsed();
+    });
+
+    li.append(head, rows);
+    return li;
+  }
+
+  // One session row. The project name is no longer repeated here: the group above
+  // it already says which folder this is.
+  function sessionItem(row) {
+    const li = mk("li", "session-row");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.addEventListener("click", () => openSession(row.id, row.title));
+    button.dataset.sessionId = row.id;
+
+    const head = mk("span", "row-head");
+    head.append(mk("span", "row-title", row.title || "未命名会话"));
+    head.append(rowStatus(row));
+    button.append(head);
+    if (row.preview) button.append(mk("span", "row-preview", row.preview));
+    li.append(button);
+    return li;
+  }
+
   // One status per row: a question outranks a running turn, and a quiet session
   // shows when it was last touched.
   function rowStatus(row) {
@@ -250,38 +349,7 @@
       return;
     }
     el.empty.hidden = true;
-    for (const row of rows) {
-      const li = document.createElement("li");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.addEventListener("click", () => openSession(row.id, row.title));
-      button.dataset.sessionId = row.id;
-
-      const head = document.createElement("span");
-      head.className = "row-head";
-      const title = document.createElement("span");
-      title.className = "row-title";
-      title.textContent = row.title || "未命名会话";
-      head.append(title);
-      head.append(rowStatus(row));
-      button.append(head);
-
-      if (row.preview) {
-        const preview = document.createElement("span");
-        preview.className = "row-preview";
-        preview.textContent = row.preview;
-        button.append(preview);
-      }
-      if (row.projectName) {
-        const project = document.createElement("span");
-        project.className = "row-project";
-        project.textContent = row.projectName;
-        button.append(project);
-      }
-
-      li.append(button);
-      el.sessions.append(li);
-    }
+    for (const group of groupSessions(rows)) el.sessions.append(groupNode(group));
     // The left column stays on screen in a wide window, so the row that is open
     // has to say so.
     markCurrent();
