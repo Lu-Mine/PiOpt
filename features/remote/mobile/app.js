@@ -37,6 +37,8 @@
     detail: document.getElementById("detail"),
     placeholder: document.getElementById("placeholder"),
     messages: document.getElementById("messages"),
+    progress: document.getElementById("progress"),
+    progressElapsed: document.getElementById("progress-elapsed"),
     pending: document.getElementById("pending"),
     composer: document.getElementById("composer"),
     input: document.getElementById("input"),
@@ -48,6 +50,13 @@
     // banner has something to say, and whether a flash currently owns the title.
     view: "list",
     pendingVisible: false,
+    // How many earlier messages the reader is skipping, so a redraw can keep
+    // saying so.
+    omitted: 0,
+    // When the turn now being watched started, and the 1 s counter that keeps
+    // 正在处理 3s moving without rebuilding the transcript.
+    runningSince: 0,
+    progressTimer: null,
     flashing: false,
     token: "",
     sessions: [],
@@ -147,6 +156,7 @@
       el.title.textContent = view === "gate" ? "PiOpt" : inDetail ? state.sessionTitle || "会话" : "会话";
     }
     markCurrent();
+    syncProgress();
   }
 
   function markCurrent() {
@@ -196,6 +206,33 @@
     return `${date.getMonth() + 1}/${date.getDate()}`;
   }
 
+  // One status per row: a question outranks a running turn, and a quiet session
+  // shows when it was last touched.
+  function rowStatus(row) {
+    if (row.waiting) return mk("span", "row-waiting", "等你回答");
+    if (row.running) return mk("span", "row-running", "运行中");
+    return mk("span", "row-time", relative(row.updatedAt));
+  }
+
+  // The transcript learns about a turn within a second; the list's own snapshot
+  // arrives every 2.5 s. The row's lamp follows the transcript instead of waiting
+  // for the next snapshot.
+  function syncListRunning(sessionId, running) {
+    const row = state.sessions.find((item) => item.id === sessionId);
+    if (!row || row.waiting === true) return;
+    row.running = running;
+    for (const button of el.sessions.querySelectorAll("button[data-session-id]")) {
+      if (button.dataset.sessionId !== sessionId) continue;
+      const head = button.querySelector(".row-head");
+      const current = head && head.querySelector(".row-running, .row-waiting, .row-time");
+      if (!current) return;
+      const next = rowStatus(row);
+      if (next.className === current.className) return;
+      current.replaceWith(next);
+      return;
+    }
+  }
+
   function renderSessions(rows) {
     // The stream's snapshots skip the pending probe (it costs a host call per
     // session), so a row that already knew it was waiting keeps that knowledge
@@ -226,22 +263,7 @@
       title.className = "row-title";
       title.textContent = row.title || "未命名会话";
       head.append(title);
-      if (row.waiting) {
-        const waiting = document.createElement("span");
-        waiting.className = "row-waiting";
-        waiting.textContent = "等你回答";
-        head.append(waiting);
-      } else if (row.running) {
-        const running = document.createElement("span");
-        running.className = "row-running";
-        running.textContent = "运行中";
-        head.append(running);
-      } else {
-        const time = document.createElement("span");
-        time.className = "row-time";
-        time.textContent = relative(row.updatedAt);
-        head.append(time);
-      }
+      head.append(rowStatus(row));
       button.append(head);
 
       if (row.preview) {
@@ -314,16 +336,25 @@
   // The host window draws only the user's message as a bubble; the agent's side
   // is the page itself. The phone does the same: `.bubble` on the right for the
   // user, full-width blocks for everything the agent produced.
-  function renderMessages(messages, omitted) {
+  function renderMessages(messages, omitted, running) {
     const nearBottom = el.messages.scrollHeight - el.messages.scrollTop - el.messages.clientHeight < 90;
     el.messages.replaceChildren();
     state.messages = messages;
     // The view always starts at the question the conversation opened with; what it
     // jumped over on the way there is stated once, at the top.
     if (omitted > 0) el.messages.append(mk("div", "omitted", `省略了 ${omitted} 条更早的消息`));
-    for (const message of messages) {
-      el.messages.append(message.role === "user" ? userTurn(message) : agentTurn(message));
+    state.omitted = omitted;
+    for (const [index, message] of messages.entries()) {
+      const next = messages[index + 1];
+      // A turn ends at the user's next message, or at the end of the transcript
+      // once nothing is running. Only that reply carries a clock: stamping every
+      // agent message would put a timestamp under each step of one turn.
+      const endsTurn = next ? next.role === "user" : !running;
+      el.messages.append(message.role === "user" ? userTurn(message) : agentTurn(message, endsTurn));
     }
+    // The counter sits at the very end of the transcript, so it has to be put
+    // back after every re-render.
+    syncProgress();
     if (nearBottom || state.scrollPinned) el.messages.scrollTop = el.messages.scrollHeight;
   }
 
@@ -444,7 +475,7 @@
     });
   }
 
-  function agentTurn(message) {
+  function agentTurn(message, endsTurn) {
     const turn = mk("div", "turn");
     if (message.agentName) turn.append(mk("div", "turn-agent", message.agentName));
     (message.blocks || []).forEach((block, index) => {
@@ -455,8 +486,9 @@
       else if (block.kind === "attachment") turn.append(attachmentChip(block));
     });
     if (!turn.childNodes.length && message.text) turn.append(markdownNode(message.text));
-    // Only a reply is stamped; a tool row already carries its duration.
-    if (message.role === "assistant") {
+    // Only the reply that closes a turn is stamped: a tool row already carries
+    // its duration, and the steps in between need no clock of their own.
+    if (endsTurn && message.role === "assistant" && turn.childNodes.length) {
       const stamp = timeLabel(message.createdAt);
       if (stamp) turn.append(mk("div", "turn-time", stamp));
     }
@@ -471,6 +503,7 @@
     if (!items.length) {
       state.pendingVisible = false;
       el.pending.hidden = true;
+      syncProgress();
       return;
     }
     const kindName = { ask: "在等你回答", permission: "在等权限确认", plan: "在等批准计划" };
@@ -495,12 +528,78 @@
     el.pending.append(hint);
     state.pendingVisible = true;
     el.pending.hidden = state.view !== "detail";
+    syncProgress();
   }
 
   function setRunning(running) {
-    state.running = Boolean(running);
-    el.stop.hidden = !state.running;
-    document.getElementById("input").placeholder = state.running ? "运行中，可以继续追加指令" : "给这个会话发指令";
+    const busy = Boolean(running);
+    const was = state.running;
+    if (busy && !state.runningSince) state.runningSince = turnStart();
+    if (!busy) state.runningSince = 0;
+    state.running = busy;
+    el.stop.hidden = !busy;
+    document.getElementById("input").placeholder = busy ? "运行中，可以继续追加指令" : "给这个会话发指令";
+    if (busy) startProgressTimer();
+    else stopProgressTimer();
+    // The last reply gains its clock the moment the turn ends, rather than a poll
+    // later; nothing else here depends on the redraw.
+    if (was !== busy) renderMessages(state.messages, state.omitted, busy);
+    syncProgress();
+    syncListRunning(state.sessionId, busy);
+  }
+
+  // A turn begins at the prompt that started it. That prompt's own timestamp is
+  // the closest thing the page has — but only while it is recent: a transcript
+  // can still be holding this morning's question.
+  function turnStart() {
+    const now = Date.now();
+    for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+      const message = state.messages[index];
+      if (message.role !== "user") continue;
+      const stamp = message.createdAt ? Date.parse(message.createdAt) : NaN;
+      if (Number.isFinite(stamp) && stamp <= now && now - stamp < 15 * 60_000) return stamp;
+      break;
+    }
+    return now;
+  }
+
+  // ------------------------------------------------------- a turn in flight
+
+  function elapsedLabel(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    if (total < 60) return `${total}s`;
+    return `${Math.floor(total / 60)}m ${total % 60}s`;
+  }
+
+  // The counter belongs at the end of the transcript while a turn runs, and
+  // disappears while the turn is stopped on a question — that state has its own
+  // banner, and a running clock beside it would be a lie.
+  function syncProgress() {
+    const visible = state.running && !state.pendingVisible && state.view === "detail";
+    if (!visible) {
+      el.progress.hidden = true;
+      // Keep the node in the document: it comes back with the next turn, but a
+      // detached counter could not be found by anything in between.
+      if (!el.progress.isConnected) document.body.append(el.progress);
+      return;
+    }
+    paintProgressElapsed();
+    el.progress.hidden = false;
+    el.messages.append(el.progress);
+  }
+
+  function paintProgressElapsed() {
+    el.progressElapsed.textContent = elapsedLabel(Date.now() - (state.runningSince || Date.now()));
+  }
+
+  function startProgressTimer() {
+    if (state.progressTimer) return;
+    state.progressTimer = setInterval(paintProgressElapsed, 1000);
+  }
+
+  function stopProgressTimer() {
+    if (state.progressTimer) clearInterval(state.progressTimer);
+    state.progressTimer = null;
   }
 
   async function loadSession() {
@@ -513,7 +612,7 @@
       state.sessionTitle = payload.session.title;
     }
     if (state.view === "detail" && !state.flashing) el.title.textContent = state.sessionTitle || "会话";
-    renderMessages(payload.messages || [], Number(payload.omitted) || 0);
+    renderMessages(payload.messages || [], Number(payload.omitted) || 0, Boolean(payload.running));
     renderPending(payload.pending);
     setRunning(payload.running);
   }
@@ -737,6 +836,11 @@
     state.sessionId = id;
     state.sessionTitle = title || "会话";
     state.scrollPinned = true;
+    // Nothing about the previous session's turn carries over: a new clock, and no
+    // counter until this one says it is running.
+    state.running = false;
+    state.runningSince = 0;
+    stopProgressTimer();
     showDetail();
     // The previous session's "waiting on an answer" banner must not survive the
     // switch for the one round trip it takes to load the new one.
@@ -952,9 +1056,12 @@
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       stopPolling();
+      // Nobody can read a counter in a background tab.
+      stopProgressTimer();
     } else if (state.sessionId) {
       loadSession().catch(() => {});
       startPolling();
+      if (state.running) startProgressTimer();
     }
   });
 
