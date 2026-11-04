@@ -11,6 +11,11 @@
   const TOKEN_KEY = "piopt.remote.token";
   const NAME_KEY = "piopt.remote.device";
   const COLLAPSED_KEY = "piopt.remote.collapsed";
+  const LIST_WIDTH_KEY = "piopt.remote.listWidth";
+  const LIST_WIDTH_MIN = 220;
+  const LIST_WIDTH_MAX = 600;
+  const LIST_WIDTH_DEFAULT = 316;
+  const DETAIL_WIDTH_MIN = 400;
 
   const el = {
     back: document.getElementById("back"),
@@ -32,6 +37,7 @@
     device: document.getElementById("device"),
     list: document.getElementById("list"),
     listError: document.getElementById("list-error"),
+    resizer: document.getElementById("list-resizer"),
     sessions: document.getElementById("sessions"),
     empty: document.getElementById("sessions-empty"),
     main: document.getElementById("main"),
@@ -137,12 +143,78 @@
     return Boolean(wideQuery && wideQuery.matches);
   }
 
+  // Keep the preferred width separate from the viewport-clamped width so a
+  // temporarily narrow window does not overwrite the reader's choice.
+  let preferredListWidth = LIST_WIDTH_DEFAULT;
+  try {
+    const saved = Number(window.localStorage.getItem(LIST_WIDTH_KEY));
+    if (Number.isFinite(saved) && saved >= LIST_WIDTH_MIN && saved <= LIST_WIDTH_MAX) preferredListWidth = saved;
+  } catch { /* storage may be unavailable */ }
+
+  function listWidthLimit() {
+    return Math.max(LIST_WIDTH_MIN, Math.min(LIST_WIDTH_MAX, window.innerWidth - DETAIL_WIDTH_MIN));
+  }
+
+  function applyListWidth() {
+    const max = listWidthLimit();
+    const width = Math.round(Math.max(LIST_WIDTH_MIN, Math.min(max, preferredListWidth)));
+    document.documentElement.style.setProperty("--list-w", `${width}px`);
+    el.resizer.setAttribute("aria-valuemax", String(max));
+    el.resizer.setAttribute("aria-valuenow", String(width));
+    el.resizer.setAttribute("aria-valuetext", `${width} 像素`);
+    return width;
+  }
+
+  function setListWidth(width) {
+    preferredListWidth = Math.round(Math.max(LIST_WIDTH_MIN, Math.min(listWidthLimit(), width)));
+    applyListWidth();
+    try { window.localStorage.setItem(LIST_WIDTH_KEY, String(preferredListWidth)); } catch { /* memory only */ }
+  }
+
+  let resizePointer = null;
+  el.resizer.addEventListener("pointerdown", (event) => {
+    if (!isWide() || event.button !== 0) return;
+    event.preventDefault();
+    resizePointer = { id: event.pointerId, startX: event.clientX, width: applyListWidth() };
+    el.resizer.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-list");
+  });
+  el.resizer.addEventListener("pointermove", (event) => {
+    if (resizePointer && event.pointerId === resizePointer.id) {
+      setListWidth(resizePointer.width + event.clientX - resizePointer.startX);
+    }
+  });
+  function finishListResize(event) {
+    if (!resizePointer || event.pointerId !== resizePointer.id) return;
+    resizePointer = null;
+    document.body.classList.remove("resizing-list");
+    if (el.resizer.hasPointerCapture(event.pointerId)) el.resizer.releasePointerCapture(event.pointerId);
+  }
+  el.resizer.addEventListener("pointerup", finishListResize);
+  el.resizer.addEventListener("pointercancel", finishListResize);
+  el.resizer.addEventListener("lostpointercapture", finishListResize);
+  el.resizer.addEventListener("dblclick", () => setListWidth(LIST_WIDTH_DEFAULT));
+  el.resizer.addEventListener("keydown", (event) => {
+    const current = applyListWidth();
+    let next;
+    if (event.key === "ArrowLeft") next = current - (event.shiftKey ? 50 : 10);
+    else if (event.key === "ArrowRight") next = current + (event.shiftKey ? 50 : 10);
+    else if (event.key === "Home") next = LIST_WIDTH_MIN;
+    else if (event.key === "End") next = listWidthLimit();
+    else return;
+    event.preventDefault();
+    setListWidth(next);
+  });
+  window.addEventListener("resize", applyListWidth);
+  applyListWidth();
+
   function paint() {
     const wideLayout = isWide();
     const view = state.view;
     const inDetail = view === "detail";
     el.gate.hidden = view !== "gate";
     el.list.hidden = view === "gate" || (inDetail && !wideLayout);
+    el.resizer.hidden = view === "gate" || !wideLayout;
     el.main.hidden = view === "gate" || (!wideLayout && !inDetail);
     el.detail.hidden = !inDetail;
     // Only the wide, list-only state has an empty right column; the gate takes

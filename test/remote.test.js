@@ -153,6 +153,19 @@ test("the phone page and its assets are served without a token", async () => {
   }
 });
 
+test("remote page exposes an accessible wide-screen sidebar separator", () => {
+  const mobile = path.join(__dirname, "../features/remote/mobile");
+  const html = fs.readFileSync(path.join(mobile, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(mobile, "style.css"), "utf8");
+  const app = fs.readFileSync(path.join(mobile, "app.js"), "utf8");
+  assert.match(html, /id="list-resizer"[^>]*role="separator"/);
+  assert.match(html, /aria-controls="list"/);
+  assert.match(css, /@media \(min-width: 900px\)/);
+  assert.match(css, /width: var\(--list-w\)/);
+  assert.match(app, /piopt\.remote\.listWidth/);
+  assert.match(app, /setPointerCapture/);
+});
+
 test("every API route but pairing needs the device token", async () => {
   const server = await withServer();
   try {

@@ -113,12 +113,15 @@ body {
    is a pane. A wide window puts two panes side by side instead of letting them
    take turns. */
 .workspace {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+
+.list-resizer { display: none; }
 
 .list-pane,
 .detail-pane {
@@ -936,6 +939,35 @@ body {
     width: var(--list-w);
     border-right: 1px solid var(--line);
     background: color-mix(in srgb, var(--surface) 55%, transparent);
+  }
+
+  .list-resizer {
+    position: absolute;
+    z-index: 2;
+    left: var(--list-w);
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    transform: translateX(-50%);
+    cursor: col-resize;
+    touch-action: none;
+    outline: none;
+  }
+  .list-resizer:not([hidden]) { display: block; }
+  .list-resizer::after {
+    content: "";
+    position: absolute;
+    inset: 0 5px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .list-resizer:hover::after,
+  .list-resizer:focus-visible::after,
+  body.resizing-list .list-resizer::after { opacity: 0.75; }
+  body.resizing-list { cursor: col-resize; user-select: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .list-resizer::after { transition: none; }
   }
 
   .sessions {
