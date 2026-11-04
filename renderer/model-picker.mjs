@@ -128,10 +128,10 @@ export const MODEL_PICKER_CSS = [
      补一行淡色的小字。写在行上就生效，与排列方式无关。 */
   `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]{flex-wrap:wrap}`,
   `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
-  /* 选中标记：默认还是宿主那枚对勾。换成圆角框时把那枚勾藏掉，改用一圈内描边
+  /* 选中标记：默认还是宿主那枚对勾。换成圆角框时把那枚勾藏掉，改用一圈 2px 内描边
      框住这整行 —— 描边画在行里，圆角由宿主自己给（选中行是 --radius-sm），
      行高、内边距与滚动位置一律不动。 */
-  `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"]{box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--ds-accent) 64%,transparent)}`,
+  `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"]{box-shadow:inset 0 0 0 2px color-mix(in oklab,var(--ds-accent) 64%,transparent)}`,
   `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"] .composer-model-check{display:none}`,
   /* 推理强度的刻度：中文开关打开时，还没写回原文属性的刻度先不显示 —— 那一排本来
      就是 aria-hidden 的装饰，藏一帧比露出半帧英文好；译完即刻可见。 */

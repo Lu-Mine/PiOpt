@@ -444,7 +444,7 @@ test("选中标记换成圆角框时只换画法，不动宿主的节点", () =>
   // 框是画在行里的内描边：不新增节点，也不动行高与内边距。
   assert.match(
     source,
-    /\.composer-model-menu\[\$\{MARKER_ATTR\}="frame"\] \.composer-model-option\[aria-checked="true"\]\{box-shadow:inset 0 0 0 1px color-mix\(in oklab,var\(--ds-accent\) 64%,transparent\)\}/
+    /\.composer-model-menu\[\$\{MARKER_ATTR\}="frame"\] \.composer-model-option\[aria-checked="true"\]\{box-shadow:inset 0 0 0 2px color-mix\(in oklab,var\(--ds-accent\) 64%,transparent\)\}/
   );
   // 对勾是被藏掉的，不是被删掉的：宿主的 vdom 里那个 svg 还在。
   assert.match(
