@@ -82,7 +82,7 @@ test("the svg is self-contained and sized by the quiet zone", () => {
   assert.match(svg, new RegExp(`viewBox="0 0 ${size + 4} ${size + 4}"`));
   assert.match(svg, /shape-rendering="crispEdges"/);
   assert.match(svg, /fill="#101418"/);
-  assert.match(svg, /aria-label="手机访问地址二维码"/);
+  assert.match(svg, /aria-label="设备访问地址二维码"/);
   // No external reference of any kind: the panel is offline.
   assert.doesNotMatch(svg, /href|xlink|url\(/);
 });

@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Remote feature: lets a phone on the same LAN drive this PI-Desktop.
+ * Remote feature: lets a device on the same LAN drive this PI-Desktop.
  *
  * The phone gets a small page served by features/remote/server.js. That page
  * only ever sees what this file decides to expose:
@@ -774,7 +774,7 @@ function sanitizeDevices(value) {
     .slice(0, MAX_DEVICES)
     .map((item) => ({
       token: item.token,
-      name: typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 40) : "手机",
+      name: typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 40) : "设备",
       createdAt: item.createdAt || new Date().toISOString(),
       lastSeenAt: item.lastSeenAt || item.createdAt || null,
     }));
@@ -861,7 +861,7 @@ function createAuth() {
     register(name) {
       const device = {
         token: randomToken(),
-        name: String(name || "手机").slice(0, 40),
+        name: String(name || "设备").slice(0, 40),
         createdAt: new Date().toISOString(),
         lastSeenAt: new Date().toISOString(),
       };
@@ -1093,9 +1093,12 @@ module.exports = {
     normalizeAsks,
     normalizePermissions,
     normalizePlans,
-    readPending,
-    readTranscript,
-    transcriptView,
+    readPending,
+
+    readTranscript,
+
+    transcriptView,
+
     transcriptCache,
     listSessions,
     normalizeProjects,

@@ -102,7 +102,7 @@
     }
     if (response.status === 401) {
       saveToken("");
-      showGate("这台手机的授权已失效，请重新配对。");
+      showGate("这台设备的授权已失效，请重新配对。");
       throw Object.assign(new Error("unauthorized"), { handled: true });
     }
     if (!response.ok) {

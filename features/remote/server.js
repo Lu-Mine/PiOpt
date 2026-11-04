@@ -1,8 +1,8 @@
 "use strict";
 
 /**
- * The LAN gateway for the 手机 view: one HTTP server that serves the phone page
- * and a tiny JSON API on top of it.
+ * The LAN gateway for the remote view: one HTTP server that serves the device
+ * page and a tiny JSON API on top of it.
  *
  * Boundary: this file knows nothing about PI-Desktop. Every answer comes from
  * the `api` handed in by features/remote/index.js, so the phone never reaches
@@ -180,7 +180,7 @@ function createRemoteServer(options) {
       return;
     }
     limiter.reset(key);
-    const device = auth.register(name || "手机");
+    const device = auth.register(name || "设备");
     json(res, 200, { token: device.token, name: device.name, createdAt: device.createdAt });
   }
 
@@ -221,7 +221,7 @@ function createRemoteServer(options) {
         });
         res.end(body);
       } catch (error) {
-        json(res, 500, { error: `手机页面缺失: ${error && error.message ? error.message : error}` });
+        json(res, 500, { error: `远程页面缺失: ${error && error.message ? error.message : error}` });
       }
       return;
     }
@@ -243,7 +243,7 @@ function createRemoteServer(options) {
     if (pathname === "/api/stream" && req.method === "GET") {
       const streamDevice = authorized(req) || auth.verify(url.searchParams.get("token") || "");
       if (!streamDevice) {
-        json(res, 401, { error: "这台手机还没有配对" });
+        json(res, 401, { error: "这台设备还没有配对" });
         return;
       }
       res.writeHead(200, {
@@ -262,7 +262,7 @@ function createRemoteServer(options) {
 
     const device = authorized(req);
     if (!device) {
-      json(res, 401, { error: "这台手机还没有配对" });
+      json(res, 401, { error: "这台设备还没有配对" });
       return;
     }
 

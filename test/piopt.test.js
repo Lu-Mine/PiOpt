@@ -111,7 +111,7 @@ test("panel loads shared tokens, scoped feature styles and every feature", () =>
   assert.match(html, /id="section-glass"/);
   assert.doesNotMatch(html, /id="view-motion"/);
   assert.doesNotMatch(html, /id="view-glass"/);
-  // 手机屏是一页设置式界面，内容由 remote.js 渲染，HTML 里只留空壳。
+  // 远程屏是一页设置式界面，内容由 remote.js 渲染，HTML 里只留空壳。
   assert.match(html, /id="view-remote"[^>]*><\/section>/);
 });
 
@@ -253,7 +253,7 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   const tabsStart = html.indexOf('class="rail-tabs" role="tablist"');
   const toggleStart = html.indexOf('id="railToggle"');
   assert.ok(toggleStart > navStart && tabsStart > toggleStart);
-  for (const name of ["外观", "行为", "插件市场", "手机"]) {
+  for (const name of ["外观", "行为", "插件市场", "远程"]) {
     assert.ok(html.includes(`<span class="rail-label">${name}</span>`), name);
   }
   // The rows are read top to bottom in this order, and the shortcut numbers

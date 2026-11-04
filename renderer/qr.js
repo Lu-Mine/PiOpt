@@ -446,7 +446,7 @@
     }
     return (
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" ` +
-      `shape-rendering="crispEdges" role="img" aria-label="手机访问地址二维码">` +
+      `shape-rendering="crispEdges" role="img" aria-label="设备访问地址二维码">` +
       `<rect width="${total}" height="${total}" fill="${opts.light || "transparent"}"/>` +
       `<path d="${path}" fill="${dark}"/>` +
       `<title>版本 ${version} · 掩码 ${build(text).mask}</title>` +

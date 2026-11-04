@@ -1,4 +1,4 @@
-/* 手机 view — one card per question: how does the phone get in, and who is in. */
+/* 远程 view — one card per question: how does a device get in, and who is in. */
 @scope (#view-remote) {
   :scope {
     display: flex;

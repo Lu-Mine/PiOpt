@@ -1,12 +1,12 @@
 ---
 name: PiOpt control console
-description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, wants to tune PI-Desktop interface motion and animation presets, or asks for frosted glass, Mica, translucency or a window material on the interface, or wants to drive PI-Desktop from a phone on the same Wi-Fi.
+description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, wants to tune PI-Desktop interface motion and animation presets, or asks for frosted glass, Mica, translucency or a window material on the interface, or wants to drive PI-Desktop from a phone, tablet or another computer on the same Wi-Fi.
 ---
 
 # PiOpt
 
 PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 /
-插件市场 / 手机 (rail rows, `Alt+1` to `Alt+4`). Only 手机 has Agent tools
+插件市场 / 远程 (rail rows, `Alt+1` to `Alt+4`). Only 远程 has Agent tools
 (`remote_status`, `remote_control`); the other rows are panel settings.
 
 - **外观 (appearance)** — how the window looks, in one view with two sections:
@@ -42,27 +42,29 @@ PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 /
   value, so do not tell the user to change it there.
 - **插件市场 (market)** — the download-and-verify half of a plugin update.
   Installing stays a user action in the Plugins page.
-- **手机 (remote)** — a LAN gateway for a phone on the same Wi-Fi: one switch,
-  one address, one six-digit pairing code. A paired phone reads sessions,
-  sends a prompt and stops a running turn; approvals stay on the desktop.
+- **远程 (remote)** — a LAN gateway for a device on the same Wi-Fi (phone,
+  tablet, or another computer's browser): one switch, one address, one
+  six-digit pairing code. A paired device reads sessions, sends a prompt and
+  stops a running turn; approvals stay on the desktop. Above 900px the page
+  becomes two columns, with the session list staying on the left.
 
 ## Remote: when to use
 
-- The user wants to reach this PI-Desktop from a phone on the same Wi-Fi, or
+- The user wants to reach this PI-Desktop from a phone, tablet or another computer on the same Wi-Fi, or
   asks whether that is possible at all.
-- The gateway is on but the phone cannot open the address or cannot pair.
+- The gateway is on but the device cannot open the address or cannot pair.
 
 ### Remote rules
 
-1. The switch starts it: **PiOpt → 手机 → 开启手机控制** (or the `remote_control`
+1. The switch starts it: **PiOpt → 远程 → 开启远程访问** (or the `remote_control`
    Agent tool with `start` / `stop` / `rotate-code`). Never offer to open the port
    by hand or start a second server; turning it on means the LAN can drive the
    machine, so say that when you offer it.
 2. Pairing uses the six-digit code shown in the panel, not a password the user
-   invents; the phone reaches the page by scanning the QR the panel draws (or by
-   typing the address the panel prints). Rotating the code invalidates only that code; phones already in
+   invents; the device reaches the page by scanning the QR the panel draws (or by
+   typing the address the panel prints). Rotating the code invalidates only that code; devices already in
    已配对设备 keep working until they are removed there.
-3. The phone can also start a session: the ＋ in the session list offers a chat
+3. The device can also start a session: the ＋ in the session list offers a chat
    with no project (临时聊天) or one of the host's project folders. Projects are
    folders, not ids — a new session is just `session/create` with or without a
    `projectPath`, and mode, model and permission mode come from the host default.
@@ -70,7 +72,7 @@ PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 /
    session through the message before it (`session/fork` keeps everything up to
    and including the cut, and the message ids are regenerated), then puts that
    message's text back in the composer. The original session is untouched. The
-   host refuses to fork a session with an active turn — the phone says so instead
+   host refuses to fork a session with an active turn — the page says so instead
    of retrying.
    It can list sessions, read one transcript, send a prompt and abort a turn. The transcript renders like the host window: the user's message is the
    only bubble, the agent's text fills the page as Markdown, thinking folds into
@@ -84,14 +86,14 @@ PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 /
    view prints the question. It cannot answer any of it: `tool/resolvePermission`,
    `agent/askTool/resolve` and `plans/resolve` are `dangerous` and come back to a
    confirmation on the desktop. Do not promise remote approval.
-4. A phone that keeps asking to pair, or one that pairs and then shows nothing, is
+4. A device that keeps asking to pair, or one that pairs and then shows nothing, is
    a data problem: devices must survive a plugin restart
    (`<data>/remote-devices.json`), and the session list comes from the desktop
    channel because the plugin session API only sees sessions the plugin created.
-5. If the phone cannot reach the address, that is the Windows firewall or the
+5. If the device cannot reach the address, that is the Windows firewall or the
    access point's client isolation — the plugin cannot fix either. Check that the
    address is a LAN one (`127.0.0.1` there means no usable interface was found).
-6. Changing the port restarts the gateway once; paired phones keep their tokens,
+6. Changing the port restarts the gateway once; paired devices keep their tokens,
    they only need the new address.
 
 ## Market: when to use

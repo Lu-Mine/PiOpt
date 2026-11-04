@@ -77,8 +77,8 @@ async function onLoad() {
   });
   await pi.commands.register({
     id: "remote.open",
-    title: "PiOpt: 打开手机控制",
-    keywords: ["remote", "phone", "mobile", "手机", "局域网", "配对"],
+    title: "PiOpt: 打开远程访问",
+    keywords: ["remote", "phone", "mobile", "远程", "手机", "局域网", "配对"],
     run: () => openPanel("remote"),
   });
 }

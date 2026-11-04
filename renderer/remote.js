@@ -1,5 +1,5 @@
 /*
- * 手机 view.
+ * 远程 view.
  *
  * One job: get a phone connected. So the page is built around the two things a
  * phone needs — the address (as a scannable code, because typing a URL on a
@@ -152,7 +152,7 @@
 
     const left = el("div", "rm-bar-main");
     const title = el("div", "rm-bar-title");
-    title.append(el("span", "", "手机控制"));
+    title.append(el("span", "", "远程访问"));
     if (status.running) {
       const dot = el("span", "rm-dot");
       dot.setAttribute("aria-hidden", "true");
@@ -166,7 +166,7 @@
         "rm-bar-sub",
         status.running
           ? `${status.deviceCount} 台已配对设备 · 端口 ${status.port}`
-          : "关闭时端口不监听，手机连不上"
+          : "关闭时端口不监听，设备连不上"
       )
     );
 
@@ -280,7 +280,7 @@
       el(
         "div",
         "rm-empty-text",
-        "打开上面的开关，这里会出现一个二维码和六位配对码；手机连同一个 Wi-Fi，扫码输入配对码即可。"
+        "打开上面的开关，这里会出现一个二维码和六位配对码；设备连同一个 Wi-Fi，扫码输入配对码即可。"
       )
     );
     card.append(art, copy);
@@ -296,7 +296,7 @@
 
     const devices = Array.isArray(status.devices) ? status.devices : [];
     if (!devices.length) {
-      card.append(el("p", "rm-empty-line", "手机配对后会出现在这里，可以随时移除。"));
+      card.append(el("p", "rm-empty-line", "设备配对后会出现在这里，可以随时移除。"));
       return card;
     }
 
@@ -304,7 +304,7 @@
     for (const device of devices) {
       const item = el("li", "rm-device");
       const main = el("div", "rm-device-main");
-      main.append(el("div", "rm-device-name", device.name || "手机"));
+      main.append(el("div", "rm-device-name", device.name || "设备"));
       main.append(el("div", "rm-device-meta", relative(device.lastSeenAt || device.createdAt)));
       item.append(main);
       item.append(
@@ -321,14 +321,14 @@
   function aboutCard() {
     const card = el("section", "rm-card");
     const head = el("div", "rm-card-head");
-    head.append(el("h2", "", "手机端能做什么"));
+    head.append(el("h2", "", "远程能做什么"));
     card.append(head);
 
     const rows = [
       ["看会话", "全部会话按更新时间排，正在跑的一轮会标出来。"],
       ["发指令", "进一个会话直接发；运行中可以追加，也可以停止这一轮。"],
       ["看到卡在哪", "一轮停在提问上会标「等你回答」，点进去能看到它在等什么。"],
-      ["审批仍在电脑", "权限确认、问答与计划批准要在这一台上点，手机只负责让你先知道。"],
+      ["审批仍在电脑", "权限确认、问答与计划批准要在这一台上点，远程这边只负责让你先知道。"],
     ];
     const list = el("dl", "rm-facts");
     for (const [term, detail] of rows) {
