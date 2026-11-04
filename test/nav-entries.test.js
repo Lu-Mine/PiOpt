@@ -274,8 +274,18 @@ test("the rewrite is one module with one stylesheet and one lifecycle", () => {
   assert.match(source, /const LEAD_TOGGLE_SELECTOR = "\.conversation-topbar \.ct-lead \.ct-icon-btn";/);
   assert.match(source, /const PANEL_TOGGLE_SELECTOR = "\.app-work-panel-toggle";/);
   assert.match(source, /const PANEL_ICON_SELECTOR = "\.app-work-panel-toggle-icon";/);
-  // 搬家而不是复制：原位置靠一个属性隐掉，节点仍归宿主。
-  assert.match(source, /`\[\$\{ENABLED_ATTR\}="true"\] \[\$\{MOVED_ATTR\}="true"\]\{display:none\}`/);
+  // 搬家而不是复制：原位置用**内联** display 藏掉 —— 属性 + 样式表会在宿主重绘时
+  // 跟着节点一起没了，那才是原按钮闪来闪去的根因。
+  assert.match(source, /element\.style\.setProperty\("display", "none", "important"\);/);
+  assert.match(source, /element\.style\.removeProperty\("display"\);/);
+  // 收起侧边栏时标题要往右让出这两个入口的宽度（宿主只给一个按钮留了 36px）。
+  assert.match(
+    source,
+    /`\[\$\{ENABLED_ATTR\}="true"\] \.conversation-topbar\.ct-collapsed\{padding-left:calc\(var\(--ct-lead-inset,12px\) \+ 36px \+ 2 \* 32px\)\}`/
+  );
+  // 宿主改 DOM 后同步复位：一批 mutation 一次 microtask，不留几十毫秒的闪烁窗口。
+  assert.match(source, /observer = new MutationObserver\(scheduleScan\);/);
+  assert.match(source, /queueMicrotask\(\(\) => \{/);
   // 图标按中心差平移，变量缺省就是零，宿主的原样不受影响。
   assert.match(
     source,
@@ -310,6 +320,25 @@ test("sidebar open: the two entries sit to the left of the collapse button", asy
     assert.equal(actions.children[2], collapse);
     assert.equal(actions.parentElement, header);
     // 文案与图标照着宿主那一枚来。
+
+// 原位隐藏靠内联 display，不是属性 + 样式表：宿主换掉节点时属性会跟着没了。
+test("hidden native sources stay hidden as inline styles, not as a class", async () => {
+  await withHost(async ({ mod, body }) => {
+    const { topbar, actions: menu, newTask, search } = chatTopbar();
+    body.append(topbar);
+    withSidebar(body);
+
+    await mod.mountNavEntries(hostReturning(true));
+
+    assert.equal(menu.style.getPropertyValue("display"), "none");
+    assert.equal(newTask.style.getPropertyValue("display"), "none");
+    assert.equal(search.style.getPropertyValue("display"), "none");
+    // 关掉之后把内联样式收走，宿主原来的显示方式原样回来。
+    mod.unmountNavEntries();
+    assert.equal(menu.style.getPropertyValue("display"), "");
+    assert.equal(newTask.style.getPropertyValue("display"), "");
+  });
+});
     assert.equal(actions.children[0].getAttribute("aria-label"), "新建任务");
     assert.equal(actions.children[1].getAttribute("aria-label"), "搜索");
     assert.ok(actions.children[0].innerHTML.includes("<svg"));

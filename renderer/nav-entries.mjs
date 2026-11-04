@@ -7,10 +7,17 @@
  *
  * 1. 把这两个入口搬进侧边栏头部，摆在「收起侧边栏」左边（顺序：新建任务、搜索、收起）；
  * 2. 侧边栏收起时改摆在「切换侧边栏」右边（顺序：切换、新建任务、搜索）；
- * 3. 原来那两个位置用属性标记后隐掉，所以是搬家而不是复制。
+ * 3. 原来那两个位置隐掉（是搬家不是复制），并让会话标题向右让出这两个按钮的宽度。
  *
  * 搬过去的是自己的按钮，点击转交给宿主原按钮 —— 新建任务仍走宿主自己的命令，搜索
  * 仍打开宿主自己的搜索框（原按钮不在这一页时退回宿主的 ⌘/Ctrl+K 快捷键）。
+ *
+ * 两个与宿主渲染有关的硬约束：
+ * - 隐藏原按钮用**内联** `display:none !important`。属性 + 样式表会被宿主重绘打断：
+ *   React 换掉节点时属性跟着没了，按钮就在藏与露之间闪。内联样式留在节点自己身上，
+ *   节点不换就一直藏着；真被换掉，观察者会在同一帧里再藏一次。
+ * - 宿主重绘可能把我们的按钮一起带走，所以观察者是**同步**复位的（一批 mutation 一次
+ *   microtask），不留几十毫秒的真空期。apply 本身幂等：位置已对就一个字节都不写。
  *
  * 同一个开关还顺手处理右侧面板那个开关：它的图标在自己的方框里偏右下，这里按两个
  * 盒子的中心差把它平移到正中；宿主若本来就在正中，就什么都不设。
@@ -20,7 +27,6 @@ const ENABLED_ATTR = "data-piopt-nav-entries";
 const ACTION_ATTR = "data-piopt-nav-action";
 const MOVED_ATTR = "data-piopt-nav-moved";
 const ACTION_CLASS = "piopt-nav-action";
-const SCAN_DELAY_MS = 90;
 const ICON_SHIFT_X = "--piopt-panel-icon-shift-x";
 const ICON_SHIFT_Y = "--piopt-panel-icon-shift-y";
 
@@ -54,8 +60,11 @@ export const NAV_ENTRIES_CSS = [
   `.${ACTION_CLASS}:hover{background:var(--ds-bg-hover);color:var(--ds-text-primary)}`,
   `.${ACTION_CLASS}:focus-visible{outline:2px solid var(--ds-focus);outline-offset:1px}`,
   `.${ACTION_CLASS}>svg{display:block;width:15px;height:15px}`,
-  // 原来那两个位置：留着节点，只是不再占地方（宿主重绘时也不会被当成外来户）。
-  `[${ENABLED_ATTR}="true"] [${MOVED_ATTR}="true"]{display:none}`,
+  // 收起侧边栏时这一排贴在会话标题上，两个按钮之间留一道与宿主标题栏相同的缝。
+  `.conversation-topbar .ct-lead > .${ACTION_CLASS}{margin-left:4px}`,
+  // 会话标题的让位：宿主只给一个 28px 的「切换侧边栏」留了 36px（28 + 8 的缝）。
+  // 多出来的两个入口各占 28px 加 4px 的缝，一并算进 padding，标题就不会被压住。
+  `[${ENABLED_ATTR}="true"] .conversation-topbar.ct-collapsed{padding-left:calc(var(--ct-lead-inset,12px) + 36px + 2 * 32px)}`,
   // 右侧面板开关：内边距归零，图标按实测的中心差平移回正中。
   `[${ENABLED_ATTR}="true"] ${PANEL_TOGGLE_SELECTOR}{padding:0}`,
   `[${ENABLED_ATTR}="true"] ${PANEL_ICON_SELECTOR}{transform:translate(var(${ICON_SHIFT_X},0px),var(${ICON_SHIFT_Y},0px))}`,
@@ -64,10 +73,14 @@ export const NAV_ENTRIES_CSS = [
 let host = null;
 let enabled = false;
 let observer = null;
-let scanTimer = null;
+let scanQueued = false;
+let applying = false;
 let attentionBound = false;
 // 两个注入按钮一直留着，位置随侧边栏状态换：重建节点会让宿主的重绘踩空。
 const actions = { "new-task": null, search: null };
+// 被我们藏起来的宿主节点：关闭时只还原这些，别人的样式一概不碰。
+const hiddenNodes = new Set();
+let alignedIcon = null;
 
 // -------------------------------------------------------------------- 宿主的点
 
@@ -134,7 +147,6 @@ function ensureActions() {
     if (!actions[kind]) actions[kind] = buildAction(kind, source);
     syncAction(actions[kind], kind, source);
   }
-  return sources;
 }
 
 /** 点注入按钮 = 点宿主那枚按钮；搜索没有原按钮时退回宿主自己的快捷键。 */
@@ -182,16 +194,30 @@ function detachActions() {
   }
 }
 
-// 原来那两个位置：标记后由样式隐藏。宿主重绘会换掉节点，所以每次扫都重新标。
-function markMoved(active) {
-  for (const element of document.querySelectorAll(`[${MOVED_ATTR}="true"]`)) {
-    if (!active) element.removeAttribute(MOVED_ATTR);
+// 原来那两个位置：内联 display 藏掉，节点仍归宿主。宿主重绘会换掉节点，所以每轮都
+// 重新藏一遍；被换掉的旧节点如果还留在文档里，也不会再冒出来。
+function hideNativeSources(hide) {
+  if (!hide) {
+    for (const element of hiddenNodes) {
+      element.style.removeProperty("display");
+      element.removeAttribute(MOVED_ATTR);
+    }
+    hiddenNodes.clear();
+    return;
   }
-  if (!active) return;
+  const targets = new Set(document.querySelectorAll(NATIVE_NEW_TASK_SELECTOR));
   const menu = menuElement();
-  if (menu) menu.setAttribute(MOVED_ATTR, "true");
-  for (const element of document.querySelectorAll(NATIVE_NEW_TASK_SELECTOR)) {
+  if (menu) {
+    targets.add(menu);
+    // ct-actions 里那一对按钮也各藏一次：有的宿主版本只给整组挂外壳，按钮自己仍占格子。
+    for (const button of menu.querySelectorAll("button")) targets.add(button);
+  }
+  for (const element of targets) {
+    if (element.style.getPropertyValue("display") !== "none") {
+      element.style.setProperty("display", "none", "important");
+    }
     element.setAttribute(MOVED_ATTR, "true");
+    hiddenNodes.add(element);
   }
 }
 
@@ -205,6 +231,9 @@ function alignPanelToggle() {
   const root = document.documentElement;
   const button = document.querySelector(PANEL_TOGGLE_SELECTOR);
   const icon = button ? button.querySelector(PANEL_ICON_SELECTOR) : null;
+  // 同一个图标量过一次就够了，窗口尺寸变化时再量（resize 会触发一轮 apply）。
+  if (icon && icon === alignedIcon) return;
+  alignedIcon = icon || null;
   if (!button || !icon || !button.clientWidth || !icon.offsetWidth) {
     root.style.removeProperty(ICON_SHIFT_X);
     root.style.removeProperty(ICON_SHIFT_Y);
@@ -225,32 +254,42 @@ function alignPanelToggle() {
 // ------------------------------------------------------------------ 一轮同步
 
 function apply() {
-  const root = document.documentElement;
-  if (!enabled) {
-    root.removeAttribute(ENABLED_ATTR);
-    root.style.removeProperty(ICON_SHIFT_X);
-    root.style.removeProperty(ICON_SHIFT_Y);
-    markMoved(false);
-    detachActions();
-    return;
+  if (applying) return;
+  applying = true;
+  try {
+    const root = document.documentElement;
+    if (!enabled) {
+      root.removeAttribute(ENABLED_ATTR);
+      root.style.removeProperty(ICON_SHIFT_X);
+      root.style.removeProperty(ICON_SHIFT_Y);
+      alignedIcon = null;
+      hideNativeSources(false);
+      detachActions();
+      return;
+    }
+    root.setAttribute(ENABLED_ATTR, "true");
+    ensureActions();
+    const toggle = toggleButton();
+    if (toggle) placeActions(toggle);
+    else detachActions();
+    hideNativeSources(true);
+    alignPanelToggle();
+  } finally {
+    applying = false;
   }
-  root.setAttribute(ENABLED_ATTR, "true");
-  markMoved(true);
-  ensureActions();
-  const toggle = toggleButton();
-  if (toggle) placeActions(toggle);
-  else detachActions();
-  alignPanelToggle();
 }
 
-function scan() {
-  scanTimer = null;
-  apply();
-}
-
+/**
+ * 宿主一改 DOM 就同步复位：一批 mutation 只跑一次，且在下一帧绘制之前完成。
+ * 不用几十毫秒的去抖 —— 那正是注入按钮被宿主带走后「闪一下才回来」的窗口期。
+ */
 function scheduleScan() {
-  if (scanTimer !== null) return;
-  scanTimer = setTimeout(scan, SCAN_DELAY_MS);
+  if (scanQueued || applying) return;
+  scanQueued = true;
+  queueMicrotask(() => {
+    scanQueued = false;
+    apply();
+  });
 }
 
 // ------------------------------------------------------------------ 设置与生命周期
@@ -278,6 +317,33 @@ function onDocumentKeydown() {
   scheduleScan();
 }
 
+/** 控制台里可以直接读：__pioptNavEntries.inspect()。不改任何东西。 */
+function inspect() {
+  const toggle = toggleButton();
+  return {
+    enabled,
+    anchor: toggle
+      ? toggle.closest(SIDEBAR_HEADER_SELECTOR)
+        ? "sidebar-header"
+        : toggle.closest(".ct-lead")
+          ? "ct-lead"
+          : "titlebar"
+      : "none",
+    actions: ["new-task", "search"].map((kind) => {
+      const button = actions[kind];
+      return {
+        kind,
+        parent: button && button.parentElement ? button.parentElement.className : null,
+        inDocument: !!(button && button.parentElement),
+        label: button ? button.getAttribute("aria-label") : null,
+      };
+    }),
+    hiddenSources: hiddenNodes.size,
+    shiftX: document.documentElement.style.getPropertyValue(ICON_SHIFT_X),
+    shiftY: document.documentElement.style.getPropertyValue(ICON_SHIFT_Y),
+  };
+}
+
 export function mountNavEntries(bridge) {
   host = bridge;
   if (typeof MutationObserver === "function" && document.documentElement) {
@@ -293,6 +359,7 @@ export function mountNavEntries(bridge) {
     if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
       window.addEventListener("focus", onAttention);
       window.addEventListener("resize", scheduleScan);
+      window.__pioptNavEntries = { inspect, apply: () => apply() };
     }
   }
   return refresh();
@@ -303,10 +370,7 @@ export function unmountNavEntries() {
     observer.disconnect();
     observer = null;
   }
-  if (scanTimer !== null) {
-    clearTimeout(scanTimer);
-    scanTimer = null;
-  }
+  scanQueued = false;
   if (attentionBound) {
     attentionBound = false;
     document.removeEventListener("visibilitychange", onAttention);
@@ -314,6 +378,7 @@ export function unmountNavEntries() {
     if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
       window.removeEventListener("focus", onAttention);
       window.removeEventListener("resize", scheduleScan);
+      if (window.__pioptNavEntries) delete window.__pioptNavEntries;
     }
   }
   enabled = false;
