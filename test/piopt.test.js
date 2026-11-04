@@ -25,7 +25,6 @@ test("manifest keeps every feature command set", () => {
     "pimarket.open",
     "pimarket.prepare-updates",
     "pi-modify.open",
-    "gateway.open",
     "piopt.glass",
     "remote.open",
   ]);
@@ -45,23 +44,19 @@ test("manifest unions the feature permissions without fs access", () => {
 test("agent tools and settings survive the merge", () => {
   const tools = manifest.contributes.agentTools.map((item) => item.name).sort();
   assert.deepEqual(tools, [
-    "gateway_logs",
-    "gateway_restart",
-    "gateway_status",
     "list_plugin_updates",
     "prepare_plugin_update",
     "remote_control",
     "remote_status",
   ]);
   const keys = manifest.contributes.settings.map((item) => item.key).sort();
-  assert.deepEqual(keys, ["dataDir", "gatewayProbeEnabled", "gatewayRoot", "mirrorRef", "mirrorRepo"]);
+  assert.deepEqual(keys, ["dataDir", "mirrorRef", "mirrorRepo"]);
   assert.deepEqual(manifest.contributes.skills, ["skills/piopt.md"]);
 });
 
 test("host routes panel channels to the owning feature", () => {
   const entry = require("../main.js");
   assert.equal(entry._featureFor("market.snapshot"), entry._features.market);
-  assert.equal(entry._featureFor("gateway.status"), entry._features.gateway);
   // 行为那一层只有一个通道组：模型浮窗的排列方式。
   assert.equal(entry._featureFor("behavior.modelPicker.getState"), entry._features.behavior);
   // Motion and the material are one feature: one owner for both halves, under
@@ -75,7 +70,7 @@ test("host routes panel channels to the owning feature", () => {
 
 test("every feature is composed by the host entry", () => {
   const entry = require("../main.js");
-  for (const name of ["market", "appearance", "behavior", "gateway", "remote"]) {
+  for (const name of ["market", "appearance", "behavior", "remote"]) {
     assert.ok(entry._features[name], name);
   }
   // Motion and the material are one feature, so there is nothing left to wire
@@ -144,8 +139,6 @@ test("panel text is chrome, not a document: only copied values stay selectable",
     "textarea,",
     "code,",
     "pre,",
-    ".gw-key-mask,",
-    ".gw-oauth-link,",
     ".kvrow .v,",
   ]) {
     assert.ok(allow.includes(selector), `${selector} must stay selectable`);
@@ -163,7 +156,6 @@ test("feature styles are scoped so the views cannot collide", () => {
     "renderer/market.css",
     "renderer/appearance.css",
     "renderer/behavior.css",
-    "renderer/gateway.css",
     "renderer/remote.css",
   ]) {
     const css = read(file);
@@ -261,14 +253,14 @@ test("the rail opens and closes from a toggle above the tabs", () => {
   const tabsStart = html.indexOf('class="rail-tabs" role="tablist"');
   const toggleStart = html.indexOf('id="railToggle"');
   assert.ok(toggleStart > navStart && tabsStart > toggleStart);
-  for (const name of ["外观", "行为", "AI 网关", "插件市场", "手机"]) {
+  for (const name of ["外观", "行为", "插件市场", "手机"]) {
     assert.ok(html.includes(`<span class="rail-label">${name}</span>`), name);
   }
   // The rows are read top to bottom in this order, and the shortcut numbers
   // follow it, so the markup is the one place the order is written down.
   assert.deepEqual(
     [...html.matchAll(/data-feature="([a-z]+)"/g)].map((match) => match[1]),
-    ["appearance", "behavior", "gateway", "market", "remote"]
+    ["appearance", "behavior", "market", "remote"]
   );
 
   const css = read("renderer/base.css");
@@ -297,14 +289,14 @@ test("the rail opens and closes from a toggle above the tabs", () => {
 
 test("every rail row has a keyboard shortcut and a shell view", () => {
   const shell = read("renderer/shell.js");
-  // Alt+1..5 must cover exactly the five views the shell knows about, in the
+  // Alt+1..4 must cover exactly the four views the shell knows about, in the
   // same order the rail shows them.
-  assert.match(shell, /if \(!\["1", "2", "3", "4", "5"\]\.includes\(event\.key\)\) return;/);
-  assert.match(shell, /show\(\{ 1: "appearance", 2: "behavior", 3: "gateway", 4: "market", 5: "remote" \}\[event\.key\], true\);/);
-  for (const feature of ["market", "appearance", "behavior", "gateway", "remote"]) {
+  assert.match(shell, /if \(!\["1", "2", "3", "4"\]\.includes\(event\.key\)\) return;/);
+  assert.match(shell, /show\(\{ 1: "appearance", 2: "behavior", 3: "market", 4: "remote" \}\[event\.key\], true\);/);
+  for (const feature of ["market", "appearance", "behavior", "remote"]) {
     assert.match(shell, new RegExp(`${feature}: document\\.getElementById\\("view-${feature}"\\)`));
   }
-  assert.match(shell, /const KNOWN = \["appearance", "behavior", "gateway", "market", "remote"\];/);
+  assert.match(shell, /const KNOWN = \["appearance", "behavior", "market", "remote"\];/);
   assert.match(shell, /scrollToSection/);
 });
 

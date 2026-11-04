@@ -330,7 +330,7 @@ test("the behavior view is the second switchboard for the same settings", () => 
 
 test("the behavior screen offers four arrangements on the right and two switches", () => {
   const html = read("renderer/index.html");
-  const section = html.slice(html.indexOf('id="view-behavior"'), html.indexOf('id="view-gateway"'));
+  const section = html.slice(html.indexOf('id="view-behavior"'), html.indexOf('id="view-remote"'));
   // 右侧是一组分段按钮，四个都在，一个不少也一个不多。
   assert.match(section, /<div class="segmented" role="group" aria-label="排列方式" id="behavior-grouping">/);
   for (const grouping of ["default", "provider", "vendor", "name"]) {

@@ -5,8 +5,8 @@ description: The user asks to update, reinstall or download a PI-Desktop plugin,
 
 # PiOpt
 
-PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网关 /
-插件市场 / 手机 (rail rows, `Alt+1` to `Alt+5`). Only 手机 has Agent tools
+PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 /
+插件市场 / 手机 (rail rows, `Alt+1` to `Alt+4`). Only 手机 has Agent tools
 (`remote_status`, `remote_control`); the other rows are panel settings.
 
 - **外观 (appearance)** — how the window looks, in one view with two sections:
@@ -40,9 +40,6 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
   bar lives in the host window (`renderer/model-picker.mjs`) and writes the
   plugin's `modelPicker` key; the panel's 行为 view only reports the current
   value, so do not tell the user to change it there.
-- **AI 网关 (gateway)** — one page in three sections (连接 / 上游 / 用量) under a
-  pinned status bar: what both local panels expose and how to reach them, which
-  accounts and credentials feed them, and how much has actually been used.
 - **插件市场 (market)** — the download-and-verify half of a plugin update.
   Installing stays a user action in the Plugins page.
 - **手机 (remote)** — a LAN gateway for a phone on the same Wi-Fi: one switch,
@@ -96,27 +93,6 @@ PiOpt bundles five rows in one plugin, in this order: 外观 / 行为 / AI 网�
    address is a LAN one (`127.0.0.1` there means no usable interface was found).
 6. Changing the port restarts the gateway once; paired phones keep their tokens,
    they only need the new address.
-
-## Gateway: what the page does, and what it refuses to fake
-
-- 连接: CLIProxyAPI (`:8317/management.html`) and wb2api (`:8318`) each get an
-  "打开面板" button that hands the loopback URL to `shell.openExternal`; the
-  plugin never embeds either UI, so their own logins keep working.
-- 凭据全自动，页面上没有任何账号/口令填空：CLIProxyAPI 直接读本机
-  `config.yaml` 的 `management.secret-key`；wb2api 用面板默认口令自动登录，
-  401 时再试历史保存的那个。密钥从不写入页面、日志或截图；读不到就如实显示
-  「缺少管理密钥」，不伪造成功，也不要让用户去填。
-- API Key 的备注名只存在本插件设置里（按密钥 sha256 前 16 位索引），不写回
-  CLIProxyAPI 配置；添加与删除是直接 PUT 整个 `access.api-keys` 数组。
-- 用量: Antigravity 的三个分类（Gemini / Claude·GPT / Argon 4）来自
-  `retrieveUserQuotaSummary`，取不到就显示「暂无配额数据」，绝不以 0% 冒充；
-  wb2api 号池条把「剩余 / 总额」与「已使用」分色画在同一条上。
-- 看板只读 wb2api 的 `/usage/*`：今日 / 近 3 日 / 本周 / 本月 / 近 30 天 /
-  近一年。图表是原生 SVG，不引入图表库。
-- 状态条常驻页面顶端（sticky），刷新与重启网关都在那里；网关进程、日志工具
-  与重启语义保持不变。
-- Clash 出海通道、积分自动化触发、独立模型页已从界面与代码中删除，不要给
-  用户"其实还能用"的印象。
 
 ## Market: when to use
 

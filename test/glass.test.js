@@ -404,8 +404,8 @@ test("the panel mirrors the process model so preview mode is honest", () => {
 test("the material section's stylesheet targets the classes its own markup uses", () => {
   const html = read("renderer/index.html");
   const start = html.indexOf('id="section-glass"');
-  const end = html.indexOf('id="view-gateway"');
-  assert.ok(start > 0 && end > start, "the material section must close before the gateway view");
+  const end = html.indexOf('id="view-remote"');
+  assert.ok(start > 0 && end > start, "the material section must close before the next view");
   const markup = html.slice(start, end);
   const css = read("renderer/appearance.css");
 

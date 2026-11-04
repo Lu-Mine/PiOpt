@@ -1,16 +1,15 @@
 # PiOpt
 
-PI-Desktop 的控制台插件：一个插件，五个功能。
+PI-Desktop 的控制台插件：一个插件，四个功能。
 
 | 功能 | 做什么 |
 |---|---|
 | **外观** | 一处调窗口长什么样：界面动效（动画优化，强度与速度两把滑杆挂在它下面）与窗口材质（磨砂玻璃开关带模糊强度、背景图带填充方式与最近使用的缩略图网格）。依赖某个开关的选项是那个开关的二级内容，开关关掉就收起。 |
 | **行为** | 聊天框里的模型浮窗：总是列出全部模型（限高仍是宿主的），搜索框下面一条「默认 / 供应商 / 厂商 / 名称」切换排列方式（面板里同一组排列方式也是一个四选一）：默认按宿主自己的顺序平铺（一行不重排，不含「最近使用」这一类），其余三种的分组与组内都按 A–Z。另有两个开关：选中行的那枚对勾换成一圈圆角边框、推理强度滑杆的档位译成中文。 |
-| **AI 网关** | 一页三段：连接（两个本机面板、四种客户端协议、API Key 增删备注、模型列表）、上游（CLIProxyAPI 凭证与 wb2api 号池的增删刷新与启用开关）、用量（Antigravity 三组剩余量与 wb2api 号池积分条，加真实请求看板）。状态条置顶常驻。 |
 | **插件市场** | 读取已装插件与官方 catalog，经 jsDelivr / raw / GitHub Blobs API 下载更新包，按 `sizeBytes` 与 `sha256` 逐位校验后再交给你在 Plugins 页安装。 |
 | **手机** | 同一 Wi-Fi 下的手机配对后可以看会话、发指令、停止正在运行的一轮；面板里只有一个开关、一个访问地址和一个六位配对码。 |
 
-五者都在同一个面板里，按左侧菜单的顺序「外观 / 行为 / AI 网关 / 插件市场 / 手机」排列并切换；命令也可以直接打开某个视图，或直接落在外观的某一节。
+四者都在同一个面板里，按左侧菜单的顺序「外观 / 行为 / 插件市场 / 手机」排列并切换；命令也可以直接打开某个视图，或直接落在外观的某一节。
 
 ## 插件市场
 
@@ -29,25 +28,6 @@ data/local.piopt/downloads/<id>-<version>.piplug
 ```
 
 失败码：`SERVER_HTML`、`LINK_RESET`、`MIRROR_404`、`RATE_LIMIT`、`TIMEOUT`、`DNS`、`HTTP_ERROR`、`INTEGRITY`、`TOO_LARGE`、`CANCELLED`、`NO_SOURCE`、`WRITE_FAILED`。
-
-## AI 网关
-
-一页三段，顶上是一条常驻（sticky）的运行状态条：网关是否在跑、网关进程 PID 与已运行时长、刷新与重启网关；网关由别的程序启动时显示「复用已有实例」，按钮变成「接管」，还在用 `~/ai-gateway` 时多一个「迁移到插件目录」。它滚动时不动，其余内容在下面滚。
-
-| 区块 | 内容 |
-|---|---|
-| **一、连接** | CLIProxyAPI（`:8317/management.html`）与 wb2api（`:8318`）各有一张状态卡：凭据自动读取的结果（已读/缺密钥）与「打开面板」按钮（交给系统默认浏览器，插件不内嵌它们的界面）。没有账号、密码之类的填空。四种客户端协议地址（`/v1`、`/v1/messages`、`/v1/responses`、`/v1beta/models`）可一键复制；CLIProxyAPI 的 API Key 可添加、生成、复制、改备注名、删除；下面是两家支持的模型清单，每个模型带自己的品牌图标。 |
-| **二、上游** | CLIProxyAPI 凭证：逐个刷新、全部刷新、OAuth 添加、删除。wb2api 账号池：OAuth 授权（国际版/国内版）、全部签到、刷新所有积分统计、刷新所有凭证、删除；每行左侧是账号名与可用状态，中间是余额/总额与当日 Token，最右侧是启用开关。表头每一列都能点一下切换升序/降序。 |
-| **三、用量** | Antigravity 三个分类的剩余百分比（Gemini / Claude·GPT / Argon 4）；wb2api 号池条按「剩余 / 总额」画，另一半染成「已使用」。看板按今日 / 近 3 日 / 本周 / 本月 / 近 30 天 / 近一年取数：总 Token、请求与成功率、生成速度与首字、缓存命中、积分与等价花费，Token 时序图（可切 Token / 请求数 / 吞吐量）、最近请求、按模型 / 账号 / API Key 的用量明细。 |
-
-几条实现上的边界：
-
-- **进程由插件托管**：插件进程直接启动 `python wb_proxy.py`（8318）与 `cli-proxy-api.exe`（8317），不经过任何外部守护进程或自启脚本。启动前先探测端口，已有实例就复用；子进程 pid 记在 `gateway-runtime/run.json`，插件崩溃后下次加载会核对进程路径再收回残留。打包安装的版本正常卸载时结束两个进程树，插件 reload 会让网关重启一次；开发版（宿主从源码目录加载、保存即热重载）则用分离进程启动，reload 时不停止也不回收，下一次加载按 pid 与端口认领回来，网关不中断。
-- **凭据自举**：CLIProxyAPI 的管理密钥由插件随机生成，用 Windows DPAPI 加密存在 `gateway-runtime/secrets.json`，启动时以 `MANAGEMENT_PASSWORD` 环境变量注入，不写进 `config.yaml`。wb2api 第一次登录时用出厂口令登入并立刻改成随机值，同样加密保存，之后只用保存的口令。外部启动的旧实例才会退回读取 `config.yaml` 里尚未哈希的明文。
-- **备注名存本地**：API Key 的备注按密钥 sha256 前 16 位索引，存在插件设置里，不写回 CLIProxyAPI 配置；增删是直接 PUT 整个 `access.api-keys` 数组。
-- **配额由网关代查**：Antigravity 配额走网关自带的 `/v0/management/api-call`，请求里只放 `$TOKEN$` 占位，由网关在自己进程里换成真实 token，PiOpt 不读 `auth/*.json`、不直连 Google。面板打开或手动刷新时查一次，之后每 5 分钟最多查一轮，关闭面板就不再请求；某个账号失败时保留它上一次成功的数据，并在「更新于 HH:mm」后注明失败数。取不到时显示「暂无配额」，不会画成 0%。
-- **只读看板**：用量全部来自 wb2api 的 `/usage/analytics`、`/usage/timeseries`、`/usage/recent`，图表是原生 SVG，没有图表库。
-- 已删除的旧能力不再保留入口：Clash 出海通道、积分自动化触发、独立模型页、面板内嵌日志都已从界面与代码里移除；`gateway_status` / `gateway_restart` / `gateway_logs` 三个 agent 工具照旧可用。
 
 ## 界面动效（外观 · 第一节）
 
@@ -271,7 +251,7 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 | `PiOpt: 打开窗口材质` | 打开面板，进入外观视图并滚到窗口材质一节 |
 | `PiOpt: 打开手机控制` | 打开面板，进入手机视图 |
 
-面板左侧菜单最上方有一个展开/收起按钮：收起时只显示图标，展开后菜单加宽并写出「外观」「行为」「AI 网关」「插件市场」「手机」五个名字，选择记在面板本地，下次打开保持。菜单里点一下或 `Alt+1` / `Alt+2` / `Alt+3` / `Alt+4` / `Alt+5` 都能切换视图（编号就是菜单顺序）。「行为」目前是一行空视图，还没有控件。外观视图里「界面动效」与「窗口材质」是同一页的两节，命令打开时会自动滚到对应那一节。
+面板左侧菜单最上方有一个展开/收起按钮：收起时只显示图标，展开后菜单加宽并写出「外观」「行为」「插件市场」「手机」四个名字，选择记在面板本地，下次打开保持。菜单里点一下或 `Alt+1` / `Alt+2` / `Alt+3` / `Alt+4` 都能切换视图（编号就是菜单顺序）。外观视图里「界面动效」与「窗口材质」是同一页的两节，命令打开时会自动滚到对应那一节。
 切换时选中指示条在两项之间滑过去（160ms），新视图淡入并从下方 4px 归位；系统开启「减少动态效果」时两者都关掉。
 
 ## 权限与边界
@@ -282,7 +262,6 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 
 - 只写自己的数据目录：`~/.pi-desktop/plugins/data/local.piopt/`（市场可在设置里改）。
 - 市场功能不安装、不卸载、不启用/禁用、不改 `registry.json`、不启动任何进程。
-- 网关功能只启动网关自己的两个子进程，网关文件放在 `data/local.piopt/gateway/`（可用设置 `gatewayRoot` 改），日志、pid 与加密凭据放在 `data/local.piopt/gateway-runtime/`。它只请求本机 `127.0.0.1:8317/8318`；查进程与结束进程只用系统自带的 `powershell`（`Get-CimInstance`、`Get-NetTCPConnection`）与 `taskkill`，并且只结束核对过可执行路径的网关进程。
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
 - 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token，除自己数据目录里那张用户选的背景图外不访问文件与网络；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
@@ -300,8 +279,8 @@ PI-Desktop 一次只能选择一个主题，外观层不能叠加在另一个第
 
 ```text
 PiOpt/
-├─ manifest.json            统一清单：7 条命令、7 个 agent 工具、10 项权限
-├─ main.js                  组装五个功能，按通道前缀路由面板 RPC
+├─ manifest.json            统一清单：6 条命令、4 个 agent 工具、10 项权限
+├─ main.js                  组装四个功能，按通道前缀路由面板 RPC
 ├─ features/
 │  ├─ market/               市场功能
 │  │  ├─ index.js           面板 RPC、命令、agent 工具、任务表
@@ -319,30 +298,24 @@ PiOpt/
 │  │  ├─ index.js           开关与会话列表、配对码、设备令牌、agent 工具、面板 RPC
 │  │  ├─ server.js          HTTP 网关：静态页面、JSON 接口、SSE、来源与限速检查
 │  │  └─ mobile/            手机上打开的那一页（index.html / app.js / style.css / markdown.js）
-│  └─ gateway/              AI 网关：子进程托管（runtime）、迁移、DPAPI 凭据、端口探测 + 三段页面的数据通道
-│     ├─ index.js           进程探测/重启/日志、面板 RPC、浏览器打开放行
-│     ├─ services.js        CLIProxyAPI v8 管理接口、wb2api 面板会话、用量与配额
-│     └─ data.js            账号/凭证/模型归一化、号池合计、三组配额聚合
 ├─ renderer/
-│  ├─ index.html            外壳 + 五个功能视图（菜单顺序：外观 / 行为 / AI 网关 / 插件市场 / 手机）
+│  ├─ index.html            外壳 + 四个功能视图（菜单顺序：外观 / 行为 / 插件市场 / 手机）
 │  ├─ tokens.css            共享设计 token
 │  ├─ base.css              外壳布局与产品栏
 │  ├─ market.css            市场视图样式（@scope 隔离）
 │  ├─ appearance.css        外观视图样式（@scope 隔离，两节共用一套控件）
 │  ├─ behavior.css          行为视图样式（@scope 隔离）
-│  ├─ gateway.css           网关视图样式（@scope 隔离）
 │  ├─ remote.css            手机视图样式（@scope 隔离，卡片式；开关的盒子自带一份，另一个视图的 @scope 借不到）
 │  ├─ qr.js                 二维码编码器（字节模式、M 级纠错、自动选掩码，纯本地无依赖）
 │  ├─ market.js             市场视图逻辑
 │  ├─ appearance.js         外观视图逻辑（动效 + 材质两节）
 │  ├─ behavior.js           行为视图逻辑（模型浮窗的排列方式）
-│  ├─ gateway.js            网关视图逻辑
 │  ├─ remote.js             手机视图逻辑（状态条与开关、二维码、地址与配对码、设备、能力说明）
 │  ├─ model-logos/         模型品牌图标（lobe-icons，MIT，随包内置不上网）
-│  │  ├─ *.svg             面板网关用的单色图标
+│  │  ├─ *.svg             模型品牌图标源（lobe-icons，MIT；icons.mjs 的构建素材）
 │  │  ├─ icons.mjs         浮窗用的彩色图标表（生成物，24×24，id 已按品牌重写）
 │  │  └─ LICENSE           lobe-icons 的 MIT 许可
-│  ├─ shell.js              视图切换与按需启动（Alt+1…5）
+│  ├─ shell.js              视图切换与按需启动（Alt+1…4）
 │  ├─ entry.mjs             宿主窗口入口按钮、可逆动效协调器与模型浮窗改写（renderer.extension）
 │  ├─ motion-runtime.mjs    宿主窗口可往返动画（展开收缩、弹出退回）的双向对称与打断协调器
 │  └─ model-picker.mjs      模型浮窗：始终展开、三种排列、品牌图标与能力标记
@@ -352,7 +325,7 @@ PiOpt/
 └─ test/                    结构、面板、动效与玻璃层、模型浮窗的测试
 ```
 
-五个功能互不调用：面板通道按 `appearance.` / `behavior.` / `market.` / `gateway.` / `remote.` 前缀分发，各自的设置、状态与失败处理相互独立。外观内部的两半共用一份样式表，所以它们被合成了一个功能而不是互相调用；面板里仍分 `appearance.motion.*` 与 `appearance.glass.*` 两组通道，旧的 `motion.*` / `glass.*` 名字也照样受理（重载前打开的面板窗口不会失效）。
+四个功能互不调用：面板通道按 `appearance.` / `behavior.` / `market.` / `remote.` 前缀分发，各自的设置、状态与失败处理相互独立。外观内部的两半共用一份样式表，所以它们被合成了一个功能而不是互相调用；面板里仍分 `appearance.motion.*` 与 `appearance.glass.*` 两组通道，旧的 `motion.*` / `glass.*` 名字也照样受理（重载前打开的面板窗口不会失效）。
 
 ## 开发（免打包热重载）
 
@@ -365,8 +338,6 @@ PiOpt/
 注意：
 
 - 开发期间请**禁用**已安装的 `local.pimarket` 与 `local.pi-modify`。PiOpt 复用了 `pimarket.open`、`pi-modify.open` 等命令 id，同时启用会出现重复命令，插件列表里也会多出一套旧的外观主题。
-- 面板是独立窗口，保存文件触发的重载会关闭当前面板，重新打开即可。开发版里网关与 wb2api 用分离进程启动，reload 不杀不重建：下一次加载会把仍在监听的实例认领回来（`gateway_status` 里 pid 与运行时长连续），只有手动重启网关才会换进程。
-- 开发版的托管方式有一个已知代价：插件被禁用或宿主退出时，分离启动的网关与 wb2api 不会跟着结束，而是留到下一次加载被认领（端口不释放）。需要立刻收工时用网关面板的重启按钮（先停再起），或结束 `cli-proxy-api.exe` / 带 `wb_proxy.py` 的 `python.exe`。
 - 入口按钮用的是 `renderer.extension`：它是权限项，宿主在授权变化后不会热更新，所以首次加载或改动权限后要重新加载一次插件（必要时重启）按钮才会出现。
 - 纯界面迭代可以先用浏览器打开 `renderer/index.html` 看布局：没有宿主 bridge 时会自动进入独立预览模式。
 
