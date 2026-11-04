@@ -59,6 +59,17 @@
         <section id="detail" class="detail" hidden>
           <div id="messages" class="messages" aria-live="polite"></div>
         </section>
+        <div id="pending" class="pending" role="status" hidden></div>
+
+        <form id="composer" class="composer" hidden>
+          <textarea id="input" rows="1" placeholder="给这个会话发指令" aria-label="指令"></textarea>
+          <button type="submit" class="send" aria-label="发送">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 12h15" /><path d="M13 6l6 6-6 6" />
+            </svg>
+          </button>
+          <button type="button" class="stop" id="stop" hidden>停止</button>
+        </form>
       </main>
     </div>
 
@@ -88,17 +99,6 @@
       <button type="button" id="act-cancel" class="actions-cancel">取消</button>
     </section>
 
-    <div id="pending" class="pending" role="status" hidden></div>
-
-    <form id="composer" class="composer" hidden>
-      <textarea id="input" rows="1" placeholder="给这个会话发指令" aria-label="指令"></textarea>
-      <button type="submit" class="send" aria-label="发送">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 12h15" /><path d="M13 6l6 6-6 6" />
-        </svg>
-      </button>
-      <button type="button" class="stop" id="stop" hidden>停止</button>
-    </form>
 
     <script src="./markdown.js"></script>
     <script src="./app.js"></script>

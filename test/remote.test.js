@@ -166,6 +166,14 @@ test("remote page exposes an accessible wide-screen sidebar separator", () => {
   assert.match(app, /setPointerCapture/);
 });
 
+test("composer and pending prompts belong to the conversation pane", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../features/remote/mobile/index.html"), "utf8");
+  const main = html.match(/<main id="main"[\s\S]*?<\/main>/);
+  assert.ok(main);
+  assert.match(main[0], /id="pending"/);
+  assert.match(main[0], /id="composer"/);
+});
+
 test("every API route but pairing needs the device token", async () => {
   const server = await withServer();
   try {

@@ -668,6 +668,7 @@ body {
 .composer {
   position: sticky;
   bottom: 0;
+  flex-shrink: 0;
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -720,6 +721,7 @@ body {
 /* Sits between the scrolling transcript and the composer: the one state the
    phone cannot clear, so it stays visible while the conversation scrolls. */
 .pending {
+  flex-shrink: 0;
   padding: 9px 14px;
   border-top: 1px solid var(--line);
   background: var(--accent-soft);
@@ -997,12 +999,6 @@ body {
     padding: 24px var(--read-pad) 30px;
   }
 
-  /* The composer and the pending banner belong to the right pane only: without
-     the offset they would run under the session list. */
-  .composer,
-  .pending {
-    margin-left: var(--list-w);
-  }
   .composer,
   .pending {
     padding-left: var(--read-pad);
