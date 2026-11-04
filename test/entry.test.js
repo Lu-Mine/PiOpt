@@ -62,6 +62,14 @@ class FakeElement {
     this.innerHTML = "";
     this.title = "";
     this.type = "";
+    // Real elements always carry a style object; the module writes two custom
+    // properties on documentElement when it straightens the panel toggle.
+    const properties = new Map();
+    this.style = {
+      setProperty: (name, value) => properties.set(name, String(value)),
+      removeProperty: (name) => properties.delete(name),
+      getPropertyValue: (name) => properties.get(name) ?? "",
+    };
   }
 
   setAttribute(name, value) {

@@ -15,6 +15,7 @@
 
 import { MODEL_PICKER_CSS, mountModelPicker, unmountModelPicker } from "./model-picker.mjs";
 import { MOTION_RUNTIME_CSS, mountMotionRuntime, unmountMotionRuntime } from "./motion-runtime.mjs";
+import { NAV_ENTRIES_CSS, mountNavEntries, unmountNavEntries } from "./nav-entries.mjs";
 const ENTRY_ATTR = "data-piopt-entry";
 const ENTRY_CLASS = "piopt-entry";
 const HOST_ACTION_CLASS = "footer-action";
@@ -41,6 +42,7 @@ const STYLE = [
   `[${ENTRY_ATTR}][${BUSY_ATTR}="true"]{opacity:.55}`,
   MODEL_PICKER_CSS,
   MOTION_RUNTIME_CSS,
+  NAV_ENTRIES_CSS,
 ].join("\n");
 
 let host = null;
@@ -146,6 +148,7 @@ export async function onLoad(pi) {
 
   // The popup rewrite and reversible motion coordinator ride along: same window, same lifecycle.
   mountMotionRuntime();
+  await mountNavEntries(pi);
   await mountModelPicker(pi);
 }
 
@@ -160,6 +163,7 @@ export async function onUnload() {
   }
   document.removeEventListener("visibilitychange", scheduleScan);
   unmountModelPicker();
+  unmountNavEntries();
   unmountMotionRuntime();
   for (const element of document.querySelectorAll(`[${ENTRY_ATTR}]`)) element.remove();
   if (styleDisposer) {

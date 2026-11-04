@@ -305,7 +305,12 @@ test("the panel writes the two popup rewrites through setOptions", async () => {
       frameSelected: false,
       translateThinking: true,
     });
-    assert.deepEqual(translated.config, { grouping: "vendor", frameSelected: false, translateThinking: true });
+    assert.deepEqual(translated.config, {
+      grouping: "vendor",
+      frameSelected: false,
+      translateThinking: true,
+      entryActions: false,
+    });
     assert.deepEqual(fake.store[modelPicker.SETTINGS_KEY], { grouping: "vendor", frameSelected: false, translateThinking: true });
   } finally {
     delete global.pi;
@@ -323,12 +328,13 @@ test("the behavior view is the second switchboard for the same settings", () => 
   // 两项改写走 setOptions，各写各的字段。
   assert.match(view, /`\$\{CHANNEL\}\.setOptions`, \{ frameSelected: elements\.frame\.checked \}/);
   assert.match(view, /`\$\{CHANNEL\}\.setOptions`, \{ translateThinking: elements\.thinking\.checked \}/);
+  assert.match(view, /`\$\{CHANNEL\}\.setOptions`, \{ entryActions: elements\.entries\.checked \}/);
   // 与外观视图一致：脚本只导出 boot，不自己跑起来。
   assert.equal(view.trimEnd().endsWith("})();"), true);
   assert.doesNotMatch(view, /\bboot\(\);\s*$/m);
 });
 
-test("the behavior screen offers four arrangements on the right and two switches", () => {
+test("the behavior screen offers four arrangements on the right and three switches", () => {
   const html = read("renderer/index.html");
   const section = html.slice(html.indexOf('id="view-behavior"'), html.indexOf('id="view-remote"'));
   // 右侧是一组分段按钮，四个都在，一个不少也一个不多。
@@ -337,11 +343,15 @@ test("the behavior screen offers four arrangements on the right and two switches
     assert.ok(section.includes(`data-grouping="${grouping}"`), grouping);
   }
   assert.equal((section.match(/data-grouping="/g) || []).length, 4);
-  // 两项改写各是一个开关行，input 与标题一一对应。
+  // 三项改写各是一个开关行，input 与标题一一对应。
   assert.match(section, /<label class="settings-row switch-row" for="behavior-frame">/);
   assert.match(section, /<input id="behavior-frame" type="checkbox" \/>/);
   assert.match(section, /<label class="settings-row switch-row" for="behavior-thinking-zh">/);
   assert.match(section, /<input id="behavior-thinking-zh" type="checkbox" \/>/);
+  // 窗口入口那一个开关单独一段：它改的是侧边栏头部，与模型浮窗无关。
+  assert.match(section, /<label class="settings-row switch-row" for="behavior-entry-actions">/);
+  assert.match(section, /<input id="behavior-entry-actions" type="checkbox" \/>/);
+  assert.match(section, /<span class="settings-row-title">调整功能入口<\/span>/);
   // 只读的旧值不再出现：那一格现在是控件本身。
   assert.doesNotMatch(section, /behavior-value/);
   // 行为这一屏自带分段控件与开关的样式（外观那一套是 @scope 锁在别处的）。
@@ -357,6 +367,11 @@ test("the entry mounts the popup rewrite with its own lifecycle", () => {
   assert.match(entry, /MODEL_PICKER_CSS,/);
   assert.match(entry, /await mountModelPicker\(pi\)/);
   assert.match(entry, /unmountModelPicker\(\)/);
+  // 窗口入口那一层与它同一个生命周期：同一个窗口、同一份样式。
+  assert.match(entry, /import \{ NAV_ENTRIES_CSS, mountNavEntries, unmountNavEntries \} from "\.\/nav-entries\.mjs";/);
+  assert.match(entry, /NAV_ENTRIES_CSS,/);
+  assert.match(entry, /mountNavEntries\(pi\)/);
+  assert.match(entry, /unmountNavEntries\(\)/);
 });
 
 test("the brand icon table ships inside the plugin and is safe to inline", async () => {

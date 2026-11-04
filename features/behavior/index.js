@@ -1,65 +1,92 @@
 "use strict";
 
 /**
- * The behavior feature: how the chat composer's model popup behaves.
+ * The behavior feature: how the host window's own controls behave.
  *
- * 宿主窗口里的模型浮窗默认只列最近使用的三个模型，其余收在「其他模型」后面。
- * 这个功能改的就是这一点：浮窗始终列出全部模型（限高仍由宿主决定），并且可以
- * 选择按供应商分组，还是把全部模型按名称平铺排序。
+ * 两件事都改宿主窗口里的 DOM，主进程只保管设置：
  *
- * 主进程只保管这份设置；把浮窗真正改写的模块活在宿主窗口里
- * （renderer/model-picker.mjs），它经 `plugin.call` 读同一个值。设置进了插件
- * settings，所以重开窗口、重载插件都还在。
+ * - 聊天框的模型浮窗默认只列最近使用的三个模型，这里让它始终列出全部，并按所选
+ *   方式排列（renderer/model-picker.mjs）。
+ * - 窗口入口的摆法：把「新建任务」「搜索」搬进侧边栏，并在侧边栏收起时放进标题栏
+ *   「切换侧边栏」的右边（renderer/nav-entries.mjs）。
+ *
+ * 设置进了插件 settings，所以重开窗口、重载插件都还在。面板与两个渲染模块看到的是
+ * 同一份扁平配置：浮窗的三项加一个 `entryActions`。
  */
 
 const modelPicker = require("./model-picker.js");
+const navEntries = require("./nav-entries.js");
 
-let config = { ...modelPicker.DEFAULT_CONFIG };
+let picker = { ...modelPicker.DEFAULT_CONFIG };
+let entries = { ...navEntries.DEFAULT_CONFIG };
+
+async function readSettings() {
+  try {
+    return (await pi.plugin.getSettings()) || {};
+  } catch {
+    return {};
+  }
+}
 
 async function readConfig() {
-  try {
-    const settings = await pi.plugin.getSettings();
-    return modelPicker.normalizeConfig(settings && settings[modelPicker.SETTINGS_KEY]);
-  } catch {
-    return { ...modelPicker.DEFAULT_CONFIG };
-  }
+  const settings = await readSettings();
+  return {
+    picker: modelPicker.normalizeConfig(settings[modelPicker.SETTINGS_KEY]),
+    entries: navEntries.normalizeConfig(settings[navEntries.SETTINGS_KEY]),
+  };
 }
 
 // 面板要的东西：当前设置，以及可以选哪些排列方式。
 function statePayload() {
   return {
-    config,
+    config: { ...picker, entryActions: entries.enabled },
     groupings: [...modelPicker.GROUPINGS],
   };
 }
 
-// 面板与浮窗改的都是同一份设置：宿主窗口里那颗排列按钮经 setGrouping 写，
-// 面板里的分段控件写同一个字段，两个开关走 setOptions。
+// 面板与窗口里那颗排列按钮改的都是同一份设置：排列走 setGrouping，其余走 setOptions。
 async function setGrouping(input) {
-  config = modelPicker.normalizeConfig({ ...config, grouping: input });
-  await pi.plugin.setSettings({ [modelPicker.SETTINGS_KEY]: config });
+  picker = modelPicker.normalizeConfig({ ...picker, grouping: input });
+  await pi.plugin.setSettings({ [modelPicker.SETTINGS_KEY]: picker });
   return statePayload();
 }
 
+// 一次改动可能同时落在两份设置上：入口开关自己一个键，其余归模型浮窗那份。
 async function setOptions(patch = {}) {
-  config = modelPicker.normalizeConfig({ ...config, ...patch });
-  await pi.plugin.setSettings({ [modelPicker.SETTINGS_KEY]: config });
+  const source = patch && typeof patch === "object" ? patch : {};
+  const writes = {};
+  if (Object.prototype.hasOwnProperty.call(source, "entryActions")) {
+    entries = navEntries.normalizeConfig({ enabled: source.entryActions === true });
+    writes[navEntries.SETTINGS_KEY] = entries;
+  }
+  const pickerPatch = { ...source };
+  delete pickerPatch.entryActions;
+  if (Object.keys(pickerPatch).length > 0) {
+    picker = modelPicker.normalizeConfig({ ...picker, ...pickerPatch });
+    writes[modelPicker.SETTINGS_KEY] = picker;
+  }
+  if (Object.keys(writes).length > 0) await pi.plugin.setSettings(writes);
   return statePayload();
 }
 
 async function onLoad() {
-  config = await readConfig();
+  const loaded = await readConfig();
+  picker = loaded.picker;
+  entries = loaded.entries;
 }
 
 async function onUnload() {
-  /* nothing to release: the popup rewrite lives in the host window */
+  /* nothing to release: both rewrites live in the host window */
 }
 
 async function onPanelInvoke(channel, payload = {}) {
   switch (channel) {
-    case "behavior.modelPicker.getState":
-      config = await readConfig();
+    case "behavior.modelPicker.getState": {
+      const loaded = await readConfig();
+      picker = loaded.picker;
+      entries = loaded.entries;
       return statePayload();
+    }
     case "behavior.modelPicker.setGrouping":
       return { ok: true, ...(await setGrouping(payload.grouping)) };
     case "behavior.modelPicker.setOptions":
@@ -73,10 +100,11 @@ module.exports = {
   onLoad,
   onUnload,
   onPanelInvoke,
-  // Read by the host window's renderer module on every popup open; the cached
-  // copy is the one this process last wrote, so no settings round-trip per open.
+  // Read by the host window's renderer modules on every refresh; the cached copy is
+  // the one this process last wrote, so no settings round-trip per popup open.
   getState: statePayload,
   setGrouping,
   setOptions,
-  _getConfig: () => config,
+  _getConfig: () => ({ ...picker, entryActions: entries.enabled }),
+  _getEntries: () => ({ ...entries }),
 };

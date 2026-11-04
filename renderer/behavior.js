@@ -1,15 +1,20 @@
 /*
- * 行为视图：聊天框模型浮窗的排列方式与两项改写。
+ * 行为视图：聊天框模型浮窗的排列方式，以及三项改写（选中行的标记、推理强度文案、
+ * 窗口入口的摆法）。
  *
- * 排列方式是四选一的分段控件，写的就是浮窗里那条切换读的同一个值；两项开关各管
- * 一种改写（选中行的标记、推理强度档位的文案）。每一下都即时保存，没有提交按钮 ——
- * 与外观那一屏一致：控件本身就是状态。
+ * 排列方式是四选一的分段控件，写的就是浮窗里那条切换读的同一个值；三个开关各管一种
+ * 改写。每一下都即时保存，没有提交按钮 —— 与外观那一屏一致：控件本身就是状态。
  */
 (function () {
   "use strict";
 
   const CHANNEL = "behavior.modelPicker";
-  const DEFAULT_CONFIG = { grouping: "provider", frameSelected: false, translateThinking: false };
+  const DEFAULT_CONFIG = {
+    grouping: "provider",
+    frameSelected: false,
+    translateThinking: false,
+    entryActions: false,
+  };
   const GROUPINGS = ["default", "provider", "vendor", "name"];
 
   const state = { config: { ...DEFAULT_CONFIG }, error: "", busy: false };
@@ -25,6 +30,7 @@
       grouping: GROUPINGS.includes(source.grouping) ? source.grouping : DEFAULT_CONFIG.grouping,
       frameSelected: source.frameSelected === true,
       translateThinking: source.translateThinking === true,
+      entryActions: source.entryActions === true,
     };
   }
 
@@ -51,8 +57,10 @@
     }
     elements.frame.checked = config.frameSelected;
     elements.thinking.checked = config.translateThinking;
+    elements.entries.checked = config.entryActions;
     elements.frame.disabled = state.busy;
     elements.thinking.disabled = state.busy;
+    elements.entries.disabled = state.busy;
     elements.status.textContent = state.error;
     elements.status.hidden = !state.error;
   }
@@ -97,6 +105,9 @@
     elements.thinking.addEventListener("change", () => {
       void save(`${CHANNEL}.setOptions`, { translateThinking: elements.thinking.checked });
     });
+    elements.entries.addEventListener("change", () => {
+      void save(`${CHANNEL}.setOptions`, { entryActions: elements.entries.checked });
+    });
   }
 
   async function boot() {
@@ -104,6 +115,7 @@
       groupingButtons: Array.from(document.querySelectorAll("#behavior-grouping [data-grouping]")),
       frame: byId("behavior-frame"),
       thinking: byId("behavior-thinking-zh"),
+      entries: byId("behavior-entry-actions"),
       status: byId("behavior-status"),
     });
     bindEvents();
