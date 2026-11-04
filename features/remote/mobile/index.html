@@ -3,9 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#0e1013" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
-    <title>PiOpt 手机</title>
+    <title>PiOpt</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -19,41 +20,46 @@
         <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span class="brand-title" id="title">PiOpt</span>
       </div>
-      <button type="button" class="icon" id="new-session" aria-label="新建会话" hidden>
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
-          <path d="M12 5v14" /><path d="M5 12h14" />
-        </svg>
-      </button>
       <button type="button" class="icon" id="refresh" aria-label="刷新" hidden>
         <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 12a8 8 0 1 1-2.34-5.66" />
           <path d="M20 4v5h-5" />
         </svg>
       </button>
+      <button type="button" class="icon" id="new-session" aria-label="新建会话" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 5v14" /><path d="M5 12h14" />
+        </svg>
+      </button>
     </header>
 
-    <main id="main">
+    <div class="workspace">
       <section id="gate" class="gate">
-        <h1>配对这台电脑</h1>
-        <p>在 PiOpt → 手机 里打开手机控制，输入面板上显示的六位配对码。</p>
-        <form id="pair-form" autocomplete="off">
-          <input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" aria-label="配对码" />
-          <input id="device" maxlength="24" placeholder="这台手机的名字（可选）" aria-label="设备名称" />
-          <button type="submit" class="primary">配对</button>
-        </form>
-        <p class="error" id="gate-error" role="alert" hidden></p>
+        <div class="gate-inner">
+          <h1>配对这台电脑</h1>
+          <p>在 PiOpt → 手机 里打开手机控制，输入面板上显示的六位配对码。</p>
+          <form id="pair-form" autocomplete="off">
+            <input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" aria-label="配对码" />
+            <input id="device" maxlength="24" placeholder="这台设备的名字（可选）" aria-label="设备名称" />
+            <button type="submit" class="primary">配对</button>
+          </form>
+          <p class="error" id="gate-error" role="alert" hidden></p>
+        </div>
       </section>
 
-      <section id="list" hidden>
+      <section id="list" class="list-pane" hidden>
         <p class="error list-error" id="list-error" role="alert" hidden></p>
         <ul id="sessions" class="sessions"></ul>
         <p class="empty" id="sessions-empty" hidden>这台电脑上还没有会话。</p>
       </section>
 
-      <section id="detail" hidden>
-        <div id="messages" class="messages" aria-live="polite"></div>
-      </section>
-    </main>
+      <main id="main" class="detail-pane" hidden>
+        <div id="placeholder" class="placeholder" hidden>从左边选一个会话</div>
+        <section id="detail" class="detail" hidden>
+          <div id="messages" class="messages" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
 
     <div class="scrim" id="scrim" hidden></div>
 

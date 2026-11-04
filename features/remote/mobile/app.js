@@ -33,7 +33,9 @@
     listError: document.getElementById("list-error"),
     sessions: document.getElementById("sessions"),
     empty: document.getElementById("sessions-empty"),
+    main: document.getElementById("main"),
     detail: document.getElementById("detail"),
+    placeholder: document.getElementById("placeholder"),
     messages: document.getElementById("messages"),
     pending: document.getElementById("pending"),
     composer: document.getElementById("composer"),
@@ -42,6 +44,11 @@
   };
 
   const state = {
+    // Which view is on screen ("gate" / "list" / "detail"), whether the waiting
+    // banner has something to say, and whether a flash currently owns the title.
+    view: "list",
+    pendingVisible: false,
+    flashing: false,
     token: "",
     sessions: [],
     sessionId: "",
@@ -107,17 +114,54 @@
 
   // ------------------------------------------------------------------ views
 
+  // One place decides what is on screen. A narrow window shows the gate, the
+  // list or the transcript one at a time; past 900px the list keeps its column
+  // and the transcript fills the rest, so both are visible at once.
+  const wideQuery = typeof window.matchMedia === "function"
+    ? window.matchMedia("(min-width: 900px)")
+    : null;
+
+  function isWide() {
+    return Boolean(wideQuery && wideQuery.matches);
+  }
+
+  function paint() {
+    const wideLayout = isWide();
+    const view = state.view;
+    const inDetail = view === "detail";
+    el.gate.hidden = view !== "gate";
+    el.list.hidden = view === "gate" || (inDetail && !wideLayout);
+    el.main.hidden = view === "gate" || (!wideLayout && !inDetail);
+    el.detail.hidden = !inDetail;
+    // Only the wide, list-only state has an empty right column; the gate takes
+    // the whole window.
+    el.placeholder.hidden = !(wideLayout && view === "list");
+    el.composer.hidden = !inDetail;
+    el.pending.hidden = !(inDetail && state.pendingVisible);
+    el.back.hidden = wideLayout || !inDetail;
+    // The list never leaves a wide window, so its two buttons stay reachable
+    // while a conversation is open; on a phone they belong to the list alone.
+    el.refresh.hidden = view === "gate" || (!wideLayout && inDetail);
+    el.newSession.hidden = el.refresh.hidden;
+    if (!state.flashing) {
+      el.title.textContent = view === "gate" ? "PiOpt" : inDetail ? state.sessionTitle || "会话" : "会话";
+    }
+    markCurrent();
+  }
+
+  function markCurrent() {
+    for (const button of el.sessions.querySelectorAll("button[data-session-id]")) {
+      if (button.dataset.sessionId === state.sessionId) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    }
+  }
+
   function showGate(message) {
     closeStream();
     stopPolling();
-    el.gate.hidden = false;
-    el.list.hidden = true;
-    el.detail.hidden = true;
-    el.composer.hidden = true;
-    el.back.hidden = true;
-    el.refresh.hidden = true;
-    el.newSession.hidden = true;
-    el.title.textContent = "PiOpt";
+    state.view = "gate";
+    state.pendingVisible = false;
+    paint();
     if (message) {
       el.gateError.textContent = message;
       el.gateError.hidden = false;
@@ -127,27 +171,15 @@
   }
 
   function showList() {
-    el.gate.hidden = true;
-    el.list.hidden = false;
+    state.view = "list";
+    state.pendingVisible = false;
     el.listError.hidden = true;
-    el.detail.hidden = true;
-    el.composer.hidden = true;
-    el.pending.hidden = true;
-    el.back.hidden = true;
-    el.refresh.hidden = false;
-    el.newSession.hidden = false;
-    el.title.textContent = "会话";
+    paint();
   }
 
   function showDetail() {
-    el.gate.hidden = true;
-    el.list.hidden = true;
-    el.detail.hidden = false;
-    el.composer.hidden = false;
-    el.back.hidden = false;
-    el.refresh.hidden = true;
-    el.newSession.hidden = true;
-    el.title.textContent = state.sessionTitle || "会话";
+    state.view = "detail";
+    paint();
   }
 
   // ------------------------------------------------------------------- list
@@ -186,6 +218,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.addEventListener("click", () => openSession(row.id, row.title));
+      button.dataset.sessionId = row.id;
 
       const head = document.createElement("span");
       head.className = "row-head";
@@ -227,6 +260,9 @@
       li.append(button);
       el.sessions.append(li);
     }
+    // The left column stays on screen in a wide window, so the row that is open
+    // has to say so.
+    markCurrent();
   }
 
   async function loadSessions() {
@@ -433,6 +469,7 @@
     const items = pending && Array.isArray(pending.items) ? pending.items : [];
     el.pending.replaceChildren();
     if (!items.length) {
+      state.pendingVisible = false;
       el.pending.hidden = true;
       return;
     }
@@ -456,7 +493,8 @@
     hint.className = "pending-hint";
     hint.textContent = "要在这台电脑上回答。";
     el.pending.append(hint);
-    el.pending.hidden = false;
+    state.pendingVisible = true;
+    el.pending.hidden = state.view !== "detail";
   }
 
   function setRunning(running) {
@@ -474,7 +512,7 @@
     if (payload.session && payload.session.title && !state.sessionTitle) {
       state.sessionTitle = payload.session.title;
     }
-    if (!el.detail.hidden) el.title.textContent = state.sessionTitle || "会话";
+    if (state.view === "detail" && !state.flashing) el.title.textContent = state.sessionTitle || "会话";
     renderMessages(payload.messages || [], Number(payload.omitted) || 0);
     renderPending(payload.pending);
     setRunning(payload.running);
@@ -700,6 +738,9 @@
     state.sessionTitle = title || "会话";
     state.scrollPinned = true;
     showDetail();
+    // The previous session's "waiting on an answer" banner must not survive the
+    // switch for the one round trip it takes to load the new one.
+    renderPending(null);
     el.messages.replaceChildren();
     await loadSession();
     startPolling();
@@ -729,10 +770,14 @@
 
   let flashTimer = null;
   function flash(text) {
+    // A flash owns the title bar until it expires; the 3 s poll must not steal
+    // it back halfway through the sentence.
+    state.flashing = true;
     el.title.textContent = text;
     if (flashTimer) clearTimeout(flashTimer);
     flashTimer = setTimeout(() => {
-      el.title.textContent = state.sessionId ? state.sessionTitle || "会话" : "会话";
+      state.flashing = false;
+      el.title.textContent = state.view === "detail" ? state.sessionTitle || "会话" : "会话";
     }, 3200);
   }
 
@@ -878,6 +923,12 @@
     showList();
     await loadSessions();
     openStream();
+  }
+
+  // Dragging the window across the 900px line re-lays out both panes without a
+  // reload: the same media query that the stylesheet uses decides it.
+  if (wideQuery && typeof wideQuery.addEventListener === "function") {
+    wideQuery.addEventListener("change", paint);
   }
 
   async function boot() {

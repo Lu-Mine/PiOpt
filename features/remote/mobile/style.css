@@ -29,6 +29,9 @@
 
 * { box-sizing: border-box; }
 
+/* The panes below declare their own display, so the attribute has to win. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -106,17 +109,61 @@ body {
 }
 .icon:active { background: var(--surface-2); }
 
-main {
+/* One scrolling column of the app: the bar never scrolls, everything under it
+   is a pane. A wide window puts two panes side by side instead of letting them
+   take turns. */
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.list-pane,
+.detail-pane {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
+.detail-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Wide windows only: the right column before a session is chosen. */
+.placeholder {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--text-dim);
+  font-size: 13.5px;
+}
+
 /* ---- pairing ------------------------------------------------------------ */
 
 .gate {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   padding: 40px 22px;
+  overflow-y: auto;
+}
+
+.gate-inner {
+  width: 100%;
   max-width: 430px;
   margin: 0 auto;
 }
@@ -202,6 +249,13 @@ main {
 }
 .sessions button:active { background: var(--surface-2); }
 
+/* The row that is open. On a phone it is the row you just came back from; in a
+   wide window it is the one the conversation beside it belongs to. */
+.sessions button[aria-current="true"] {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.sessions button[aria-current="true"] .row-title { color: var(--text); }
+
 .row-head {
   display: flex;
   align-items: baseline;
@@ -263,10 +317,14 @@ main {
 /* ---- transcript --------------------------------------------------------- */
 
 .messages {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 16px 16px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ---- user: the only side that gets a bubble ------------------------------ */
@@ -788,4 +846,156 @@ main {
 .actions-cancel {
   color: var(--text-dim);
   font-weight: 550;
+}
+
+/* ---- wide windows ------------------------------------------------------- */
+
+/* Above this width the two panes stop taking turns: the session list keeps its
+   place on the left and the conversation fills the rest, which is what a
+   browser window on a desk is for. */
+
+@media (min-width: 900px) {
+  :root {
+    --list-w: 316px;
+    /* Keeps the transcript on a readable measure however wide the window is. */
+    --read-pad: max(24px, calc((100vw - var(--list-w) - 820px) / 2));
+  }
+
+  .bar { padding: 0 18px; }
+
+  .workspace { flex-direction: row; }
+
+  .list-pane {
+    flex: none;
+    width: var(--list-w);
+    border-right: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+  }
+
+  .sessions {
+    padding: 8px 8px 20px;
+  }
+  .sessions li { border-bottom: 0; }
+  .sessions li + li { margin-top: 2px; }
+  .sessions button {
+    border-radius: 10px;
+    padding: 11px 12px;
+  }
+  .list-error { padding: 12px 16px; }
+
+  .messages {
+    padding: 24px var(--read-pad) 30px;
+  }
+
+  /* The composer and the pending banner belong to the right pane only: without
+     the offset they would run under the session list. */
+  .composer,
+  .pending {
+    margin-left: var(--list-w);
+  }
+  .composer,
+  .pending {
+    padding-left: var(--read-pad);
+    padding-right: var(--read-pad);
+  }
+
+  .composer textarea { min-height: 44px; }
+
+  .gate { padding: 48px 24px; }
+
+  /* A sheet that slides up from the bottom edge of a phone is a dialog in the
+     middle of a window. */
+  .sheet {
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    width: min(520px, calc(100% - 64px));
+    max-height: min(72vh, 560px);
+    padding-bottom: 0;
+    border-radius: 16px;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 24px 64px rgba(6, 8, 12, 0.38);
+    animation: dialog-in 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  .actions {
+    left: 50%;
+    right: auto;
+    bottom: 24px;
+    width: min(320px, calc(100% - 32px));
+    transform: translateX(-50%);
+    animation: dialog-fade 140ms ease;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dialog-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---- pointer affordances (desktop) -------------------------------------- */
+
+/* A phone gets :active on touch; a mouse hovers first. */
+
+@media (hover: hover) {
+  .icon:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .sessions button:hover {
+    background: color-mix(in srgb, var(--text) 5%, transparent);
+  }
+  .sheet-list button:hover,
+  .actions button:hover {
+    background: var(--surface-2);
+  }
+  .primary:hover,
+  .send:hover,
+  .stop:hover {
+    filter: brightness(1.06);
+  }
+}
+
+@media (pointer: fine) {
+  .list-pane,
+  .messages,
+  .sheet-list,
+  .gate,
+  .pending {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text) 24%, transparent) transparent;
+  }
+  .list-pane::-webkit-scrollbar,
+  .messages::-webkit-scrollbar {
+    width: 10px;
+  }
+  .list-pane::-webkit-scrollbar-thumb,
+  .messages::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-color: color-mix(in srgb, var(--text) 24%, transparent);
+    background-clip: content-box;
+  }
+  .list-pane::-webkit-scrollbar-track,
+  .messages::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Last, so it also reaches the dialog animations declared above. */
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .actions { animation: none; }
 }
