@@ -111,6 +111,14 @@ class FakeElement {
     }
   }
 
+  prepend(...nodes) {
+    for (const node of [...nodes].reverse()) {
+      node.remove();
+      node.parentElement = this;
+      this.children.unshift(node);
+    }
+  }
+
   before(...nodes) {
     const parent = this.parentElement;
     assert.ok(parent, "before() needs a parent");
@@ -140,6 +148,10 @@ class FakeElement {
     const index = parent.children.indexOf(this);
     if (index >= 0) parent.children.splice(index, 1);
     this.parentElement = null;
+  }
+
+  get firstElementChild() {
+    return this.children[0] ?? null;
   }
 
   get previousElementSibling() {
@@ -313,13 +325,25 @@ test("sidebar open: the two entries sit to the left of the collapse button", asy
 
     await mod.mountNavEntries(hostReturning(true));
 
-    // 顺序就是用户要的那一条：新建任务、搜索、收起。
+    // 头部最左边是那枚「收起侧边栏」（注入的），原按钮藏起来。
+    assert.equal(header.firstElementChild.getAttribute("data-piopt-nav-action"), "collapse");
+    assert.equal(collapse.style.getPropertyValue("display"), "none");
+    // 原位置还是那一条：新建任务、搜索、收起（原按钮藏着，但仍占着锚点的位置）。
     assert.deepEqual(kindsOf(actions), ["new-task", "search"]);
     assert.equal(actions.children[0].getAttribute("data-piopt-nav-action"), "new-task");
     assert.equal(actions.children[1].getAttribute("data-piopt-nav-action"), "search");
     assert.equal(actions.children[2], collapse);
     assert.equal(actions.parentElement, header);
     // 文案与图标照着宿主那一枚来。
+    assert.equal(actions.children[0].getAttribute("aria-label"), "新建任务");
+    assert.equal(actions.children[1].getAttribute("aria-label"), "搜索");
+    assert.ok(actions.children[0].innerHTML.includes("<svg"));
+    // 会话标题栏那一份不再是入口：原位置只是被隐掉，节点还在。
+    assert.equal(menu.getAttribute("data-piopt-nav-moved"), "true");
+    assert.equal(menu.children.length, 2);
+    assert.equal(documentElement.getAttribute("data-piopt-nav-entries"), "true");
+  });
+});
 
 // 原位隐藏靠内联 display，不是属性 + 样式表：宿主换掉节点时属性会跟着没了。
 test("hidden native sources stay hidden as inline styles, not as a class", async () => {
@@ -337,15 +361,6 @@ test("hidden native sources stay hidden as inline styles, not as a class", async
     mod.unmountNavEntries();
     assert.equal(menu.style.getPropertyValue("display"), "");
     assert.equal(newTask.style.getPropertyValue("display"), "");
-  });
-});
-    assert.equal(actions.children[0].getAttribute("aria-label"), "新建任务");
-    assert.equal(actions.children[1].getAttribute("aria-label"), "搜索");
-    assert.ok(actions.children[0].innerHTML.includes("<svg"));
-    // 会话标题栏那一份不再是入口：原位置只是被隐掉，节点还在。
-    assert.equal(menu.getAttribute("data-piopt-nav-moved"), "true");
-    assert.equal(menu.children.length, 2);
-    assert.equal(documentElement.getAttribute("data-piopt-nav-entries"), "true");
   });
 });
 
@@ -367,6 +382,19 @@ test("sidebar closed: the two entries follow the toggle button", async () => {
 test("clicking an injected entry is clicking the host's own button", async () => {
   await withHost(async ({ mod, body }) => {
     const { actions } = withSidebar(body);
+
+test("sidebar closed: the injected collapse button goes away with the sidebar", async () => {
+  await withHost(async ({ mod, body }) => {
+    const { topbar, lead } = chatTopbar();
+    body.append(topbar);
+
+    await mod.mountNavEntries(hostReturning(true));
+
+    // 收起时「切换侧边栏」本就在最左，不需要再注入一枚收起按钮。
+    assert.deepEqual(kindsOf(lead), ["new-task", "search"]);
+    assert.equal(lead.querySelectorAll('[data-piopt-nav-action="collapse"]').length, 0);
+  });
+});
     const { topbar, newTask, search } = chatTopbar();
     body.append(topbar);
 

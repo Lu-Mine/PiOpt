@@ -44,8 +44,9 @@ const FALLBACK_ICONS = {
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>',
   search:
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+  collapse:
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>',
 };
-
 export const NAV_ENTRIES_CSS = [
   // 搬过来的按钮：几何沿用宿主标题栏自己那一档（28px、--radius-md、hover 底色），
   // 所以摆进侧边栏头部与标题栏都不显突兀。
@@ -60,6 +61,8 @@ export const NAV_ENTRIES_CSS = [
   `.${ACTION_CLASS}:hover{background:var(--ds-bg-hover);color:var(--ds-text-primary)}`,
   `.${ACTION_CLASS}:focus-visible{outline:2px solid var(--ds-focus);outline-offset:1px}`,
   `.${ACTION_CLASS}>svg{display:block;width:15px;height:15px}`,
+  // 展开时「收起侧边栏」摆到侧边栏头部最左边，与右边那几个入口之间拉开距离。
+  `.sidebar-header > .${ACTION_CLASS}{margin-right:8px}`,
   // 收起侧边栏时这一排贴在会话标题上，两个按钮之间留一道与宿主标题栏相同的缝。
   `.conversation-topbar .ct-lead > .${ACTION_CLASS}{margin-left:4px}`,
   // 会话标题的让位：宿主只给一个 28px 的「切换侧边栏」留了 36px（28 + 8 的缝）。
@@ -76,8 +79,9 @@ let observer = null;
 let scanQueued = false;
 let applying = false;
 let attentionBound = false;
-// 两个注入按钮一直留着，位置随侧边栏状态换：重建节点会让宿主的重绘踩空。
-const actions = { "new-task": null, search: null };
+// 三个注入按钮一直留着，位置随侧边栏状态换：重建节点会让宿主的重绘踩空。
+// collapse 那枚是「收起侧边栏」：展开时摆到侧边栏头部最左边，收起时收起来。
+const actions = { "new-task": null, search: null, collapse: null };
 // 被我们藏起来的宿主节点：关闭时只还原这些，别人的样式一概不碰。
 const hiddenNodes = new Set();
 let alignedIcon = null;
@@ -132,7 +136,7 @@ function buildAction(kind, source) {
 function syncAction(button, kind, source) {
   const label =
     (source && (source.getAttribute("aria-label") || source.getAttribute("title"))) ||
-    (kind === "new-task" ? "新建任务" : "搜索");
+    (kind === "new-task" ? "新建任务" : kind === "search" ? "搜索" : "收起侧边栏");
   if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
   if (button.title !== label) button.title = label;
   const svg = source ? source.querySelector("svg") : null;
@@ -151,7 +155,7 @@ function ensureActions() {
 
 /** 点注入按钮 = 点宿主那枚按钮；搜索没有原按钮时退回宿主自己的快捷键。 */
 function activate(kind) {
-  const source = sourceButtons()[kind];
+  const source = kind === "collapse" ? toggleButton() : sourceButtons()[kind];
   if (isElement(source) && typeof source.click === "function") {
     source.click();
     return;
@@ -174,21 +178,26 @@ function activate(kind) {
 function placeActions(toggle) {
   const newTask = actions["new-task"];
   const search = actions.search;
+  const collapse = actions.collapse;
   if (!toggle || !newTask || !search) return;
   const inSidebar = !!toggle.closest(SIDEBAR_HEADER_SELECTOR);
   if (inSidebar) {
-    // 侧边栏展开：新建任务、搜索都是「收起侧边栏」左边的邻居。
+    // 侧边栏展开：收起按钮摆到头部最左边（品牌左边），原位置由注入按钮顶上。
+    const header = toggle.closest(SIDEBAR_HEADER_SELECTOR);
+    if (collapse && header.firstElementChild !== collapse) header.prepend(collapse);
+    // 新建任务、搜索仍排在「收起侧边栏」原来的位置。
     if (toggle.previousElementSibling !== search) toggle.before(search);
     if (search.previousElementSibling !== newTask) search.before(newTask);
     return;
   }
-  // 侧边栏收起：两个入口跟着「切换侧边栏」往右排。
+  // 侧边栏收起：那枚 collapse 收起来，两个入口跟着「切换侧边栏」往右排。
+  if (collapse && collapse.parentElement) collapse.remove();
   if (toggle.nextElementSibling !== newTask) toggle.after(newTask);
   if (newTask.nextElementSibling !== search) newTask.after(search);
 }
 
 function detachActions() {
-  for (const kind of ["new-task", "search"]) {
+  for (const kind of ["new-task", "search", "collapse"]) {
     const button = actions[kind];
     if (button && button.parentElement) button.remove();
   }
@@ -212,6 +221,9 @@ function hideNativeSources(hide) {
     // ct-actions 里那一对按钮也各藏一次：有的宿主版本只给整组挂外壳，按钮自己仍占格子。
     for (const button of menu.querySelectorAll("button")) targets.add(button);
   }
+  // 侧边栏展开时那枚「收起侧边栏」挪到头部最左边的是注入按钮，原按钮藏起来。
+  const nativeToggle = document.querySelector(`${SIDEBAR_HEADER_SELECTOR} ${NATIVE_TOGGLE_SELECTOR}`);
+  if (nativeToggle) targets.add(nativeToggle);
   for (const element of targets) {
     if (element.style.getPropertyValue("display") !== "none") {
       element.style.setProperty("display", "none", "important");
@@ -270,6 +282,10 @@ function apply() {
     root.setAttribute(ENABLED_ATTR, "true");
     ensureActions();
     const toggle = toggleButton();
+    // 展开时那枚「收起侧边栏」也注入一枚：摆到头部最左边，图标文案照抄宿主。
+    const inSidebar = !!(toggle && toggle.closest(SIDEBAR_HEADER_SELECTOR));
+    if (inSidebar && !actions.collapse) actions.collapse = buildAction("collapse", toggle);
+    if (actions.collapse) syncAction(actions.collapse, "collapse", inSidebar ? toggle : null);
     if (toggle) placeActions(toggle);
     else detachActions();
     hideNativeSources(true);
@@ -329,7 +345,7 @@ function inspect() {
           ? "ct-lead"
           : "titlebar"
       : "none",
-    actions: ["new-task", "search"].map((kind) => {
+    actions: ["new-task", "search", "collapse"].map((kind) => {
       const button = actions[kind];
       return {
         kind,
@@ -383,7 +399,7 @@ export function unmountNavEntries() {
   }
   enabled = false;
   apply();
-  for (const kind of ["new-task", "search"]) {
+  for (const kind of ["new-task", "search", "collapse"]) {
     if (actions[kind]) actions[kind].remove();
     actions[kind] = null;
   }
