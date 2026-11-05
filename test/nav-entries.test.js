@@ -295,9 +295,10 @@ test("the rewrite is one module with one stylesheet and one lifecycle", () => {
     source,
     /`\[\$\{ENABLED_ATTR\}="true"\] \.conversation-topbar\.ct-collapsed\{padding-left:calc\(var\(--ct-lead-inset,12px\) \+ 36px \+ 2 \* 32px\)\}`/
   );
-  // 宿主改 DOM 后同步复位：一批 mutation 一次 microtask，不留几十毫秒的闪烁窗口。
-  assert.match(source, /observer = new MutationObserver\(scheduleScan\);/);
-  assert.match(source, /queueMicrotask\(\(\) => \{/);
+  // 宿主改 DOM 后只观察入口相关根节点；页面内容区的重绘不应触发入口扫描。
+  assert.match(source, /const OBSERVED_ROOT_SELECTORS = \[/);
+  assert.match(source, /current\.observe\(root, \{ childList: true, subtree: true \}\);/);
+  assert.match(source, /observer\.observe\(document\.body, \{ childList: true \}\);/);
   // 图标按中心差平移，变量缺省就是零，宿主的原样不受影响。
   assert.match(
     source,

@@ -76,6 +76,38 @@ export const NAV_ENTRIES_CSS = [
 let host = null;
 let enabled = false;
 let observer = null;
+const rootObservers = new Map();
+const OBSERVED_ROOT_SELECTORS = [
+  ".sidebar-footer",
+  ".conversation-topbar",
+  ".sidebar-header",
+  ".app-work-panel-toggle",
+];
+
+function observeRelevantRoots() {
+  if (typeof MutationObserver !== "function" || !document.documentElement) return;
+  const roots = new Set();
+  for (const selector of OBSERVED_ROOT_SELECTORS) {
+    const root = document.querySelector(selector);
+    if (root) roots.add(root);
+  }
+  for (const [root, current] of rootObservers) {
+    if (roots.has(root)) continue;
+    current.disconnect();
+    rootObservers.delete(root);
+  }
+  for (const root of roots) {
+    if (rootObservers.has(root)) continue;
+    const current = new MutationObserver(scheduleScan);
+    current.observe(root, { childList: true, subtree: true });
+    rootObservers.set(root, current);
+  }
+}
+
+function disconnectRelevantRoots() {
+  for (const current of rootObservers.values()) current.disconnect();
+  rootObservers.clear();
+}
 let scanQueued = false;
 let applying = false;
 let attentionBound = false;
@@ -362,11 +394,13 @@ function inspect() {
 
 export function mountNavEntries(bridge) {
   host = bridge;
-  if (typeof MutationObserver === "function" && document.documentElement) {
-    if (!observer) {
-      observer = new MutationObserver(scheduleScan);
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-    }
+  observeRelevantRoots();
+  if (typeof MutationObserver === "function" && document.body && !observer) {
+    observer = new MutationObserver(() => {
+      observeRelevantRoots();
+      scheduleScan();
+    });
+    observer.observe(document.body, { childList: true });
   }
   if (!attentionBound) {
     attentionBound = true;
@@ -386,6 +420,7 @@ export function unmountNavEntries() {
     observer.disconnect();
     observer = null;
   }
+  disconnectRelevantRoots();
   scanQueued = false;
   if (attentionBound) {
     attentionBound = false;
