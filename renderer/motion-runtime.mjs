@@ -201,6 +201,13 @@ function isGhost(el) {
   if (typeof el.hasAttribute === "function" && el.hasAttribute(GHOST_ATTR)) return true;
   return typeof el.closest === "function" && Boolean(el.closest(`[${GHOST_ATTR}],[${LAYER_ATTR}]`));
 }
+const EXCLUDED_ROUTE_SELECTORS = ".settings-content,.settings-content-enter,.plugins-page";
+
+function isExcludedRoute() {
+  return typeof document !== "undefined"
+    && typeof document.querySelector === "function"
+    && Boolean(document.querySelector(EXCLUDED_ROUTE_SELECTORS));
+}
 
 // ------------------------------------------------------------ token reading
 
@@ -363,6 +370,7 @@ function flightProgress(record, bezier) {
 // Snapshot visible disclosures, overlays and panels right as an input event
 // begins (capture phase), before React processes the click/key and unmounts them.
 function captureSnapshot(event) {
+  if (isExcludedRoute()) return;
   if (typeof document === "undefined" || !document.body) return;
   const tokens = readMotionState(document);
   if (!tokens.active) return;
@@ -1087,6 +1095,7 @@ function syncDock(dock, wasExpanded, tokens) {
 // -------------------------------------------------------- mutation dispatch
 
 function processMutations(records) {
+  if (isExcludedRoute()) return;
   const tokens = readMotionState();
   if (!tokens.active) return;
 
@@ -1196,6 +1205,7 @@ function processMutations(records) {
 // ---------------------------------------------------------------- lifecycle
 
 function closePreviousContextMenus(event) {
+  if (isExcludedRoute()) return;
   const source = isElement(event.target) ? event.target : event.target?.parentElement;
   for (const old of document.querySelectorAll(".sidebar-floating-menu,.context-menu:not(.context-menu-submenu)")) {
     if (isGhost(old) || old.contains(source)) continue;

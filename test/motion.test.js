@@ -178,6 +178,13 @@ test("motion switches never re-enable the host's opacity-filled panel animation 
     assert.doesNotMatch(css, /@keyframes work-panel-in\b/);
   }
 });
+test("settings and plugins routes bypass the global motion runtime", () => {
+  const source = fs.readFileSync(path.join(root, "renderer/motion-runtime.mjs"), "utf8");
+  assert.match(source, /const EXCLUDED_ROUTE_SELECTORS = "\.settings-content,\.settings-content-enter,\.plugins-page";/);
+  assert.match(source, /function captureSnapshot\(event\) \{\n  if \(isExcludedRoute\(\)\) return;/);
+  assert.match(source, /function processMutations\(records\) \{\n  if \(isExcludedRoute\(\)\) return;/);
+  assert.match(source, /function closePreviousContextMenus\(event\) \{\n  if \(isExcludedRoute\(\)\) return;/);
+});
 
 test("resolves automatic base from host appearance", () => {
   assert.equal(resolveBase("light", { base: "dark" }), "light");
