@@ -51,15 +51,17 @@ export async function openCommandMenu(button, host) {
   const editor = document.querySelector('.composer-input');
   const selection = window.getSelection();
   const range = selection?.rangeCount && editor?.contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
-  menu = document.createElement('div'); menu.className = 'composer-autocomplete is-open'; menu.setAttribute('data-piopt-command-menu', '');
+  menu = document.createElement('div'); menu.className = 'composer-autocomplete'; menu.setAttribute('data-piopt-command-menu', '');
   menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', '指令');
   const search = document.createElement('input'); search.className = 'piopt-command-search'; search.placeholder = '搜索指令'; search.setAttribute('aria-label', '搜索指令');
   const list = document.createElement('div'); list.className = 'composer-ac-list';
   const footer = document.createElement('div'); footer.className = 'composer-ac-footer'; footer.textContent = '↑↓ 选择 · Enter 确认 · Esc 关闭';
   menu.append(search, list, footer); document.body.append(menu); position();
+  const openedMenu = menu;
+  requestAnimationFrame(() => { if (menu === openedMenu && openedMenu.isConnected) { openedMenu.classList.add('is-open'); search.focus(); } });
   document.addEventListener('pointerdown', dismiss, true);
   window.addEventListener('resize', position); window.addEventListener('scroll', position, true);
-  search.focus(); list.textContent = '正在加载指令…';
+  list.textContent = '正在加载指令…';
   let rows = [], selected = 0;
   const highlight = index => {
     if (!rows.length) return;
