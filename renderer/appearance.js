@@ -56,6 +56,10 @@ const state = {
   // Wallpaper Engine 扫描结果与已画好的缩略图（id → data URL）；null 表示还没扫过。
   engineList: null,
   engineThumbs: new Map(),
+  // 背景的两个来源共用一个入口：tab 决定看哪一面，展开只影响 Wallpaper Engine 列表。
+  backdropTab: "image",
+  backdropTabSettled: false,
+  engineExpanded: false,
   appearance: { base: "dark", theme: "dark", pluginTheme: null },
   preference: "system",
   appliedBase: "dark",
@@ -399,15 +403,38 @@ function renderGlass() {
   elements.wallpaperName.textContent = name || "未选择图片";
   elements.wallpaperName.dataset.empty = String(!name);
 
-  // Wallpaper Engine 那一行说的是「它自己是谁」，不假装它是一张图片。
+  // 一个入口两个来源：主行只报「现在生效的是哪一个」。
   const engineName = config.engine.id ? config.engine.title || config.engine.id : "";
-  elements.engineName.textContent = engineName ? `${engineName} · 动态` : "未选择壁纸";
-  elements.engineName.dataset.empty = String(!engineName);
+  const backdropName = engineName ? `${engineName} · 动态` : name || "";
+  elements.backdropName.textContent = backdropName || "未选择背景";
+  elements.backdropName.dataset.empty = String(!backdropName);
 
+  renderBackdropTabs();
   renderRecent();
   renderEngineGrid();
   void fillMissingThumbs();
+}
 
+/*
+ * 背景的两个来源用 tab 切换，默认停在「图片」；当前生效的是 Wallpaper Engine
+ * 壁纸时停在那一面。切换只是面板状态，不写设置——它不改变任何已生效的东西。
+ */
+function renderBackdropTabs() {
+  const tab = state.backdropTab === "engine" ? "engine" : "image";
+  for (const button of elements.tabButtons) {
+    button.setAttribute("aria-selected", String(button.dataset.backdropTab === tab));
+  }
+  elements.panelImage.hidden = tab !== "image";
+  elements.panelEngine.hidden = tab !== "engine";
+}
+
+async function selectBackdropTab(tab) {
+  const next = tab === "engine" ? "engine" : "image";
+  if (state.backdropTab === next) return;
+  state.backdropTab = next;
+  renderBackdropTabs();
+  // 第一次打开 Wallpaper Engine 那一面才去扫：别的操作不该让它去碰 Steam 目录。
+  if (next === "engine" && state.engineList === null) await scanEngine();
 }
 
 /*
@@ -495,6 +522,12 @@ function adoptGlassState(result) {
   if (!result) return;
   if (result.config) state.glass = normalizeGlass(result.config);
   if (Array.isArray(result.recent)) state.recent = normalizeRecent(result.recent);
+  // 第一次拿到真实设置时决定停在哪一面：正在用 Wallpaper Engine 壁纸就停在那一面，
+  // 之后由用户自己切，面板不再自作主张。
+  if (!state.backdropTabSettled) {
+    state.backdropTab = state.glass.engine.id ? "engine" : "image";
+    state.backdropTabSettled = true;
+  }
   renderGlass();
 }
 
@@ -707,10 +740,27 @@ function engineNote(item) {
  * 是标题与「它是什么」。不支持的卡片留在原位、按禁用处理，理由写在第二行——
  * 把 30 张 scene 壁纸藏起来才是更糟的体验。
  */
+// 一次先给 30 张：作者的库是 40 张，这一屏足够挑，剩下的点「显示全部」。
+const ENGINE_PAGE_SIZE = 30;
+
 function renderEngineGrid() {
   const grid = elements.engineGrid;
   if (!grid) return;
   const items = state.engineList;
+
+  // 「显示全部 / 收起」只在这一面真有超出时出现。
+  const moreButton = elements.engineMore;
+  if (moreButton) {
+    const overflow = Boolean(items) && items.length > ENGINE_PAGE_SIZE;
+    moreButton.hidden = !overflow;
+    if (overflow) {
+      const hidden = items.length - ENGINE_PAGE_SIZE;
+      moreButton.textContent = state.engineExpanded ? "收起" : `显示全部（${items.length}）`;
+      moreButton.setAttribute("aria-expanded", String(state.engineExpanded));
+      moreButton.title = state.engineExpanded ? `只留前 ${ENGINE_PAGE_SIZE} 张` : `还有 ${hidden} 张`;
+    }
+  }
+
   if (!items) {
     grid.innerHTML = "";
     return;
@@ -723,7 +773,8 @@ function renderEngineGrid() {
 
   elements.engineHead.textContent = `本机壁纸 · ${items.length}`;
   const currentId = state.glass.engine.id;
-  grid.innerHTML = items.map((item) => {
+  const visible = state.engineExpanded ? items : items.slice(0, ENGINE_PAGE_SIZE);
+  grid.innerHTML = visible.map((item) => {
     const thumb = state.engineThumbs.get(item.id) || "";
     const current = item.id === currentId;
     const label = escapeAttr(item.title);
@@ -790,11 +841,11 @@ async function scanEngine() {
   void fillEngineThumbs();
 }
 
-async function toggleEngineList() {
-  const expanded = elements.engineSub.dataset.collapsed === "true";
-  setSub(elements.engineSub, expanded);
-  // 每次打开都重扫：刚在 Steam 里订好的壁纸不该要等一次重启。
-  if (expanded) await scanEngine();
+/** 列表一次 30 张，超出时用这个按钮在「全部 / 收起」之间切换。 */
+function toggleEngineExpanded() {
+  state.engineExpanded = !state.engineExpanded;
+  renderEngineGrid();
+  void fillEngineThumbs();
 }
 
 async function useEngineItem(id) {
@@ -902,7 +953,10 @@ function bindEvents() {
     button.addEventListener("click", () => setGlassConfig({ fit: button.dataset.glassFit }, 0));
   });
   elements.pickButton.addEventListener("click", pickWallpaper);
-  elements.enginePick.addEventListener("click", () => void toggleEngineList());
+  for (const button of elements.tabButtons) {
+    button.addEventListener("click", () => void selectBackdropTab(button.dataset.backdropTab));
+  }
+  elements.engineMore.addEventListener("click", toggleEngineExpanded);
   elements.engineGrid.addEventListener("click", (event) => {
     const use = event.target.closest("[data-engine-use]");
     if (use) void useEngineItem(use.dataset.engineUse);
@@ -960,20 +1014,21 @@ async function initialize() {
     followReduced: byId("follow-reduced"),
     glassToggle: byId("glass-toggle"),
     glassEnabledSub: byId("glass-enabled-sub"),
-    glassWallpaperSub: byId("glass-wallpaper-sub"),
     glassFitButtons: Array.from(document.querySelectorAll("[data-glass-fit]")),
     glassIntensity: byId("glass-intensity"),
     glassFitRow: byId("glass-fit-row"),
     glassIntensityValue: byId("glass-intensity-value"),
+    backdropName: byId("glass-backdrop-name"),
+    tabButtons: Array.from(document.querySelectorAll("[data-backdrop-tab]")),
+    panelImage: byId("glass-panel-image"),
+    panelEngine: byId("glass-panel-engine"),
     wallpaperName: byId("glass-wallpaper-name"),
     pickButton: byId("glass-wallpaper-pick"),
     glassFitHint: byId("glass-fit-hint"),
     fileInput: byId("glass-wallpaper-file"),
     recentList: byId("glass-recent-list"),
-    engineName: byId("glass-engine-name"),
-    engineSub: byId("glass-engine-sub"),
-    enginePick: byId("glass-engine-pick"),
     engineHead: byId("glass-engine-head"),
+    engineMore: byId("glass-engine-more"),
     engineGrid: byId("glass-engine-grid"),
     confirm: byId("confirm"),
     confirmTitle: byId("confirm-title"),

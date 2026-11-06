@@ -253,11 +253,13 @@ about the calls, only about the prefix.
    fills). With no wallpaper and the switch off the generator returns an empty
    string, so the interface is pixel-identical to the stock one — that is also
    the honest answer to "did it work?" when nothing is visible on a dark theme.
-6. A wallpaper is uploaded from the panel, stored in the plugin data folder,
+6. The panel has one **背景** row: its tab switches between 图片 (an uploaded
+   photo) and Wallpaper Engine, and the fill modes below belong to both. A photo
+   is uploaded from the panel, stored in the plugin data folder,
    and referenced by absolute path; the host rewrites that to a
-   `plugin-asset:` URL with a 4 MB ceiling. Five fill modes, labelled in Chinese
+   `plugin-asset:` URL with a 4 MB ceiling. Four fill modes, labelled in Chinese
    in the panel: 拉伸填满 (fill), 等比适应 (contain), 等比铺满 (cover),
-   原始尺寸 (none), 等比不放大 (scale-down). The photo is independent of the
+   原始尺寸 (none). The backdrop is independent of the
    switch: it stays visible with the glass off, only the frosting goes away. A
    missing or moved file is dropped on load and on
    `appearance.glass.getState`, because a dead reference makes `themes.upsert`
@@ -277,5 +279,7 @@ about the calls, only about the prefix.
    suggest running Wallpaper Engine as a workaround for a plugin panel.
    The list is read from `<Steam library>/steamapps/workshop/content/431960`,
    found through the Steam registry value and `libraryfolders.vdf`, read-only;
-   the panel rescans every time it is opened, so a newly subscribed wallpaper
-   shows up without a restart.
+   the panel rescans every time that tab is opened, so a newly subscribed
+   wallpaper shows up without a restart. It sits in the same 背景 row as the
+   photos: one screen shows 30 cards, 显示全部（N） expands to all of them and
+   收起 collapses back.

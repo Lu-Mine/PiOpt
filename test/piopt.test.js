@@ -189,10 +189,21 @@ test("dependent settings sit under the option they depend on", () => {
   for (const [, , trigger] of subs) {
     assert.match(html, new RegExp(`id="${trigger}"`), trigger);
   }
-  assert.match(html, /id="glass-wallpaper-sub" data-collapsed="false"/);
+  assert.match(html, /id="glass-backdrop-sub" data-collapsed="false"/);
   assert.doesNotMatch(html, /glass-wallpaper-clear/);
   assert.match(js, /data-wallpaper-off/);
   assert.doesNotMatch(js, /setSub\(elements\.glassWallpaperSub/);
+
+  // 图片与 Wallpaper Engine 是同一个「背景」选项的两个来源：一个 tab 切换条，
+  // 两块面板，列表常开。
+  const tabs = [...html.matchAll(/data-backdrop-tab="([a-z]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(tabs, ["image", "engine"]);
+  assert.match(html, /id="glass-panel-image" role="tabpanel"/);
+  assert.match(html, /id="glass-panel-engine" role="tabpanel"[^>]*hidden/);
+  // Wallpaper Engine 列表一次 30 张，超出时给「显示全部 / 收起」。
+  assert.match(js, /const ENGINE_PAGE_SIZE = 30;/);
+  assert.match(js, /state\.engineExpanded \? items : items\.slice\(0, ENGINE_PAGE_SIZE\)/);
+  assert.match(html, /id="glass-engine-more"/);
 
   // The three motion rows only exist inside the override block; the base colour
   // is not affected by that switch, so it closes the block and stays first-level.
@@ -206,16 +217,17 @@ test("dependent settings sit under the option they depend on", () => {
     "外观基底 must stay a first-level row after the motion sub-block"
   );
 
-  // Blur strength belongs to the glass switch; the fit and the recent list both
-  // live inside the photo's own block. The absolute path is no longer shown
-  // anywhere — the row and the cards name the source file instead.
-  const start = html.indexOf('id="glass-wallpaper-sub"');
+  // Blur strength belongs to the glass switch; the fit and both source panels live
+  // inside the backdrop's own block. The absolute path is no longer shown anywhere —
+  // the row and the cards name the source file instead.
+  const start = html.indexOf('id="glass-backdrop-sub"');
   const photoSub = html.slice(start, html.indexOf("</section>", start));
   assert.match(photoSub, /data-glass-fit="fill"/);
   assert.match(photoSub, /id="glass-recent"/);
+  assert.match(photoSub, /id="glass-engine-grid"/);
   assert.doesNotMatch(html, /id="glass-wallpaper-path"/);
   assert.doesNotMatch(html, /class="glass-path"/);
-  const blurSub = html.slice(html.indexOf('id="glass-enabled-sub"'), html.indexOf('id="glass-wallpaper"'));
+  const blurSub = html.slice(html.indexOf('id="glass-enabled-sub"'), html.indexOf('id="glass-backdrop"'));
   assert.match(blurSub, /id="glass-intensity"/);
 
   // Collapsing hides the block from the keyboard and tells assistive tech; the

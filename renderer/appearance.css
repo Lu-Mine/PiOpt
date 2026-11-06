@@ -223,6 +223,14 @@ label.settings-row { cursor: pointer; }
   color: var(--ds-text-primary);
   box-shadow: var(--ds-raised-shadow), 0 0 0 1px var(--ds-border-subtle);
 }
+/* tab 用 aria-selected（语义比 aria-pressed 准），样式与分段按钮同一套。 */
+.segmented button[aria-selected="true"] {
+  background: var(--ds-raised);
+  color: var(--ds-text-primary);
+  box-shadow: var(--ds-raised-shadow), 0 0 0 1px var(--ds-border-subtle);
+}
+/* 面板切换靠 hidden；这个兜底防止别的 display 规则把它盖掉。 */
+[role="tabpanel"][hidden] { display: none; }
 
 /* ---------------------------------------------------------------- 滑杆 */
 
@@ -345,9 +353,30 @@ label.settings-row { cursor: pointer; }
   border-top: 1px solid var(--ds-border-subtle);
 }
 .wallpaper-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 8px;
   color: var(--ds-text-muted);
   font-size: var(--text-xs-plus);
+}
+
+/* 超出第一屏才出现的「显示全部 / 收起」：贴着标题右侧，不另起一行。 */
+.wallpaper-more {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ds-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.wallpaper-more:hover { color: var(--ds-text-primary); }
+.wallpaper-more:focus-visible {
+  outline: none;
+  color: var(--ds-text-primary);
+  text-decoration: underline;
 }
 
 .wallpaper-grid {

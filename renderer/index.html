@@ -213,49 +213,33 @@
               </div>
             </div>
 
-            <div class="settings-row" id="glass-wallpaper">
+            <!-- 背景：图片与 Wallpaper Engine 壁纸是同一个选项的两个来源，用 tab 切换。
+                 列表常开——没有背景时也要能点「不使用」、换来源、看最近使用。 -->
+            <div class="settings-row" id="glass-backdrop">
               <div class="settings-row-copy">
-                <div class="settings-row-title">背景图</div>
-                <div class="settings-row-detail glass-wallpaper-name" id="glass-wallpaper-name">未选择图片</div>
+                <div class="settings-row-title">背景</div>
+                <div class="settings-row-detail glass-wallpaper-name" id="glass-backdrop-name">未选择背景</div>
               </div>
               <div class="settings-row-control">
-                <button type="button" class="ui-btn ui-btn-sm" id="glass-wallpaper-pick">选择图片…</button>
-              </div>
-              <input type="file" id="glass-wallpaper-file" accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/*" hidden />
-            </div>
-
-            <!-- Wallpaper Engine：video 真的播放，其余类型退回项目自带的静帧预览。 -->
-            <div class="settings-row" id="glass-engine">
-              <div class="settings-row-copy">
-                <div class="settings-row-title">Wallpaper Engine 壁纸</div>
-                <div class="settings-row-detail glass-wallpaper-name" id="glass-engine-name">未选择壁纸</div>
-              </div>
-              <div class="settings-row-control">
-                <button type="button" class="ui-btn ui-btn-sm" id="glass-engine-pick">浏览壁纸…</button>
-              </div>
-            </div>
-
-            <div class="settings-sub" id="glass-engine-sub" data-collapsed="true" inert>
-              <div class="settings-sub-body">
-                <div class="wallpaper-recent" id="glass-engine-list">
-                  <div class="wallpaper-recent-head">
-                    <span id="glass-engine-head">本机壁纸</span>
-                  </div>
-                  <div class="wallpaper-grid" id="glass-engine-grid"></div>
+                <div class="segmented" role="tablist" aria-label="背景来源">
+                  <button type="button" role="tab" id="glass-tab-image" data-backdrop-tab="image"
+                    aria-selected="true" aria-controls="glass-panel-image">图片</button>
+                  <button type="button" role="tab" id="glass-tab-engine" data-backdrop-tab="engine"
+                    aria-selected="false" aria-controls="glass-panel-engine">Wallpaper Engine</button>
                 </div>
               </div>
             </div>
 
-            <!-- 二级内容：背景图这一节常开，否则没有图时连「不使用」和最近使用都进不去。 -->
-            <div class="settings-sub" id="glass-wallpaper-sub" data-collapsed="false">
+            <div class="settings-sub" id="glass-backdrop-sub" data-collapsed="false">
               <div class="settings-sub-body">
+                <!-- 填充方式两个来源共用：图片是 background-size，视频是 object-fit。 -->
                 <div class="settings-row" id="glass-fit-row">
                   <div class="settings-row-copy">
                     <div class="settings-row-title">填充方式</div>
                     <div class="settings-row-detail glass-fit-hint" id="glass-fit-hint">拉伸铺满整个窗口</div>
                   </div>
                   <div class="settings-row-control">
-                    <div class="segmented" role="group" aria-label="背景图填充">
+                    <div class="segmented" role="group" aria-label="背景填充">
                       <button type="button" data-glass-fit="fill">拉伸</button>
                       <button type="button" data-glass-fit="contain">适应</button>
                       <button type="button" data-glass-fit="cover">铺满</button>
@@ -264,10 +248,33 @@
                   </div>
                 </div>
 
-                <!-- 最近使用是背景图的历史，跟着这张图走，不另起一块。 -->
-                <div class="wallpaper-recent" id="glass-recent">
-                  <div class="wallpaper-recent-head">最近使用</div>
-                  <div class="wallpaper-grid" id="glass-recent-list"></div>
+                <div class="backdrop-panel" id="glass-panel-image" role="tabpanel" aria-labelledby="glass-tab-image">
+                  <div class="settings-row" id="glass-wallpaper">
+                    <div class="settings-row-copy">
+                      <div class="settings-row-title">图片</div>
+                      <div class="settings-row-detail glass-wallpaper-name" id="glass-wallpaper-name">未选择图片</div>
+                    </div>
+                    <div class="settings-row-control">
+                      <button type="button" class="ui-btn ui-btn-sm" id="glass-wallpaper-pick">选择图片…</button>
+                    </div>
+                    <input type="file" id="glass-wallpaper-file" accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/*" hidden />
+                  </div>
+
+                  <!-- 最近使用是背景图的历史，跟着这张图走，不另起一块。 -->
+                  <div class="wallpaper-recent" id="glass-recent">
+                    <div class="wallpaper-recent-head">最近使用</div>
+                    <div class="wallpaper-grid" id="glass-recent-list"></div>
+                  </div>
+                </div>
+
+                <div class="backdrop-panel" id="glass-panel-engine" role="tabpanel" aria-labelledby="glass-tab-engine" hidden>
+                  <div class="wallpaper-recent" id="glass-engine-list">
+                    <div class="wallpaper-recent-head">
+                      <span id="glass-engine-head">本机壁纸</span>
+                      <button type="button" class="wallpaper-more" id="glass-engine-more" hidden>显示全部</button>
+                    </div>
+                    <div class="wallpaper-grid" id="glass-engine-grid"></div>
+                  </div>
                 </div>
               </div>
             </div>
