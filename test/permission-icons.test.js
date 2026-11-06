@@ -30,20 +30,17 @@ test("权限图标只在动效优化启用时输出尺寸", async () => {
   assert.ok(!disabled.includes('--piopt-permission-icon-size'));
 });
 
-test("左侧三个控件与宿主右侧在同一容器宽度折叠", () => {
+test("左侧三个控件由实测布局状态驱动折叠", () => {
   const css = motion.buildThemeCss({ override: true });
-  const start = css.indexOf('@container composer-stack (max-width:450px)');
-  const rules = css.slice(start, css.indexOf('details{', start));
-  assert.ok(start >= 0);
-  for (const selector of ['.composer-mode-chip', 'button[data-piopt-permission-icon]', 'button[data-piopt-command-button]']) assert.ok(rules.includes(selector));
-  assert.ok(rules.includes('.composer-mode-chip-label'));
-  assert.ok(!motion.buildThemeCss({ override: false }).includes('@container composer-stack (max-width:450px)'));
+  for (const selector of ['.composer-mode-chip', 'button[data-piopt-permission-icon]', 'button[data-piopt-command-button]']) assert.ok(css.includes(selector));
+  assert.ok(css.includes('data-piopt-compact="true"'));
+  assert.ok(!motion.buildThemeCss({ override: false }).includes('data-piopt-compact'));
 });
 
 test("模式按钮展开时按完整文案自适应，窄屏仍可折叠", () => {
   const css = motion.buildThemeCss({ override: true });
   assert.match(css, /\.composer-left \.composer-mode-chip\{flex:0 0 auto;width:max-content;min-width:max-content;max-width:none\}/);
   assert.match(css, /\.composer-left \.composer-mode-chip-face,\.composer-left \.composer-mode-chip-label\{min-width:max-content;max-width:none;overflow:visible\}/);
-  assert.ok(css.indexOf('@container composer-stack (max-width:450px)') > css.indexOf('width:max-content'));
+  assert.ok(css.indexOf('data-piopt-compact="true"') > css.indexOf('width:max-content'));
   assert.doesNotMatch(motion.buildThemeCss({ override: false }), /width:max-content/);
 });

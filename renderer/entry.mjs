@@ -18,6 +18,7 @@ import { MOTION_RUNTIME_CSS, mountMotionRuntime, unmountMotionRuntime } from "./
 import { NAV_ENTRIES_CSS, mountNavEntries, unmountNavEntries } from "./nav-entries.mjs";
 import { COMMAND_BUTTON_CSS, mountCommandButton, unmountCommandButton } from "./command-button.mjs";
 import { PERMISSION_ICON_CSS, mountPermissionIcons, unmountPermissionIcons } from "./permission-icons.mjs";
+import { mountComposerCompact, unmountComposerCompact } from "./composer-compact.mjs";
 import {
   WALLPAPER_RUNTIME_CSS,
   mountEngineWallpaper,
@@ -157,6 +158,7 @@ export async function onLoad(pi) {
   document.addEventListener("visibilitychange", scheduleScan);
 
   // The popup rewrite and reversible motion coordinator ride along: same window, same lifecycle.
+  mountComposerCompact();
   mountMotionRuntime();
   mountPermissionIcons();
   await mountNavEntries(pi);
@@ -175,6 +177,7 @@ export async function onUnload() {
     clearTimeout(scanTimer);
     scanTimer = null;
   }
+  unmountComposerCompact();
   document.removeEventListener("visibilitychange", scheduleScan);
   unmountPermissionIcons();
   unmountModelPicker();

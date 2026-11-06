@@ -385,11 +385,9 @@ details::details-content{transition-duration:80ms}
 /* Expanded mode chip fits its label instead of the host's fixed 96px width. */
 .composer-left .composer-mode-chip{flex:0 0 auto;width:max-content;min-width:max-content;max-width:none}
 .composer-left .composer-mode-chip-face,.composer-left .composer-mode-chip-label{min-width:max-content;max-width:none;overflow:visible}
-/* Match the host's composer-stack breakpoint for the right-hand controls. */
-@container composer-stack (max-width:450px){
-  .composer-left .composer-mode-chip,.composer-left .composer-permission button[data-piopt-permission-icon],.composer-left button[data-piopt-command-button]{flex:0 0 32px;width:32px;min-width:32px;max-width:32px;justify-content:center;gap:0!important;padding:0!important}
-  .composer-left .composer-mode-chip-label,.composer-left .composer-mode-chip-caret,.composer-left .composer-permission button[data-piopt-permission-icon]>span,.composer-left .composer-permission button[data-piopt-permission-icon]>svg{display:none}
-}
+/* The renderer measures the expanded toolbar, including all host controls. */
+.composer-toolbar[data-piopt-compact="true"] .composer-mode-chip,.composer-toolbar[data-piopt-compact="true"] .composer-permission button[data-piopt-permission-icon],.composer-toolbar[data-piopt-compact="true"] button[data-piopt-command-button]{flex:0 0 32px;width:32px;min-width:32px;max-width:32px;justify-content:center;gap:0!important;padding:0!important}
+.composer-toolbar[data-piopt-compact="true"] .composer-mode-chip-label,.composer-toolbar[data-piopt-compact="true"] .composer-mode-chip-caret,.composer-toolbar[data-piopt-compact="true"] .composer-permission button[data-piopt-permission-icon]>span,.composer-toolbar[data-piopt-compact="true"] .composer-permission button[data-piopt-permission-icon]>svg{display:none}
 details{interpolate-size:allow-keywords}
 /* System palette cross-fade: cheap single-property transition on primary solid surfaces. */
 :is(.app-shell,.main-pane,.chat-surface,.sidebar-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard)}
