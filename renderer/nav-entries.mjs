@@ -218,12 +218,12 @@ function placeActions(toggle) {
   if (!toggle || !newTask || !search) return;
   const inSidebar = !!toggle.closest(SIDEBAR_HEADER_SELECTOR);
   if (inSidebar) {
-    // 侧边栏展开：收起按钮摆到头部最左边（品牌左边），原位置由注入按钮顶上。
-    const header = toggle.closest(SIDEBAR_HEADER_SELECTOR);
-    if (collapse && header.firstElementChild !== collapse) header.prepend(collapse);
-    // 新建任务、搜索仍排在「收起侧边栏」原来的位置。
+    // 侧边栏展开：顺序就是 收起、新建任务、搜索，三个都在头部右侧那一组里。
+    // 收起按钮排在新建任务左边（宿主原来那枚藏起来了，但节点还在，锚点不动）。
     if (toggle.previousElementSibling !== search) toggle.before(search);
     if (search.previousElementSibling !== newTask) search.before(newTask);
+    if (collapse && newTask.previousElementSibling !== collapse) newTask.before(collapse);
+    return;
     return;
   }
   // 侧边栏收起：那枚 collapse 收起来，两个入口跟着「切换侧边栏」往右排。
