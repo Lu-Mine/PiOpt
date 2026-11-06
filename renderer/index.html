@@ -268,6 +268,18 @@
                 </div>
 
                 <div class="backdrop-panel" id="glass-panel-engine" role="tabpanel" aria-labelledby="glass-tab-engine" hidden>
+                  <!-- 视频壁纸的常驻开销只有这一处能降：停播放就是停解码。 -->
+                  <label class="settings-row switch-row" for="glass-performance">
+                    <span class="settings-row-copy">
+                      <span class="settings-row-title">性能模式</span>
+                      <span class="settings-row-detail">视频壁纸停住画面，不再持续解码与合成</span>
+                    </span>
+                    <span class="settings-row-control">
+                      <input id="glass-performance" type="checkbox" />
+                      <span class="switch" aria-hidden="true"><span></span></span>
+                    </span>
+                  </label>
+
                   <div class="wallpaper-recent" id="glass-engine-list">
                     <div class="wallpaper-recent-head">
                       <span id="glass-engine-head">本机壁纸</span>

@@ -160,6 +160,7 @@ function normalizeGlass(input) {
     fit: FITS.includes(source.fit) ? source.fit : "fill",
     recent: Array.isArray(source.recent) ? source.recent : state.glass.recent,
     engine: normalizeEngine(source.engine),
+    performance: source.performance === true,
   };
 }
 
@@ -384,6 +385,7 @@ function setMotionConfig(patch, debounceMs = 80) {
 function renderGlass() {
   const config = state.glass;
   elements.glassToggle.checked = config.enabled;
+  elements.glassPerformance.checked = config.performance;
 
   // 模糊强度属于磨砂玻璃开关。背景图那一段不再收起：没有图时它仍然要能点
   // 「不使用」和最近使用。
@@ -985,6 +987,10 @@ function bindEvents() {
   });
 
   elements.glassToggle.addEventListener("change", () => setGlassConfig({ enabled: elements.glassToggle.checked }, 0));
+  // 性能模式是用户为降开销才按的开关，立刻写，不等防抖。
+  elements.glassPerformance.addEventListener("change", () =>
+    setGlassConfig({ performance: elements.glassPerformance.checked }, 0)
+  );
   elements.glassIntensity.addEventListener("input", () => {
     paintRange(elements.glassIntensity);
     setGlassConfig({ intensity: Number(elements.glassIntensity.value) / 100 });
@@ -1053,6 +1059,7 @@ async function initialize() {
     speedValue: byId("speed-value"),
     followReduced: byId("follow-reduced"),
     glassToggle: byId("glass-toggle"),
+    glassPerformance: byId("glass-performance"),
     glassEnabledSub: byId("glass-enabled-sub"),
     glassFitButtons: Array.from(document.querySelectorAll("[data-glass-fit]")),
     glassIntensity: byId("glass-intensity"),

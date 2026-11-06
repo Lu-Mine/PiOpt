@@ -555,6 +555,8 @@ function getEngineWallpaperState() {
       file: source.kind === "video" ? source.file : "",
     },
     fit: glassConfig.fit,
+    // 视频层是否停住画面：渲染模块不会自己读设置，只能从这里拿。
+    performance: glassConfig.performance,
   };
 }
 // ------------------------------------------------------------------ lifecycle

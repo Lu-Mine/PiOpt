@@ -75,6 +75,10 @@ const DEFAULT_CONFIG = Object.freeze({
   // 最近用过的背景图，最新在前。路径是绝对路径：宿主按文件系统解析。
   recent: Object.freeze([]),
   engine: EMPTY_ENGINE,
+  // 视频壁纸停住画面，而不是持续播放。插件在宿主窗口里挂的是原生 <video>，
+  // 一个 4K 源会一直占着解码引擎和合成器（实测：GPU 视频解码 35%，宿主
+  // 渲染进程半个核）。这个开关只停播放，壁纸本身和填充方式都不变。
+  performance: false,
 });
 
 const RECENT_MAX = 8;
@@ -229,6 +233,8 @@ function normalizeGlassConfig(input = {}) {
     fit,
     recent: normalizeRecent(source.recent),
     engine: normalizeEngine(source.engine),
+    // 视频壁纸停住画面：只在用户主动要求时才降级。
+    performance: source.performance === true,
   };
 }
 

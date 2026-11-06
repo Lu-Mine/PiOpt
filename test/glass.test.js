@@ -83,6 +83,7 @@ test("glass is off by default, so nothing is injected until it is asked for", ()
     fit: "fill",
     recent: [],
     engine: { id: "", title: "", kind: "", file: "" },
+    performance: false,
   });
   assert.equal(glass.buildGlassCss(config), "");
   assert.equal(glass.buildGlassCss(undefined), "");
@@ -294,6 +295,7 @@ test("apply writes the setting and rebuilds the one theme", async () => {
       fit: "fill",
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
+      performance: false,
     });
     // One theme, rebuilt once from both halves: the material never injects a
     // stylesheet of its own, it changes the one the motion rules live in.
@@ -310,6 +312,7 @@ test("apply writes the setting and rebuilds the one theme", async () => {
       fit: "fill",
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
+      performance: false,
     });
   } finally {
     delete global.pi;
@@ -349,6 +352,7 @@ test("reads the stored setting instead of trusting the panel", async () => {
       fit: "fill",
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
+      performance: false,
     });
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
   } finally {
@@ -373,6 +377,7 @@ test("reset returns to the shipped default but keeps the user's photo", async ()
       fit: "fill",
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
+      performance: false,
     });
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, false);
     // The photo is the user's own file, not part of the recipe.
@@ -873,10 +878,12 @@ test("picking an engine clip stores the clip and drops the photo", async () => {
     // The clip owns the backdrop now: a leftover photo would paint underneath it.
     assert.equal(stored.wallpaper, "");
 
-    // What the renderer module is handed: the clip and the fit mode, nothing else.
+    // What the renderer module is handed: the clip, the fit mode, and whether the
+    // clip should stay frozen instead of playing.
     assert.deepEqual(feature.getEngineWallpaperState(), {
       engine: { id: "555", title: "Sky", kind: "video", file: path.join(dir, "clip.mp4") },
       fit: "fill",
+      performance: false,
     });
   } finally {
     restore();

@@ -43,6 +43,8 @@ let listenersBound = false;
 // What the layer is showing right now, so a poll that changes nothing costs nothing.
 let current = { kind: "", file: "", title: "" };
 let currentFit = "cover";
+// 性能模式：暂停即停止解码，这是唯一能真正省下 4K 视频开销的做法。
+let performanceMode = false;
 
 // ---------------------------------------------------------------- file urls
 
@@ -116,8 +118,8 @@ function onVideoError() {
 
 function onVideoLoaded() {
   if (!video) return;
-  if (reducedMotion() || document.hidden) {
-    // 减弱动态时也要有一帧画面，否则视频层就是一块黑。
+  if (performanceMode || reducedMotion() || document.hidden) {
+    // 不播放时也要有一帧画面，否则视频层就是一块黑。
     try {
       video.currentTime = 0.01;
     } catch {
@@ -131,7 +133,7 @@ function onVideoLoaded() {
 
 function play() {
   if (!video) return;
-  if (reducedMotion() || document.hidden) {
+  if (performanceMode || reducedMotion() || document.hidden) {
     video.pause();
     return;
   }
@@ -167,6 +169,8 @@ function teardown() {
 // ------------------------------------------------------------------- state
 
 function applyState(state) {
+  // 性能模式只停播放，不改变这一层挂什么。
+  performanceMode = state ? state.performance === true : false;
   const engine = state && state.engine && state.engine.kind === "video" && state.engine.file ? state.engine : null;
   if (!engine) {
     teardown();
@@ -231,6 +235,7 @@ export async function mountEngineWallpaper(pi) {
   if (typeof document === "undefined" || !document.documentElement) return;
   host = pi;
   currentFit = "cover";
+  performanceMode = false;
 
   if (!listenersBound) {
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -268,6 +273,7 @@ export function unmountEngineWallpaper() {
   }
   teardown();
   host = null;
+  performanceMode = false;
 }
 
 // Exposed for the test that keeps the layer's contract honest.
