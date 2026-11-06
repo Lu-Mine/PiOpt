@@ -48,7 +48,7 @@ function scan() {
     button.type = 'button';
     button.setAttribute(ATTR, '');
     button.className = 'icon-btn mode-chip';
-    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-haspopup', 'listbox');
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-label', '指令');
     button.innerHTML = '<span class="composer-mode-chip-face"><svg class="piopt-command-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M16 4 8 20"/></svg><span class="composer-mode-chip-label text-sm">指令</span></span>';

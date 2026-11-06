@@ -1,67 +1,92 @@
-// A draft-safe command picker backed by the same host catalog as slash completion.
-let menu = null, owner = null, sequence = 0;
+// Draft-safe replica of the host composer autocomplete, using its command catalog and CSS.
+let menu = null, owner = null, sequence = 0, keyHandler = null;
 const KINDS = ['template', 'builtin', 'plugin', 'extension', 'mcp', 'skill'];
-export const COMMAND_MENU_CSS = `
-+.piopt-command-menu{position:fixed;z-index:1000;width:min(380px,calc(100vw - 16px));max-height:min(420px,calc(100vh - 24px));display:flex;flex-direction:column;padding:6px;border:1px solid var(--ds-border-subtle);border-radius:var(--radius-lg);background:var(--ds-bg-elevated-opaque);box-shadow:var(--ds-shadow-dialog);color:var(--ds-text-primary)}
-+.piopt-command-search{width:100%;padding:8px;border:0;border-bottom:1px solid var(--ds-border-subtle);outline:none;color:inherit;background:transparent;font:inherit}
-+.piopt-command-list{overflow:auto;min-height:0}.piopt-command-row{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:7px 9px;border:0;border-radius:var(--radius-md);background:transparent;color:inherit;text-align:left;cursor:pointer;font:inherit}.piopt-command-row:hover,.piopt-command-row:focus-visible{background:var(--ds-bg-hover)}.piopt-command-desc{color:var(--ds-text-secondary);font-size:var(--text-sm)}.piopt-command-empty{padding:12px;color:var(--ds-text-secondary)}
-+`.replace(/^\+/gm, '');
-function dismiss(event) { if (event && (menu?.contains(event.target) || owner?.contains(event.target))) return; closeCommandMenu(); }
-function onKey(event) { if (event.key === 'Escape') { event.preventDefault(); const previous = owner; closeCommandMenu(); previous?.focus(); } }
+const GROUPS = { template: '模板', builtin: '内置指令', plugin: '插件指令', extension: '扩展指令', mcp: 'MCP', skill: '技能' };
+const ICONS = {
+  template: '<path d="M4 4h16v16H4zM8 8h8M8 12h8"/>',
+  builtin: '<path d="m5 7 5 5-5 5M12 19h7"/>',
+  plugin: '<path d="M8 3v4M16 3v4M5 7h14v3a7 7 0 0 1-14 0zM12 17v4"/>',
+  skill: '<path d="m12 3 2.2 5.2L20 10l-4.5 3.7L16 20l-4-3-4 3 .5-6.3L4 10l5.8-1.8z"/>',
+};
+export const COMMAND_MENU_CSS = `.piopt-command-search{flex:none;margin:6px 6px 0;padding:7px 8px;min-width:0;border:0;border-bottom:1px solid var(--ds-border-subtle);outline:none;color:inherit;background:transparent;font:inherit}.piopt-command-search:focus-visible{outline:2px solid var(--ds-focus);outline-offset:-2px}`;
+function dismiss(event) { if (!menu?.contains(event.target) && !owner?.contains(event.target)) closeCommandMenu(); }
+function position() {
+  if (!menu || !owner) return;
+  const anchor = owner.closest('.composer-stack')?.querySelector('.composer-input-wrap') || document.querySelector('.composer-input-wrap') || owner;
+  const rect = anchor.getBoundingClientRect();
+  menu.style.width = `${Math.min(rect.width, window.innerWidth - 24)}px`;
+  menu.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 12))}px`;
+  menu.style.top = 'auto';
+  menu.style.bottom = `${Math.max(8, window.innerHeight - rect.top + 8)}px`;
+}
 export function closeCommandMenu() {
   sequence++;
   document.removeEventListener('pointerdown', dismiss, true);
-  document.removeEventListener('keydown', onKey, true);
+  if (keyHandler) document.removeEventListener('keydown', keyHandler, true);
+  if (typeof window !== 'undefined') { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); }
+  keyHandler = null;
   menu?.remove(); menu = null;
-  owner?.setAttribute('aria-expanded', 'false');
-  owner = null;
+  owner?.setAttribute('aria-expanded', 'false'); owner = null;
 }
 export async function openCommandMenu(button, host) {
   if (menu) { closeCommandMenu(); return; }
-  owner = button;
-  button.setAttribute('aria-expanded', 'true');
+  owner = button; button.setAttribute('aria-expanded', 'true');
   const current = ++sequence;
   const editor = document.querySelector('.composer-input');
   const selection = window.getSelection();
   const range = selection?.rangeCount && editor?.contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
-  menu = document.createElement('div');
-  menu.className = 'piopt-command-menu';
-  menu.setAttribute('role', 'dialog');
-  menu.setAttribute('aria-label', '指令');
-  const search = document.createElement('input');
-  search.className = 'piopt-command-search'; search.placeholder = '搜索指令'; search.setAttribute('aria-label', '搜索指令');
-  const list = document.createElement('div'); list.className = 'piopt-command-list';
-  menu.append(search, list); document.body.append(menu);
-  const rect = button.getBoundingClientRect();
-  menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8))}px`;
-  menu.style.bottom = `${Math.max(8, window.innerHeight - rect.top + 8)}px`;
+  menu = document.createElement('div'); menu.className = 'composer-autocomplete is-open';
+  menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', '指令');
+  const search = document.createElement('input'); search.className = 'piopt-command-search'; search.placeholder = '搜索指令'; search.setAttribute('aria-label', '搜索指令');
+  const list = document.createElement('div'); list.className = 'composer-ac-list';
+  const footer = document.createElement('div'); footer.className = 'composer-ac-footer'; footer.textContent = '↑↓ 选择 · Enter 确认 · Esc 关闭';
+  menu.append(search, list, footer); document.body.append(menu); position();
   document.addEventListener('pointerdown', dismiss, true);
-  document.addEventListener('keydown', onKey, true);
-  search.focus();
-  list.textContent = '正在加载指令…';
+  window.addEventListener('resize', position); window.addEventListener('scroll', position, true);
+  search.focus(); list.textContent = '正在加载指令…';
+  let rows = [], selected = 0;
+  const highlight = index => {
+    if (!rows.length) return;
+    selected = (index + rows.length) % rows.length;
+    rows.forEach((row, i) => { row.classList.toggle('kb-active', i === selected); row.setAttribute('aria-selected', String(i === selected)); });
+    rows[selected].scrollIntoView({ block: 'nearest' });
+  };
+  keyHandler = event => {
+    if (event.key === 'Escape') { event.preventDefault(); const previous = owner; closeCommandMenu(); previous?.focus(); }
+    else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); highlight(selected + (event.key === 'ArrowDown' ? 1 : -1)); }
+    else if (event.key === 'Enter' && rows.length) { event.preventDefault(); rows[selected].click(); }
+  };
+  document.addEventListener('keydown', keyHandler, true);
   try {
     const response = await window.piDesktop.invoke('pi-desktop/composer/commands');
     if (current !== sequence || !menu) return;
     if (!response?.ok) throw new Error(response?.error?.message || '读取指令失败');
-    const commands = Array.isArray(response.data?.commands) ? response.data.commands : [];
-    commands.sort((a, b) => (KINDS.indexOf(a.kind) < 0 ? 99 : KINDS.indexOf(a.kind)) - (KINDS.indexOf(b.kind) < 0 ? 99 : KINDS.indexOf(b.kind)) || String(a.name).localeCompare(String(b.name)));
+    const commands = Array.isArray(response.data?.commands) ? response.data.commands.slice() : [];
+    const rank = kind => { const index = KINDS.indexOf(kind); return index < 0 ? 99 : index; };
+    commands.sort((a, b) => rank(a.kind) - rank(b.kind) || String(a.name).localeCompare(String(b.name)));
     const render = () => {
-      list.replaceChildren();
+      list.replaceChildren(); rows = []; selected = 0;
       const query = search.value.trim().toLowerCase();
       const filtered = commands.filter(item => typeof item.name === 'string' && [item.name, item.title, item.description].some(value => String(value || '').toLowerCase().includes(query)));
-      if (!filtered.length) { const empty = document.createElement('div'); empty.className = 'piopt-command-empty'; empty.textContent = '没有匹配的指令'; list.append(empty); return; }
+      if (!filtered.length) { const empty = document.createElement('div'); empty.className = 'composer-model-empty'; empty.textContent = '没有匹配的指令'; list.append(empty); return; }
+      let group = null;
       for (const item of filtered) {
-        const row = document.createElement('button'); row.type = 'button'; row.className = 'piopt-command-row';
-        const name = document.createElement('span'); name.textContent = `/${item.name.replace(/^\/+/, '')}`; row.append(name);
-        if (item.description) { const desc = document.createElement('span'); desc.className = 'piopt-command-desc'; desc.textContent = item.description; row.append(desc); }
+        if (item.kind !== group) { group = item.kind; const heading = document.createElement('div'); heading.className = 'composer-model-group-label'; heading.textContent = GROUPS[group] || '其他'; list.append(heading); }
+        const row = document.createElement('button'); row.type = 'button'; row.className = 'composer-plus-item composer-ac-item'; row.setAttribute('role', 'option');
+        const icon = document.createElement('span'); icon.className = 'composer-ac-icon'; icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[item.kind] || ICONS.plugin}</svg>`; row.append(icon);
+        const name = document.createElement('span'); name.className = 'composer-ac-name'; name.textContent = `/${item.name.replace(/^\/+/, '')}`; row.append(name);
+        for (const hint of [(item.kind === 'skill' || item.kind === 'mcp') && item.title !== item.name ? item.title : '', item.argumentHint]) if (hint) { const element = document.createElement('span'); element.className = 'composer-ac-hint'; element.textContent = hint; row.append(element); }
+        if (item.description) { const desc = document.createElement('span'); desc.className = 'composer-ac-desc'; desc.textContent = item.description; row.append(desc); }
+        row.addEventListener('mousemove', () => highlight(rows.indexOf(row)));
         row.addEventListener('click', () => {
           if (editor?.isConnected) { editor.focus(); if (range && editor.contains(range.commonAncestorContainer)) { const currentSelection = window.getSelection(); currentSelection.removeAllRanges(); currentSelection.addRange(range); } }
           const text = `/${item.name.replace(/^\/+/, '')} `;
           try { Promise.resolve(host.dispatch('composer.insertText', { text })).catch(error => console.warn('[PiOpt] 无法插入指令', error)); } catch (error) { console.warn('[PiOpt] 无法插入指令', error); }
           closeCommandMenu();
         });
-        list.append(row);
+        rows.push(row); list.append(row);
       }
+      highlight(0);
     };
     search.addEventListener('input', render); render();
   } catch (error) { if (current === sequence && menu) list.textContent = `无法读取指令：${error.message || error}`; }
