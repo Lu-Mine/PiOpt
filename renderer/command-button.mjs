@@ -1,4 +1,4 @@
-import { COMMAND_MENU_CSS, openCommandMenu, closeCommandMenu } from './command-menu.mjs';
+import { COMMAND_MENU_CSS, openCommandMenu, closeCommandMenu, prefetchCommands, clearCommandCache } from './command-menu.mjs';
 // A shortcut to the host's own slash-command completion, not a separate list.
 const ATTR = "data-piopt-command-button";
 export const COMMAND_BUTTON_CSS = `[${ATTR}]{cursor:pointer} [${ATTR}] .piopt-command-icon{width:15px;height:15px;flex:none}` + COMMAND_MENU_CSS;
@@ -73,6 +73,7 @@ async function refresh() {
     const state = await host.dispatch('plugin.call', { method: 'modelPickerState', args: {} });
     if (!active || current !== generation) return;
     enabled = state?.config?.commandButton === true;
+    if (enabled && typeof window !== 'undefined' && window.piDesktop?.invoke) void prefetchCommands().catch(() => {});
     scan();
   } catch (error) { console.warn('[PiOpt] 无法读取指令按钮设置', error); }
 }
@@ -92,6 +93,7 @@ export async function mountCommandButton(pi) {
 export function unmountCommandButton() {
   active = false;
   generation++;
+  clearCommandCache();
   observer?.disconnect();
   closeCommandMenu();
   hideTooltip();

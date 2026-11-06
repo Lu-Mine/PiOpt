@@ -1,6 +1,22 @@
 // Draft-safe replica of the host composer autocomplete, using its command catalog and CSS.
 let menu = null, owner = null, sequence = 0, keyHandler = null;
 const KINDS = ['template', 'builtin', 'plugin', 'extension', 'mcp', 'skill'];
+const CACHE_MS = 10000;
+let cachedCommands = null, cachedAt = 0, pending = null, cacheGeneration = 0;
+export function clearCommandCache() { cacheGeneration++; cachedCommands = null; cachedAt = 0; pending = null; }
+export function prefetchCommands() {
+  if (cachedCommands && Date.now() - cachedAt < CACHE_MS) return Promise.resolve(cachedCommands);
+  if (pending) return pending;
+  const generation = cacheGeneration;
+  const request = Promise.resolve().then(() => window.piDesktop.invoke('pi-desktop/composer/commands')).then(response => {
+    if (!response?.ok) throw new Error(response?.error?.message || '读取指令失败');
+    const commands = Array.isArray(response.data?.commands) ? response.data.commands.slice() : [];
+    if (generation === cacheGeneration) { cachedCommands = commands; cachedAt = Date.now(); }
+    return commands;
+  }).finally(() => { if (pending === request) pending = null; });
+  pending = request;
+  return request;
+}
 const GROUPS = { template: '模板', builtin: '内置指令', plugin: '插件指令', extension: '扩展指令', mcp: 'MCP', skill: '技能' };
 const ICONS = {
   template: '<path d="M4 4h16v16H4zM8 8h8M8 12h8"/>',
@@ -58,10 +74,8 @@ export async function openCommandMenu(button, host) {
   };
   document.addEventListener('keydown', keyHandler, true);
   try {
-    const response = await window.piDesktop.invoke('pi-desktop/composer/commands');
+    const commands = cachedCommands ? cachedCommands.slice() : (await prefetchCommands()).slice();
     if (current !== sequence || !menu) return;
-    if (!response?.ok) throw new Error(response?.error?.message || '读取指令失败');
-    const commands = Array.isArray(response.data?.commands) ? response.data.commands.slice() : [];
     const rank = kind => { const index = KINDS.indexOf(kind); return index < 0 ? 99 : index; };
     commands.sort((a, b) => rank(a.kind) - rank(b.kind) || String(a.name).localeCompare(String(b.name)));
     const render = () => {
@@ -89,5 +103,6 @@ export async function openCommandMenu(button, host) {
       highlight(0);
     };
     search.addEventListener('input', render); render();
+    if (cachedCommands && Date.now() - cachedAt >= CACHE_MS) void prefetchCommands().catch(() => {});
   } catch (error) { if (current === sequence && menu) list.textContent = `无法读取指令：${error.message || error}`; }
 }
