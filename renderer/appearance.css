@@ -420,6 +420,25 @@ label.settings-row { cursor: pointer; }
   line-height: var(--leading-body);
 }
 
+/* Wallpaper Engine 卡片：第二行说清这一张是「会动的」还是「只是一张静帧」。 */
+.wallpaper-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.wallpaper-card.is-unsupported .wallpaper-apply { cursor: default; }
+.wallpaper-card.is-unsupported .wallpaper-thumb { opacity: 0.4; }
+.wallpaper-card.is-unsupported .wallpaper-name { color: var(--ds-text-muted); }
+.wallpaper-engine-empty {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-body);
+}
+
 /*
  * 删除图标浮在照片上，配色不跟随界面表面色：深色主题半透明黑底白叉，浅色
  * 主题在文件末尾换成白底深叉。两种主题下它都只出现在照片上，所以底不与

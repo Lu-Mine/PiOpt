@@ -224,6 +224,28 @@
               <input type="file" id="glass-wallpaper-file" accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/*" hidden />
             </div>
 
+            <!-- Wallpaper Engine：video 真的播放，其余类型退回项目自带的静帧预览。 -->
+            <div class="settings-row" id="glass-engine">
+              <div class="settings-row-copy">
+                <div class="settings-row-title">Wallpaper Engine 壁纸</div>
+                <div class="settings-row-detail glass-wallpaper-name" id="glass-engine-name">未选择壁纸</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" class="ui-btn ui-btn-sm" id="glass-engine-pick">浏览壁纸…</button>
+              </div>
+            </div>
+
+            <div class="settings-sub" id="glass-engine-sub" data-collapsed="true" inert>
+              <div class="settings-sub-body">
+                <div class="wallpaper-recent" id="glass-engine-list">
+                  <div class="wallpaper-recent-head">
+                    <span id="glass-engine-head">本机壁纸</span>
+                  </div>
+                  <div class="wallpaper-grid" id="glass-engine-grid"></div>
+                </div>
+              </div>
+            </div>
+
             <!-- 二级内容：背景图这一节常开，否则没有图时连「不使用」和最近使用都进不去。 -->
             <div class="settings-sub" id="glass-wallpaper-sub" data-collapsed="false">
               <div class="settings-sub-body">

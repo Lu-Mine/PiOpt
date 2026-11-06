@@ -22,6 +22,8 @@ const DEFAULT_CONFIG = {
 const MOTION_LIMITS = { intensity: [0.5, 1.5], speed: [0.4, 2] };
 // ---------------------------------------------------------------- glass model
 
+const ENGINE_KINDS = ["video", "still"];
+const DEFAULT_ENGINE = { id: "", title: "", kind: "", file: "" };
 const DEFAULT_GLASS = {
   enabled: false,
   preset: "standard",
@@ -29,6 +31,7 @@ const DEFAULT_GLASS = {
   wallpaper: "",
   fit: "fill",
   recent: [],
+  engine: DEFAULT_ENGINE,
 };
 const GLASS_LIMITS = { intensity: [0.6, 1.6] };
 const FITS = ["fill", "contain", "cover", "none"];
@@ -50,6 +53,9 @@ const state = {
   config: { ...DEFAULT_CONFIG },
   glass: { ...DEFAULT_GLASS },
   recent: [],
+  // Wallpaper Engine 扫描结果与已画好的缩略图（id → data URL）；null 表示还没扫过。
+  engineList: null,
+  engineThumbs: new Map(),
   appearance: { base: "dark", theme: "dark", pluginTheme: null },
   preference: "system",
   appliedBase: "dark",
@@ -124,6 +130,17 @@ function normalizeMotion(input) {
   };
 }
 
+function normalizeEngine(input) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const id = /^\d{1,20}$/.test(String(source.id ?? "").trim()) ? String(source.id).trim() : "";
+  const kind = ENGINE_KINDS.includes(source.kind) ? source.kind : "";
+  if (!id || !kind) return { ...DEFAULT_ENGINE };
+  const title = typeof source.title === "string" ? source.title.trim() : "";
+  const file = kind === "video" && typeof source.file === "string" ? source.file : "";
+  if (kind === "video" && !file) return { ...DEFAULT_ENGINE };
+  return { id, title, kind, file };
+}
+
 function normalizeGlass(input) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   return {
@@ -136,6 +153,7 @@ function normalizeGlass(input) {
     wallpaper: typeof source.wallpaper === "string" ? source.wallpaper : "",
     fit: FITS.includes(source.fit) ? source.fit : "fill",
     recent: Array.isArray(source.recent) ? source.recent : state.glass.recent,
+    engine: normalizeEngine(source.engine),
   };
 }
 
@@ -175,9 +193,20 @@ async function invoke(channel, payload = {}) {
   }
   if (channel === `${GLASS}.wallpaperBytes`) return { ok: false, reason: "preview" };
   if (channel === `${GLASS}.saveThumb`) return { ok: false, ...glassPreviewState() };
+  if (channel === `${GLASS}.engineScan`) {
+    return { ok: false, reason: "preview", message: "预览模式读不到本机壁纸库", items: [] };
+  }
+  if (channel === `${GLASS}.enginePreview`) return { ok: false, reason: "preview" };
+  if (channel === `${GLASS}.engineApply`) {
+    return { ok: false, reason: "preview", message: "预览模式无法保存壁纸", ...glassPreviewState(), applied: false };
+  }
+  if (channel === `${GLASS}.engineClear`) {
+    state.glass = { ...state.glass, wallpaper: "", engine: { ...DEFAULT_ENGINE } };
+    return { ok: true, ...glassPreviewState({ wallpaper: "", engine: { ...DEFAULT_ENGINE } }), applied: false };
+  }
   if (channel === `${GLASS}.clearWallpaper`) {
-    state.glass = { ...state.glass, wallpaper: "" };
-    return { ok: true, ...glassPreviewState({ wallpaper: "" }), applied: false };
+    state.glass = { ...state.glass, wallpaper: "", engine: { ...DEFAULT_ENGINE } };
+    return { ok: true, ...glassPreviewState({ wallpaper: "", engine: { ...DEFAULT_ENGINE } }), applied: false };
   }
   if (channel === `${GLASS}.apply` || channel === `${GLASS}.reset`) {
     const config = channel === `${GLASS}.reset`
@@ -354,9 +383,10 @@ function renderGlass() {
   // 「不使用」和最近使用。
   setSub(elements.glassEnabledSub, config.enabled);
   elements.glassIntensity.disabled = !config.enabled;
-  // 没有图时填充方式没有可作用的对象：按钮禁用、行文字跟着淡下去。
-  elements.glassFitRow.dataset.empty = String(!config.wallpaper);
-  for (const button of elements.glassFitButtons) button.disabled = !config.wallpaper;
+  // 没有可作用的对象时填充方式没有意义：视频壁纸和图片都算「有对象」。
+  const hasBackdrop = Boolean(config.wallpaper) || Boolean(config.engine.id);
+  elements.glassFitRow.dataset.empty = String(!hasBackdrop);
+  for (const button of elements.glassFitButtons) button.disabled = !hasBackdrop;
 
   renderPressed("[data-glass-fit]", "glassFit", config.fit);
   elements.glassIntensity.value = String(Math.round(config.intensity * 100));
@@ -369,8 +399,16 @@ function renderGlass() {
   elements.wallpaperName.textContent = name || "未选择图片";
   elements.wallpaperName.dataset.empty = String(!name);
 
+  // Wallpaper Engine 那一行说的是「它自己是谁」，不假装它是一张图片。
+  const engineName = config.engine.id ? config.engine.title || config.engine.id : "";
+  const suffix = config.engine.kind === "video" ? "动态" : config.engine.kind === "still" ? "静帧" : "";
+  elements.engineName.textContent = engineName ? (suffix ? `${engineName} · ${suffix}` : engineName) : "未选择壁纸";
+  elements.engineName.dataset.empty = String(!engineName);
+
   renderRecent();
+  renderEngineGrid();
   void fillMissingThumbs();
+
 }
 
 /*
@@ -380,7 +418,8 @@ function renderGlass() {
 function renderRecent() {
   const list = elements.recentList;
   // 第一张固定是「不使用」：这一段常开，即使没有背景图也能一键回到无图状态。
-  const off = !state.glass.wallpaper;
+  // 视频壁纸也算「正在使用」，否则点了「不使用」而画面不变。
+  const off = !state.glass.wallpaper && !state.glass.engine.id;
   const offCard = `
     <div class="wallpaper-card${off ? " is-current" : ""}">
       <button type="button" class="wallpaper-apply" data-wallpaper-off
@@ -627,14 +666,185 @@ function pickWallpaper() {
 }
 
 async function clearWallpaper() {
-  if (state.busy || !state.glass.wallpaper) return;
+  if (state.busy || (!state.glass.wallpaper && !state.glass.engine.id)) return;
   setBusy(true);
   try {
+    // 通道自己也清 Wallpaper Engine 的来源：两套背景只能有一个在生效。
     const result = await invoke(`${GLASS}.clearWallpaper`);
     adoptGlassState(result);
-    toast("已清除背景图");
+    toast("已清除背景");
   } catch (error) {
-    toast(error.message || "无法清除背景图", true);
+    toast(error.message || "无法清除背景", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// --------------------------------------------------------- wallpaper engine
+
+const ENGINE_KIND_COPY = { video: "动态", still: "静帧" };
+const ENGINE_TYPE_COPY = { video: "视频", scene: "场景", web: "网页", application: "程序", preset: "预设" };
+const ENGINE_REASON_COPY = {
+  "no-preview": "没有预览图",
+  "preview-too-large": "预览图超过 4 MB",
+  "video-unplayable": "视频格式不支持",
+  "unknown-project": "壁纸已不存在",
+};
+// 静帧要经过宿主的 4 MB 主题资源上限；先缩到 2560 再压成 jpeg，宽屏预览也够看。
+const STILL_MAX_EDGE = 2560;
+
+function engineMeta(item) {
+  const kind = ENGINE_KIND_COPY[item.kind] || "";
+  const type = ENGINE_TYPE_COPY[item.type] || item.type || "";
+  return [type, kind].filter(Boolean).join(" · ");
+}
+
+function engineNote(item) {
+  if (!item.supported) return ENGINE_REASON_COPY[item.reason] || "不可用";
+  // 视频真的会动；其余类型只能是一张静帧，卡片上照实说。
+  return item.kind === "video" ? "动态播放" : "静帧预览";
+}
+
+/*
+ * 一张卡片一张壁纸：缩略图来自项目自带的预览（GIF 由面板解码首帧），下面两行
+ * 是标题与「它是什么」。不支持的卡片留在原位、按禁用处理，理由写在第二行——
+ * 把 30 张 scene 壁纸藏起来才是更糟的体验。
+ */
+function renderEngineGrid() {
+  const grid = elements.engineGrid;
+  if (!grid) return;
+  const items = state.engineList;
+  if (!items) {
+    grid.innerHTML = "";
+    return;
+  }
+  if (!items.length) {
+    elements.engineHead.textContent = "本机壁纸";
+    grid.innerHTML = `<p class="wallpaper-engine-empty">${escapeHtml(state.engineListMessage || "没有找到 Wallpaper Engine 壁纸")}</p>`;
+    return;
+  }
+
+  elements.engineHead.textContent = `本机壁纸 · ${items.length}`;
+  const currentId = state.glass.engine.id;
+  grid.innerHTML = items.map((item) => {
+    const thumb = state.engineThumbs.get(item.id) || "";
+    const current = item.id === currentId;
+    const label = escapeAttr(item.title);
+    const meta = escapeAttr(engineMeta(item));
+    const note = escapeHtml(engineNote(item));
+    const disabled = item.supported ? "" : " disabled";
+    return `
+    <div class="wallpaper-card${current ? " is-current" : ""}${item.supported ? "" : " is-unsupported"}" data-engine-card="${escapeAttr(item.id)}">
+      <button type="button" class="wallpaper-apply" data-engine-use="${escapeAttr(item.id)}"
+        aria-pressed="${current}" aria-label="${label}：${note}"${disabled}>
+        <span class="wallpaper-thumb">${thumb ? `<img src="${escapeAttr(thumb)}" alt="" />` : ""}</span>
+        <span class="wallpaper-name" title="${label}">${escapeHtml(item.title)}</span>
+        <span class="wallpaper-meta" title="${meta}">${note}</span>
+      </button>
+    </div>`;
+  }).join("");
+}
+
+function paintEngineThumb(id, thumb) {
+  const slot = elements.engineGrid?.querySelector(
+    `[data-engine-card="${CSS.escape(id)}"] .wallpaper-thumb`
+  );
+  if (!slot) return;
+  slot.innerHTML = `<img src="${escapeAttr(thumb)}" alt="" />`;
+}
+
+let engineThumbFilling = false;
+
+// 缩略图一次画一张：扫描结果可能几十条，全部并行解码会把面板卡住。
+async function fillEngineThumbs() {
+  if (engineThumbFilling) return;
+  engineThumbFilling = true;
+  try {
+    for (const item of [...(state.engineList || [])]) {
+      if (state.engineThumbs.has(item.id) || !item.hasPreview) continue;
+      if (!state.engineList || !state.engineList.some((entry) => entry.id === item.id)) continue;
+      try {
+        const bytes = await invoke(`${GLASS}.enginePreview`, { id: item.id });
+        if (!bytes || bytes.ok === false || !bytes.data) continue;
+        const thumb = await makeThumb(`data:${bytes.mime};base64,${bytes.data}`);
+        if (!thumb) continue;
+        state.engineThumbs.set(item.id, thumb);
+        paintEngineThumb(item.id, thumb);
+      } catch {
+        /* 单张失败不影响其它卡片 */
+      }
+    }
+  } finally {
+    engineThumbFilling = false;
+  }
+}
+
+async function scanEngine() {
+  elements.engineHead.textContent = "正在读取本机壁纸…";
+  try {
+    const result = await invoke(`${GLASS}.engineScan`);
+    state.engineList = Array.isArray(result?.items) ? result.items : [];
+    state.engineListMessage = result && result.ok === false ? result.message || "" : "";
+  } catch (error) {
+    state.engineList = [];
+    state.engineListMessage = error.message || "读不到本机壁纸库";
+  }
+  renderEngineGrid();
+  void fillEngineThumbs();
+}
+
+async function toggleEngineList() {
+  const expanded = elements.engineSub.dataset.collapsed === "true";
+  setSub(elements.engineSub, expanded);
+  // 每次打开都重扫：刚在 Steam 里订好的壁纸不该要等一次重启。
+  if (expanded) await scanEngine();
+}
+
+async function toStillJpeg(dataUrl) {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+  const longest = Math.max(image.naturalWidth, image.naturalHeight);
+  if (!longest) return "";
+  const scale = Math.min(1, STILL_MAX_EDGE / longest);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  const encoded = canvas.toDataURL("image/jpeg", 0.92);
+  const comma = encoded.indexOf(",");
+  return comma >= 0 ? encoded.slice(comma + 1) : "";
+}
+
+async function useEngineItem(id) {
+  if (state.busy) return;
+  const item = (state.engineList || []).find((entry) => entry.id === id);
+  if (!item || !item.supported) return;
+
+  setBusy(true);
+  try {
+    let data = "";
+    if (item.kind === "still") {
+      const bytes = await invoke(`${GLASS}.enginePreview`, { id });
+      if (!bytes || bytes.ok === false || !bytes.data) {
+        toast("这个壁纸没有可用的预览图", true);
+        return;
+      }
+      data = await toStillJpeg(`data:${bytes.mime};base64,${bytes.data}`);
+      if (!data) {
+        toast("预览图解码失败", true);
+        return;
+      }
+    }
+    const result = await invoke(`${GLASS}.engineApply`, { id, data });
+    adoptGlassState(result);
+    if (result && result.ok === false) {
+      toast(result.message || "无法使用这张壁纸", true);
+      return;
+    }
+    toast(item.kind === "video" ? `已启用动态壁纸：${item.title}` : `已使用静帧预览：${item.title}`);
+  } catch (error) {
+    toast(error.message || "无法使用这张壁纸", true);
   } finally {
     setBusy(false);
   }
@@ -724,6 +934,15 @@ function bindEvents() {
     button.addEventListener("click", () => setGlassConfig({ fit: button.dataset.glassFit }, 0));
   });
   elements.pickButton.addEventListener("click", pickWallpaper);
+  elements.enginePick.addEventListener("click", () => void toggleEngineList());
+  elements.engineGrid.addEventListener("click", (event) => {
+    const use = event.target.closest("[data-engine-use]");
+    if (use) void useEngineItem(use.dataset.engineUse);
+  });
+  // 缩略图解码失败时只留标题，不留一个破图标。
+  elements.engineGrid.addEventListener("error", (event) => {
+    if (event.target instanceof HTMLImageElement) event.target.remove();
+  }, true);
   elements.fileInput.addEventListener("change", () => {
     const file = elements.fileInput.files && elements.fileInput.files[0];
     if (file) void uploadWallpaper(file);
@@ -783,6 +1002,11 @@ async function initialize() {
     glassFitHint: byId("glass-fit-hint"),
     fileInput: byId("glass-wallpaper-file"),
     recentList: byId("glass-recent-list"),
+    engineName: byId("glass-engine-name"),
+    engineSub: byId("glass-engine-sub"),
+    enginePick: byId("glass-engine-pick"),
+    engineHead: byId("glass-engine-head"),
+    engineGrid: byId("glass-engine-grid"),
     confirm: byId("confirm"),
     confirmTitle: byId("confirm-title"),
     confirmText: byId("confirm-text"),

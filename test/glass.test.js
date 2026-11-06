@@ -75,7 +75,15 @@ function glassChannel(name) {
 
 test("glass is off by default, so nothing is injected until it is asked for", () => {
   const config = glass.normalizeGlassConfig(undefined);
-  assert.deepEqual(config, { enabled: false, preset: "standard", intensity: 1, wallpaper: "", fit: "fill", recent: [] });
+  assert.deepEqual(config, {
+    enabled: false,
+    preset: "standard",
+    intensity: 1,
+    wallpaper: "",
+    fit: "fill",
+    recent: [],
+    engine: { id: "", title: "", kind: "", file: "" },
+  });
   assert.equal(glass.buildGlassCss(config), "");
   assert.equal(glass.buildGlassCss(undefined), "");
 });
@@ -278,7 +286,15 @@ test("apply writes the setting and rebuilds the one theme", async () => {
     });
     assert.equal(result.ok, true);
     assert.equal(result.applied, true);
-    assert.deepEqual(host.store[glass.SETTINGS_KEY], { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill", recent: [] });
+    assert.deepEqual(host.store[glass.SETTINGS_KEY], {
+      enabled: true,
+      preset: "deep",
+      intensity: 1.4,
+      wallpaper: "",
+      fit: "fill",
+      recent: [],
+      engine: { id: "", title: "", kind: "", file: "" },
+    });
     // One theme, rebuilt once from both halves: the material never injects a
     // stylesheet of its own, it changes the one the motion rules live in.
     const upserts = host.calls.filter((call) => call.api === "upsert");
@@ -286,7 +302,15 @@ test("apply writes the setting and rebuilds the one theme", async () => {
     assert.equal(upserts[0].theme.id, "motion");
     assert.equal(upserts[0].theme.label, "PiOpt Appearance");
     assert.ok(upserts[0].theme.css.includes("--pg-blur"), "the material layer must be in the theme");
-    assert.deepEqual(result.config, { enabled: true, preset: "deep", intensity: 1.4, wallpaper: "", fit: "fill", recent: [] });
+    assert.deepEqual(result.config, {
+      enabled: true,
+      preset: "deep",
+      intensity: 1.4,
+      wallpaper: "",
+      fit: "fill",
+      recent: [],
+      engine: { id: "", title: "", kind: "", file: "" },
+    });
   } finally {
     delete global.pi;
   }
@@ -317,7 +341,15 @@ test("reads the stored setting instead of trusting the panel", async () => {
   const feature = loadFeature();
   try {
     const state = await feature.onPanelInvoke(glassChannel("getState"), {});
-    assert.deepEqual(state.config, { enabled: true, preset: "light", intensity: 0.8, wallpaper: "", fit: "fill", recent: [] });
+    assert.deepEqual(state.config, {
+      enabled: true,
+      preset: "light",
+      intensity: 0.8,
+      wallpaper: "",
+      fit: "fill",
+      recent: [],
+      engine: { id: "", title: "", kind: "", file: "" },
+    });
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
   } finally {
     delete global.pi;
@@ -333,7 +365,15 @@ test("reset returns to the shipped default but keeps the user's photo", async ()
     // The stored config holds the photo before the reset is asked for.
     await feature.onPanelInvoke(glassChannel("getState"), {});
     const result = await feature.onPanelInvoke(glassChannel("reset"), {});
-    assert.deepEqual(result.config, { enabled: false, preset: "standard", intensity: 1, wallpaper: file, fit: "fill", recent: [] });
+    assert.deepEqual(result.config, {
+      enabled: false,
+      preset: "standard",
+      intensity: 1,
+      wallpaper: file,
+      fit: "fill",
+      recent: [],
+      engine: { id: "", title: "", kind: "", file: "" },
+    });
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, false);
     // The photo is the user's own file, not part of the recipe.
     assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, file);
@@ -736,4 +776,188 @@ test("the photo survives the glass switch being off", () => {
 
   // No photo and no switch still means an empty sheet, byte for byte.
   assert.equal(glass.buildGlassCss({ enabled: false, wallpaper: "" }), "");
+});
+
+// ----------------------------------------------------------- wallpaper engine
+
+function tempEngineRoot(project, extra = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-engine-"));
+  const dir = path.join(root, project.id);
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, "project.json"), JSON.stringify(project.body));
+  for (const [name, bytes] of Object.entries(extra)) fs.writeFileSync(path.join(dir, name), bytes);
+  process.on("exit", () => {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* the temp folder is disposable either way */
+    }
+  });
+  return { root, dir };
+}
+
+function stubEngineRoots(root) {
+  const engineModule = require("../features/appearance/engine.js");
+  const original = engineModule.discoverWorkshopRoots;
+  engineModule.discoverWorkshopRoots = () => (root ? [root] : []);
+  return () => {
+    engineModule.discoverWorkshopRoots = original;
+  };
+}
+
+test("an engine clip takes the image layer's place and keeps the glass variables", () => {
+  const config = { engine: { id: "123", title: "Sky", kind: "video", file: "D:\\WE\\sky.mp4" } };
+
+  assert.equal(glass.hasEngineVideo(glass.normalizeGlassConfig(config)), true);
+
+  const css = glass.buildGlassCss(config);
+  // The clip is painted by the renderer module above this pseudo element, so the
+  // image layer paints nothing — but the variables the clip's own scrim reads
+  // still have to be there.
+  assert.match(css, /:root\{--pg-blur:/);
+  assert.match(css, /\.app-shell::before\{[^}]*background-image:none/);
+  assert.doesNotMatch(css, /url\(/);
+  // The content pane thins out for the clip exactly as it does for a photo.
+  assert.ok(glass.glassTokens(config).canvas < 100);
+  // No clip, no photo, no switch: still nothing at all.
+  assert.equal(glass.buildGlassCss({ engine: { id: "1", title: "t", kind: "still" } }), "");
+});
+
+test("an engine entry that lost its clip, or names another kind, is dropped", () => {
+  const dropped = { id: "", title: "", kind: "", file: "" };
+  assert.deepEqual(glass.normalizeEngine({ id: "1", kind: "video", file: "relative.mp4" }), dropped);
+  assert.deepEqual(glass.normalizeEngine({ id: "1", kind: "video", file: "D:\\a\\b.mkv" }), dropped);
+  assert.deepEqual(glass.normalizeEngine({ id: "not-an-id", kind: "video" }), dropped);
+  assert.deepEqual(glass.normalizeEngine({ id: "9", title: "t", kind: "still" }), {
+    id: "9",
+    title: "t",
+    kind: "still",
+    file: "",
+  });
+});
+
+test("the wallpaper engine list explains itself when Steam has no workshop folder", async () => {
+  const restore = stubEngineRoots(null);
+  const host = makePi();
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const result = await feature.onPanelInvoke(glassChannel("engineScan"), {});
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "no-workshop");
+    assert.deepEqual(result.items, []);
+    assert.match(result.message, /创意工坊/);
+  } finally {
+    restore();
+    delete global.pi;
+  }
+});
+
+test("picking an engine clip stores the clip and drops the photo", async () => {
+  const { root, dir } = tempEngineRoot(
+    { id: "555", body: { type: "video", title: "Sky", file: "clip.mp4" } },
+    { "clip.mp4": "x" }
+  );
+  const restore = stubEngineRoots(root);
+  const photo = tempWallpaper("shot.png");
+  const host = makePi({ [glass.SETTINGS_KEY]: { enabled: true, wallpaper: photo } });
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const result = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "555" });
+    assert.equal(result.ok, true);
+
+    const stored = host.store[glass.SETTINGS_KEY];
+    assert.equal(stored.engine.kind, "video");
+    assert.equal(stored.engine.file, path.join(dir, "clip.mp4"));
+    assert.equal(stored.engine.title, "Sky");
+    // The clip owns the backdrop now: a leftover photo would paint underneath it.
+    assert.equal(stored.wallpaper, "");
+
+    // What the renderer module is handed: the clip and the fit mode, nothing else.
+    assert.deepEqual(feature.getEngineWallpaperState(), {
+      engine: { id: "555", title: "Sky", kind: "video", file: path.join(dir, "clip.mp4") },
+      fit: "fill",
+    });
+  } finally {
+    restore();
+    delete global.pi;
+  }
+});
+
+test("a scene wallpaper is worn as the preview frame the panel drew", async () => {
+  const { root } = tempEngineRoot(
+    { id: "600", body: { type: "scene", title: "Night", file: "scene.json" } },
+    { "preview.gif": Buffer.from("gif bytes") }
+  );
+  const restore = stubEngineRoots(root);
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-data-"));
+  const host = makePi();
+  host.pi.plugin.getDataPath = async () => dataDir;
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const frame = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 1, 2, 3, 4]);
+    const result = await feature.onPanelInvoke(glassChannel("engineApply"), {
+      id: "600",
+      data: frame.toString("base64"),
+    });
+    assert.equal(result.ok, true);
+
+    const stored = host.store[glass.SETTINGS_KEY];
+    assert.equal(stored.engine.kind, "still");
+    assert.match(path.basename(stored.wallpaper), /^wallpaper\.engine-600\.jpg$/);
+    assert.deepEqual(fs.readFileSync(stored.wallpaper), frame);
+    // It is an ordinary wallpaper from here on, so the theme carries it.
+    assert.ok(glass.buildGlassCss(stored).includes("url("));
+  } finally {
+    restore();
+    delete global.pi;
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("a preview request reports the project's own reason, not a generic failure", async () => {
+  const { root } = tempEngineRoot({ id: "700", body: { type: "scene", title: "Bare" } });
+  const restore = stubEngineRoots(root);
+  const host = makePi();
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const preview = await feature.onPanelInvoke(glassChannel("enginePreview"), { id: "700" });
+    assert.equal(preview.ok, false);
+    assert.equal(preview.reason, "no-preview");
+
+    const apply = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "700", data: "AA==" });
+    assert.equal(apply.ok, false);
+    assert.equal(apply.reason, "no-preview");
+  } finally {
+    restore();
+    delete global.pi;
+  }
+});
+
+test("“不使用” clears the engine clip as well as the photo", async () => {
+  const host = makePi({
+    [glass.SETTINGS_KEY]: {
+      enabled: true,
+      engine: { id: "777", title: "Sky", kind: "video", file: "D:\\WE\\sky.mp4" },
+    },
+  });
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const result = await feature.onPanelInvoke(glassChannel("clearWallpaper"), {});
+    assert.equal(result.ok, true);
+    assert.equal(result.config.engine.kind, "");
+    assert.equal(result.config.wallpaper, "");
+    assert.equal(host.store[glass.SETTINGS_KEY].engine.id, "");
+  } finally {
+    delete global.pi;
+  }
 });

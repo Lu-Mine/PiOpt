@@ -16,6 +16,11 @@
 import { MODEL_PICKER_CSS, mountModelPicker, unmountModelPicker } from "./model-picker.mjs";
 import { MOTION_RUNTIME_CSS, mountMotionRuntime, unmountMotionRuntime } from "./motion-runtime.mjs";
 import { NAV_ENTRIES_CSS, mountNavEntries, unmountNavEntries } from "./nav-entries.mjs";
+import {
+  WALLPAPER_RUNTIME_CSS,
+  mountEngineWallpaper,
+  unmountEngineWallpaper,
+} from "./wallpaper-runtime.mjs";
 const ENTRY_ATTR = "data-piopt-entry";
 const ENTRY_CLASS = "piopt-entry";
 const HOST_ACTION_CLASS = "footer-action";
@@ -43,6 +48,7 @@ const STYLE = [
   MODEL_PICKER_CSS,
   MOTION_RUNTIME_CSS,
   NAV_ENTRIES_CSS,
+  WALLPAPER_RUNTIME_CSS,
 ].join("\n");
 
 let host = null;
@@ -150,6 +156,8 @@ export async function onLoad(pi) {
   mountMotionRuntime();
   await mountNavEntries(pi);
   await mountModelPicker(pi);
+  // 视频壁纸跟着面板走：没有设置事件，就靠这个模块自己轮询并挂载。
+  await mountEngineWallpaper(pi);
 }
 
 export async function onUnload() {
@@ -164,6 +172,7 @@ export async function onUnload() {
   document.removeEventListener("visibilitychange", scheduleScan);
   unmountModelPicker();
   unmountNavEntries();
+  unmountEngineWallpaper();
   unmountMotionRuntime();
   for (const element of document.querySelectorAll(`[${ENTRY_ATTR}]`)) element.remove();
   if (styleDisposer) {

@@ -38,6 +38,13 @@ const CSS_LIMIT_BYTES = 256 * 1024;
 const WALLPAPER_EXTENSIONS = Object.freeze(["png", "jpg", "jpeg", "webp", "avif", "svg"]);
 const WALLPAPER_MAX_BYTES = 4 * 1024 * 1024;
 
+// Wallpaper Engine 壁纸走另一条通道：video 类型由渲染模块注入一个原生
+// `<video>`，因为宿主的主题资源只吃静态图片（4 MB、png/jpg/webp/avif/svg）。
+// `engine` 记住这张壁纸的来源，`file` 只在 kind 为 video 时有意义。
+const ENGINE_KINDS = Object.freeze(["video", "still"]);
+const ENGINE_VIDEO_EXTENSIONS = Object.freeze(["mp4", "webm"]);
+const EMPTY_ENGINE = Object.freeze({ id: "", title: "", kind: "", file: "" });
+
 const FITS = Object.freeze(["fill", "contain", "cover", "none"]);
 
 // One preset is one glass recipe. `sidebar`, `chrome`, `overlay` and `canvas`
@@ -66,6 +73,7 @@ const DEFAULT_CONFIG = Object.freeze({
   fit: "fill",
   // 最近用过的背景图，最新在前。路径是绝对路径：宿主按文件系统解析。
   recent: Object.freeze([]),
+  engine: EMPTY_ENGINE,
 });
 
 const RECENT_MAX = 8;
@@ -148,6 +156,44 @@ function isSupportedWallpaper(value) {
   return WALLPAPER_EXTENSIONS.includes(extension);
 }
 
+function isSupportedEngineVideo(value) {
+  const path = typeof value === "string" ? value.trim() : "";
+  if (!path) return false;
+  if (!/^([a-zA-Z]:[\\/]|[\\/])/.test(path)) return false;
+  if (path.includes("\0")) return false;
+  if (path.split(/[\\/]/).some((segment) => segment === "." || segment === "..")) return false;
+  const extension = (/\.[a-z0-9]+$/i.exec(path)?.[0].slice(1) ?? "").toLowerCase();
+  return ENGINE_VIDEO_EXTENSIONS.includes(extension);
+}
+
+/**
+ * The Wallpaper Engine source behind the current backdrop.
+ *
+ * `kind: "video"` carries the clip the renderer module plays; `kind: "still"`
+ * means the project could not be drawn here and its preview image is being worn
+ * as an ordinary wallpaper instead. An unusable entry collapses to empty rather
+ * than leaving a dangling reference for `themes.upsert` to choke on.
+ */
+function normalizeEngine(input) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const id = /^\d{1,20}$/.test(String(source.id ?? "").trim()) ? String(source.id).trim() : "";
+  const kind = ENGINE_KINDS.includes(source.kind) ? source.kind : "";
+  if (!id || !kind) return { ...EMPTY_ENGINE };
+
+  const title = typeof source.title === "string" ? source.title.trim().slice(0, 120) : "";
+  if (kind === "video") {
+    const file = isSupportedEngineVideo(source.file) ? String(source.file).trim() : "";
+    return file ? { id, title, kind, file } : { ...EMPTY_ENGINE };
+  }
+  return { id, title, kind, file: "" };
+}
+
+/** Whether the backdrop is a clip the renderer module has to play. */
+function hasEngineVideo(config) {
+  const engine = config && config.engine ? config.engine : EMPTY_ENGINE;
+  return engine.kind === "video" && Boolean(engine.file);
+}
+
 /**
  * The reference as CSS can spell it, or "" when there is none.
  *
@@ -183,6 +229,7 @@ function normalizeGlassConfig(input = {}) {
     wallpaper,
     fit,
     recent: normalizeRecent(source.recent),
+    engine: normalizeEngine(source.engine),
   };
 }
 
@@ -212,7 +259,8 @@ function glassTokens(input = {}) {
     scrim: Math.round(clamp(preset.scrim * (0.85 + 0.15 * scale), 0.04, 0.55) * 100) / 100,
     // 100% keeps the pane exactly as the host paints it, so a user who never
     // picks a wallpaper sees no change at all.
-    canvas: config.wallpaper ? firmUp(preset.canvas) : 100,
+    // 视频壁纸同样算“有东西在背后”，否则主画布会盖住它。
+    canvas: config.wallpaper || hasEngineVideo(config) ? firmUp(preset.canvas) : 100,
   };
 }
 
@@ -353,8 +401,11 @@ const POPUP_FILL = Object.freeze([
 function buildGlassCss(input = {}, options = {}) {
   const config = normalizeGlassConfig(input);
   const surfaces = config.enabled;
-  // Nothing to paint when the user wants solid surfaces and has no photo behind.
-  if (!surfaces && !config.wallpaper) return "";
+  const engineVideo = hasEngineVideo(config);
+  // Nothing to paint when the user wants solid surfaces and no backdrop: an
+  // engine clip counts as a backdrop even though the image layer stays empty,
+  // because the variables (--pg-*) still have to exist for the video layer.
+  if (!surfaces && !config.wallpaper && !engineVideo) return "";
 
   const tokens = glassTokens(config);
   // The switch only decides whether the surfaces are frosted. A photo must survive
@@ -401,7 +452,11 @@ function buildGlassCss(input = {}, options = {}) {
   // The scrim is the first layer so every surface that reveals the photo sees the
   // same dimmed version of it, whatever the compositor decides about the fills.
   const scrim = "linear-gradient(rgba(0,0,0,var(--pg-scrim)),rgba(0,0,0,var(--pg-scrim)))";
-  const backdrop = wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
+  // A Wallpaper Engine clip is painted by the renderer module on a layer above
+  // this pseudo element, and it carries its own scrim — so the image layer here
+  // paints nothing at all. Without that, the light field would only add a second
+  // full-window gradient nobody can see.
+  const backdrop = engineVideo ? "none" : wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
 
   // Every "chrome" surface — the window title bar, the conversation top bar, the
   // work panel's tab header and the window controls — paints this exact string.
@@ -426,7 +481,7 @@ function buildGlassCss(input = {}, options = {}) {
         "}",
       ].join("\n")
     : "";
-  const sizing = wallpaper ? fitDeclarations(config.fit) : "";
+  const sizing = wallpaper && !engineVideo ? fitDeclarations(config.fit) : "";
 
   const css = `${CSS_MARKER}
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
@@ -507,6 +562,9 @@ module.exports = {
   CSS_LIMIT_BYTES,
   CSS_MARKER,
   DEFAULT_CONFIG,
+  ENGINE_KINDS,
+  ENGINE_VIDEO_EXTENSIONS,
+  EMPTY_ENGINE,
   FITS,
   FROSTED_FRAMES,
   FROSTED_POPUPS,
@@ -519,9 +577,12 @@ module.exports = {
   WALLPAPER_EXTENSIONS,
   WALLPAPER_MAX_BYTES,
   buildGlassCss,
-  glassTokens,
   fitDeclarations,
+  glassTokens,
+  hasEngineVideo,
+  isSupportedEngineVideo,
   isSupportedWallpaper,
+  normalizeEngine,
   normalizeGlassConfig,
   normalizeRecent,
   recentEntry,

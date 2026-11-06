@@ -1,6 +1,6 @@
 ---
 name: PiOpt control console
-description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, wants to tune PI-Desktop interface motion and animation presets, or asks for frosted glass, Mica, translucency or a window material on the interface, or wants to drive PI-Desktop from a phone, tablet or another computer on the same Wi-Fi.
+description: The user asks to update, reinstall or download a PI-Desktop plugin, hits a plugin install failure such as PLUGIN_INTEGRITY or a 1626-byte HTML package, wants to tune PI-Desktop interface motion and animation presets, asks for frosted glass, Mica, translucency or a window material on the interface, wants a Wallpaper Engine wallpaper behind the interface, or wants to drive PI-Desktop from a phone, tablet or another computer on the same Wi-Fi.
 ---
 
 # PiOpt
@@ -12,7 +12,8 @@ PiOpt bundles four rows in one plugin, in this order: 外观 / 行为 /
 - **外观 (appearance)** — how the window looks, in one view with two sections:
   **界面动效** (a master switch, a kill-all-animations switch, and strength /
   speed sliders) and **窗口材质** (an optional frosted-glass layer, a wallpaper
-  with a recent list). They are one feature because they write one runtime
+  with a recent list, and a Wallpaper Engine picker). They are one feature
+  because they write one runtime
   theme; the view is one page, the sections are not separate panels. Each
   section has a 重置 button with a confirm step.
 - **行为 (behavior)** — the chat composer's model popup. It always lists every
@@ -262,3 +263,18 @@ about the calls, only about the prefix.
    `appearance.glass.getState`, because a dead reference makes `themes.upsert`
    fail and takes the motion layer with it. Resetting the material keeps the
    photo: it is the user's own file, not part of the recipe.
+7. Wallpaper Engine: only the `video` type (mp4 / webm) actually plays. The
+   renderer module puts one `<video>` under `.app-shell` and points it at the
+   clip's absolute path; the host's own Chromium decodes it (measured: a 4K
+   H.264 clip plays from a `file://` page under the host's
+   `media-src 'self' data: blob: https:` CSP). `scene` / `web` / `application`
+   cannot be reproduced here — a scene is drawn by Wallpaper Engine's own
+   DirectX runtime from `scene.pkg`, and the host's CSP (`frame-src pi-genui:`)
+   forbids loading a local web wallpaper in an iframe. Those fall back to the
+   project's own preview frame as a still wallpaper, and each card says which is
+   which. Never promise that a scene wallpaper will animate here, and do not
+   suggest running Wallpaper Engine as a workaround for a plugin panel.
+   The list is read from `<Steam library>/steamapps/workshop/content/431960`,
+   found through the Steam registry value and `libraryfolders.vdf`, read-only;
+   the panel rescans every time it is opened, so a newly subscribed wallpaper
+   shows up without a restart.

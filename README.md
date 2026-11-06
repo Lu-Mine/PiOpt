@@ -4,7 +4,7 @@ PI-Desktop 的控制台插件：一个插件，四个功能。
 
 | 功能 | 做什么 |
 |---|---|
-| **外观** | 一处调窗口长什么样：界面动效（动画优化，强度与速度两把滑杆挂在它下面）与窗口材质（磨砂玻璃开关带模糊强度、背景图带填充方式与最近使用的缩略图网格）。依赖某个开关的选项是那个开关的二级内容，开关关掉就收起。 |
+| **外观** | 一处调窗口长什么样：界面动效（动画优化，强度与速度两把滑杆挂在它下面）与窗口材质（磨砂玻璃开关带模糊强度、背景图带填充方式与最近使用的缩略图网格、Wallpaper Engine 壁纸按类型决定动态播放还是退回静帧）。依赖某个开关的选项是那个开关的二级内容，开关关掉就收起。 |
 | **行为** | 聊天框里的模型浮窗：总是列出全部模型（限高仍是宿主的），搜索框下面一条「默认 / 供应商 / 厂商 / 名称」切换排列方式（面板里同一组排列方式也是一个四选一）：默认按宿主自己的顺序平铺（一行不重排，不含「最近使用」这一类），其余三种的分组与组内都按 A–Z。另有三个开关：选中行的那枚对勾换成一圈圆角边框、推理强度滑杆的档位译成中文、窗口入口搬进侧边栏（右侧面板开关的图标一并摆正）。 |
 | **插件市场** | 读取已装插件与官方 catalog，经 jsDelivr / raw / GitHub Blobs API 下载更新包，按 `sizeBytes` 与 `sha256` 逐位校验后再交给你在 Plugins 页安装。 |
 | **远程** | 同一 Wi-Fi 下的手机、平板或另一台电脑配对后可以看会话、发指令、停止正在运行的一轮；面板里只有一个开关、一个访问地址和一个六位配对码。 |
@@ -143,6 +143,25 @@ data/local.piopt/downloads/<id>-<version>.piplug
 
 图片被删除或移动后，插件在加载时和每次 `glass.getState` 都会发现，并清掉这个引用——留着它会让 `themes.upsert` 直接失败，连带动效层一起掉。
 
+### Wallpaper Engine 壁纸
+
+Wallpaper Engine 的创意工坊内容放在 `<Steam 库>/steamapps/workshop/content/431960/<id>/`，一张壁纸一个目录、一个 `project.json`。Steam 的安装位置取自注册表与 `libraryfolders.vdf`，所以壁纸在 D: 或第二个库里也能找到。面板按 `project.json` 的 `type` 分两路处理：
+
+| 类型 | 作者库里 40 张的分布 | 这个窗口怎么画 |
+|---|---|---|
+| `video`（mp4 / webm） | 7 | **真的播放**：渲染模块往 `.app-shell` 插一个原生 `<video>`，`file:` URL、`muted`、`loop`，由 Chromium 硬解 |
+| `scene` / `web` / `application` / `preset` | 33 | **退回静帧**：用项目自带的 `preview.jpg` / `preview.gif`，面板把首帧画成 jpeg 写进数据目录，之后它就是一张普通背景图 |
+
+`scene` 那类没法在这里动起来：它由 Wallpaper Engine 自己的 DirectX 场景渲染器绘制 `scene.pkg`，插件复刻不了。`web` 那类被宿主的 CSP 拦住——`frame-src pi-genui:` 只允许宿主自己的生成式 UI 协议，iframe 加载不了本地网页。所以卡片上写的是「动态播放」还是「静帧预览」，没有预览图的项目直接置灰并给出理由。
+
+视频层的两个细节：
+
+1. **位置**：`.app-shell::before` 已经占着 `z-index:-1`，视频容器用同一个 `-1` 并排在它后面（同层按 DOM 顺序绘制），所以视频压在柔光场之上、内容之下。这时生成器把 `::before` 的 `background-image` 置为 `none`，压暗改由容器自己的 `::after` 画 `--pg-scrim`——否则两个暗层会叠在一起。
+2. **来源受宿主 CSP 限制**：主窗口以 `file://` 加载（`window.loadFile`），CSP 的 `media-src 'self' data: blob: https:` 覆盖 `file:`，视频可以零拷贝流式播放。反过来 `plugin-asset:` 不在 `media-src` 里，本地 HTTP 也不行（`connect-src 'self'`），这两条路都不通，也没必要。
+
+状态同步靠轮询：渲染模块拿不到设置变更事件，所以窗口可见时每 4 秒问一次 `plugin.call` 的 `engineWallpaperState`，并在 `.app-shell` 被 React 重建后用 MutationObserver 把自己挂回去。窗口隐藏或 `prefers-reduced-motion` 时暂停播放，只留首帧。
+
+
 ### 平台限制：插件不能让窗口透出桌面
 
 PI-Desktop 在 Windows 11 上以**不透明窗口**运行，插件改不了这一点：
@@ -278,9 +297,10 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 - 市场功能不安装、不卸载、不启用/禁用、不改 `registry.json`、不启动任何进程。
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
-- 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token，除自己数据目录里那张用户选的背景图外不访问文件与网络；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
+- 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token；文件访问只有两处：自己数据目录里那张用户选的背景图 / Wallpaper Engine 静帧，以及下面这条里的创意工坊目录；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
+- Wallpaper Engine 支持全程只读：扫描 `<Steam 库>/steamapps/workshop/content/431960/<id>/project.json` 与项目自带的预览图，改动只发生在自己的设置与数据目录里，从不写创意工坊目录、不复制视频、不启动 Wallpaper Engine。选中 `video` 类型时把视频的绝对路径交给宿主窗口里的渲染模块，由一个 `<video>` 用 `file:` 播放（路径不经过网络，也不经过 `plugin-asset:`）；选中其余类型时把预览首帧写成数据目录里的 `wallpaper.engine-<id>.jpg`，与普通背景图同等对待（同样受宿主 4 MB 资源上限约束）。
 - `agent.prompt.inject` 只用于收录 `skills/piopt.md`（按需加载），不会自动往消息里注入内容。
-- `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；不读文件、不访问网络、不改动其他插件的界面，卸载时移除自己挂的东西。
+- `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；它还在 `.app-shell` 里维护视频壁纸那一层（一个 `<video>` 指向插件进程给出的 `file:` 路径，模块自己不做文件读写）、协调可往返动画的克隆、改写聊天框的模型浮窗。除轮询 `plugin.call` 拿状态外不访问网络，不改动其他插件的界面，卸载时移除自己挂的东西。
 - 远程功能只在开关打开时占用一个局域网端口，服务的是插件自己的远程页面与四类接口（列会话、读一个会话、发指令、中止）；数据全部经 `pi.session.*` 与 `pi.desktop.invoke` 的 `agent/prompt`、`agent/abort` 取用，审批类（`dangerous`）操作一律不开放，设备令牌保存在插件设置里，关闭开关或卸载时端口立即释放。
 
 ### 主题互斥
@@ -304,7 +324,8 @@ PiOpt/
 │  ├─ appearance/           外观（动效 + 窗口材质）
 │  │  ├─ index.js           生命周期、两条命令、面板 RPC、唯一的主题注册
 │  │  ├─ motion.js          动效 token、主题 CSS 生成器（含「完全禁用」）
-│  │  └─ glass.js           玻璃 token、最近使用与玻璃 CSS 生成器
+│  │  ├─ glass.js           玻璃 token、最近使用与玻璃 CSS 生成器
+│  │  └─ engine.js          Wallpaper Engine 壁纸库：Steam 库定位、project.json 与预览图
 │  ├─ behavior/             行为：聊天框模型浮窗始终展开与排列方式
 │  │  ├─ index.js           设置的唯一所有者、面板 RPC、宿主窗口的读取入口
 │  │  └─ model-picker.js    `default` / `provider` / `vendor` / `name` 四种排列方式的形状与默认值
@@ -332,6 +353,7 @@ PiOpt/
 │  ├─ shell.js              视图切换与按需启动（Alt+1…4）
 │  ├─ entry.mjs             宿主窗口入口按钮、可逆动效协调器与模型浮窗改写（renderer.extension）
 │  ├─ motion-runtime.mjs    宿主窗口可往返动画（展开收缩、弹出退回）的双向对称与打断协调器
+│  ├─ wallpaper-runtime.mjs Wallpaper Engine 视频壁纸层：视频元素、file: 地址、压暗层与轮询
 │  └─ model-picker.mjs      模型浮窗：始终展开、三种排列、品牌图标与能力标记
 ├─ skills/piopt.md          Agent 使用规则
 ├─ tools/

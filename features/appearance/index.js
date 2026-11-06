@@ -19,6 +19,8 @@ const { basename, join } = require("node:path");
 
 const motion = require("./motion.js");
 const glass = require("./glass.js");
+// Wallpaper Engine 的壁纸库：只有 video 类型能在这里真的播放，其余退回预览图。
+const engine = require("./engine.js");
 
 // One command per half: they open the same view on a different section, which is
 // what the old two-view panel did with its motion and material tabs.
@@ -381,6 +383,9 @@ async function adoptWallpaper(target, name, thumb = "") {
     ...glassConfig,
     wallpaper: target,
     recent: glass.rememberWallpaper(glassConfig.recent, target, name, thumb),
+    // 选一张普通图片就是「不再是 Wallpaper Engine 壁纸」：两套来源不能同时
+    // 生效，否则视频层会压在图片上，谁也不是用户想要的那张。
+    engine: { ...glass.EMPTY_ENGINE },
   });
   return { ok: true, ...glassStatePayload() };
 }
@@ -426,6 +431,150 @@ async function saveWallpaperBytes(name, base64, thumb = "") {
   return adoptWallpaper(target, name, thumb);
 }
 
+
+// --------------------------------------------------------- wallpaper engine
+
+/*
+ * Wallpaper Engine 的壁纸在这里分三种命运，按各自的能力分：
+ *
+ * - video（mp4 / webm）：真的播放。文件留在创意工坊目录里，渲染模块用
+ *   `file:` URL 播它；设置里只记 id、标题与路径。
+ * - scene / web / application：由 Wallpaper Engine 自己的 DirectX 渲染器绘制，
+ *   插件复刻不了。退回项目自带的预览图（preview.gif 之类），面板把首帧画成
+ *   一张 jpeg 交上来，于是它变成一张普通的静帧背景图。
+ * - 预览图也没有：不支持，并说清楚为什么。
+ */
+const ENGINE_ERRORS = Object.freeze({
+  "no-workshop": "没找到 Wallpaper Engine 的创意工坊目录：Steam 里装过至少一张壁纸才会出现。",
+  "no-preview": "这个壁纸没有自带预览图，画不出画面。",
+  "preview-too-large": "预览图超过 4 MB，宿主不会接受它。",
+  "video-unplayable": "这个视频不是 mp4 / webm，或者文件已经不在了。",
+  "unknown-project": "这个壁纸已经不在了，重新扫一次试试。",
+  unreadable: "预览图读不出来，换一张试试。",
+});
+
+// 不缓存扫描结果：几十个目录的一次 stat 是毫秒级，缓存只会让「刚装好的壁纸
+// 不出现」，而这正是用户打开这个列表时最想看到的东西。
+function engineItems() {
+  return engine.scanAll(engine.discoverWorkshopRoots());
+}
+
+function engineItemById(id) {
+  const target = String(id ?? "").trim();
+  if (!target) return null;
+  return engineItems().find((item) => item.id === target) || null;
+}
+
+function engineRefuse(reason) {
+  const message = ENGINE_ERRORS[reason] || "这个壁纸用不了。";
+  void notify(message);
+  return { ok: false, reason, message, ...glassStatePayload() };
+}
+
+function engineScanPayload() {
+  const roots = engine.discoverWorkshopRoots();
+  const items = engine.scanAll(roots);
+  return {
+    ok: roots.length > 0,
+    reason: roots.length ? "" : "no-workshop",
+    message: roots.length ? "" : ENGINE_ERRORS["no-workshop"],
+    libraryCount: roots.length,
+    items: items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      // type 是 Wallpaper Engine 自己的分类（scene / video / web / …），
+      // kind 是这里打算怎么画它。面板把这两件事都说清楚。
+      type: item.type,
+      kind: item.kind,
+      supported: item.supported,
+      reason: item.reason,
+      hasPreview: Boolean(item.preview),
+    })),
+  };
+}
+
+function enginePreviewPayload(id) {
+  const item = engineItemById(id);
+  if (!item) return { ok: false, reason: "unknown-project" };
+  const preview = engine.previewOf(item);
+  if (!preview) return { ok: false, reason: item.reason || "no-preview" };
+  return { ok: true, mime: preview.mime, data: preview.data };
+}
+
+async function applyEngineWallpaper(payload = {}) {
+  const item = engineItemById(payload.id);
+  if (!item) return engineRefuse("unknown-project");
+  if (!item.supported) return engineRefuse(item.reason || "no-preview");
+
+  if (item.kind === "video") {
+    const next = {
+      ...glassConfig,
+      // 视频层自己铺满窗口，图片层必须让位，否则会在它下面留一张旧图。
+      wallpaper: "",
+      engine: { id: item.id, title: item.title, kind: "video", file: item.file },
+    };
+    return { ok: true, ...(await persistGlass(next)) };
+  }
+
+  // 静帧：面板把预览图的首帧画成 jpeg（GIF 不在宿主的扩展名白名单里），
+  // 这里落盘，之后它就是一张普通的背景图。
+  let buffer;
+  try {
+    buffer = Buffer.from(String(payload.data ?? ""), "base64");
+  } catch {
+    return engineRefuse("unreadable");
+  }
+  if (!buffer.length) return engineRefuse("no-preview");
+  if (buffer.length > glass.WALLPAPER_MAX_BYTES) return engineRefuse("preview-too-large");
+
+  let dataDir;
+  try {
+    dataDir = await pi.plugin.getDataPath();
+  } catch {
+    return engineRefuse("unreadable");
+  }
+  const target = join(dataDir, `${DATA_PREFIX}engine-${item.id}.jpg`);
+  try {
+    writeFileSync(target, buffer);
+  } catch {
+    return engineRefuse("unreadable");
+  }
+
+  const next = {
+    ...glassConfig,
+    wallpaper: target,
+    engine: { id: item.id, title: item.title, kind: "still", file: "" },
+  };
+  return { ok: true, ...(await persistGlass(next)) };
+}
+
+async function clearEngineWallpaper() {
+  // 属于 Wallpaper Engine 的那张静帧是本插件写的，清掉时一起删；普通图片不动。
+  if (glassConfig.engine.kind === "still" && glassConfig.wallpaper) {
+    try {
+      const dataDir = await pi.plugin.getDataPath();
+      if (ownsWallpaper(dataDir, glassConfig.wallpaper)) unlinkSync(glassConfig.wallpaper);
+    } catch {
+      /* 删不掉文件不影响把它从设置里去掉 */
+    }
+  }
+  const next = { ...glassConfig, wallpaper: "", engine: { ...glass.EMPTY_ENGINE } };
+  return { ok: true, ...(await persistGlass(next)) };
+}
+
+/** 渲染模块要的那一份：只有它能用的字段，不含面板用的元数据。 */
+function getEngineWallpaperState() {
+  const source = glassConfig.engine;
+  return {
+    engine: {
+      id: source.id,
+      title: source.title,
+      kind: source.kind,
+      file: source.kind === "video" ? source.file : "",
+    },
+    fit: glassConfig.fit,
+  };
+}
 // ------------------------------------------------------------------ lifecycle
 
 async function openPanel(section) {
@@ -443,10 +592,20 @@ async function onLoad() {
   motionConfig = await readMotionConfig();
   glassConfig = await readGlassConfig();
   // A wallpaper that moved or was deleted must not keep the theme pointing at a
-  // path the host can no longer serve.
+  // path the host can no longer serve; the same goes for a Wallpaper Engine clip
+  // the renderer module would chase forever.
   if (glassConfig.wallpaper && wallpaperProblem(glassConfig.wallpaper)) {
     // No theme refresh here: the applyTheme below carries the cleaned config.
-    await persistGlass({ ...glassConfig, wallpaper: "" }, { apply: false });
+    await persistGlass({ ...glassConfig, wallpaper: "", engine: { ...glass.EMPTY_ENGINE } }, { apply: false });
+  }
+  if (glassConfig.engine.kind === "video") {
+    let playable = false;
+    try {
+      playable = statSync(glassConfig.engine.file).isFile();
+    } catch {
+      playable = false;
+    }
+    if (!playable) await persistGlass({ ...glassConfig, engine: { ...glass.EMPTY_ENGINE } }, { apply: false });
   }
 
   await applyTheme({ force: true });
@@ -588,11 +747,27 @@ async function onGlass(channel, payload) {
       await pi.plugin.setSettings({ [glass.SETTINGS_KEY]: glassConfig });
       return { ok: true, ...glassStatePayload() };
     }
+    case "appearance.glass.engineScan":
+      return engineScanPayload();
+    case "appearance.glass.enginePreview":
+      return enginePreviewPayload(payload?.id);
+    case "appearance.glass.engineApply":
+      return applyEngineWallpaper(payload);
+    case "appearance.glass.engineClear":
+      return clearEngineWallpaper();
     case "appearance.glass.clearWallpaper":
-      return { ok: true, ...(await persistGlass({ ...glassConfig, wallpaper: "" })) };
+      // 「不使用」对两种来源是同一个意思：图片让位，Wallpaper Engine 的壁纸
+      // 也一起撤掉（它自己写的那张静帧文件由 clearEngineWallpaper 负责删）。
+      return clearEngineWallpaper();
     case "appearance.glass.reset": {
-      // Reset keeps the photo: it is the user's own file, not a recipe.
-      const reset = { ...glass.DEFAULT_CONFIG, wallpaper: glassConfig.wallpaper, recent: glassConfig.recent };
+      // Reset keeps the backdrop: it is the user's own file (or their Wallpaper
+      // Engine pick), not a recipe.
+      const reset = {
+        ...glass.DEFAULT_CONFIG,
+        wallpaper: glassConfig.wallpaper,
+        recent: glassConfig.recent,
+        engine: glassConfig.engine,
+      };
       return { ok: true, ...(await persistGlass(reset)) };
     }
     default:
@@ -645,6 +820,9 @@ module.exports = {
   // Re-registers the one theme from both halves. Every appearance write ends up
   // here, so the stylesheet can never carry only one of the two layers.
   refreshTheme: applyTheme,
+  // Read by main.js for the renderer module: it needs the clip, not the panel's
+  // bookkeeping.
+  getEngineWallpaperState,
   _wallpaperProblem: wallpaperProblem,
   _ownsWallpaper: ownsWallpaper,
   _getMotionConfig: () => motionConfig,

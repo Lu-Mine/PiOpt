@@ -206,6 +206,7 @@ test("manifest declares the renderer entry and keeps the whitelists exact", () =
     "openConsole",
     "modelPickerState",
     "setModelPickerGrouping",
+    "engineWallpaperState",
   ]);
 });
 

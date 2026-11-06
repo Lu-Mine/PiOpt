@@ -55,6 +55,9 @@ const RENDERER_METHODS = Object.freeze({
   openConsole,
   modelPickerState: () => FEATURES.behavior.getState(),
   setModelPickerGrouping: (args = {}) => FEATURES.behavior.setGrouping(args.grouping),
+  // The video wallpaper layer in the host window: only the clip and the fit mode,
+  // so the renderer module never sees the panel's file bookkeeping.
+  engineWallpaperState: () => FEATURES.appearance.getEngineWallpaperState(),
 });
 
 async function onRendererCall(method, args = {}) {
