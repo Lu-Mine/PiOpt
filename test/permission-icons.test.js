@@ -39,3 +39,11 @@ test("左侧三个控件与宿主右侧在同一容器宽度折叠", () => {
   assert.ok(rules.includes('.composer-mode-chip-label'));
   assert.ok(!motion.buildThemeCss({ override: false }).includes('@container composer-stack (max-width:450px)'));
 });
+
+test("模式按钮展开时按完整文案自适应，窄屏仍可折叠", () => {
+  const css = motion.buildThemeCss({ override: true });
+  assert.match(css, /\.composer-left \.composer-mode-chip\{flex:0 0 auto;width:max-content;min-width:max-content;max-width:none\}/);
+  assert.match(css, /\.composer-left \.composer-mode-chip-face,\.composer-left \.composer-mode-chip-label\{min-width:max-content;max-width:none;overflow:visible\}/);
+  assert.ok(css.indexOf('@container composer-stack (max-width:450px)') > css.indexOf('width:max-content'));
+  assert.doesNotMatch(motion.buildThemeCss({ override: false }), /width:max-content/);
+});
