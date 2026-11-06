@@ -29,3 +29,13 @@ test("权限图标只在动效优化启用时输出尺寸", async () => {
   assert.ok(enabled.includes('--piopt-permission-icon-size:14px'));
   assert.ok(!disabled.includes('--piopt-permission-icon-size'));
 });
+
+test("左侧三个控件与宿主右侧在同一容器宽度折叠", () => {
+  const css = motion.buildThemeCss({ override: true });
+  const start = css.indexOf('@container composer-stack (max-width:450px)');
+  const rules = css.slice(start, css.indexOf('details{', start));
+  assert.ok(start >= 0);
+  for (const selector of ['.composer-mode-chip', 'button[data-piopt-permission-icon]', 'button[data-piopt-command-button]']) assert.ok(rules.includes(selector));
+  assert.ok(rules.includes('.composer-mode-chip-label'));
+  assert.ok(!motion.buildThemeCss({ override: false }).includes('@container composer-stack (max-width:450px)'));
+});

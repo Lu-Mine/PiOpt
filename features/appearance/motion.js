@@ -382,6 +382,11 @@ details::details-content{transition-duration:80ms}
   const css = `/* Pi Modify Motion Lab: ${base} motion layer. No color tokens are changed. */
 :root{${tokenDeclarations(tokens)}}
 :root{--piopt-permission-icon-size:14px;--piopt-permission-icon-content:""}
+/* Match the host's composer-stack breakpoint for the right-hand controls. */
+@container composer-stack (max-width:450px){
+  .composer-left .composer-mode-chip,.composer-left .composer-permission button[data-piopt-permission-icon],.composer-left button[data-piopt-command-button]{flex:0 0 32px;width:32px;min-width:32px;max-width:32px;justify-content:center;gap:0!important;padding:0!important}
+  .composer-left .composer-mode-chip-label,.composer-left .composer-mode-chip-caret,.composer-left .composer-permission button[data-piopt-permission-icon]>span,.composer-left .composer-permission button[data-piopt-permission-icon]>svg{display:none}
+}
 details{interpolate-size:allow-keywords}
 /* System palette cross-fade: cheap single-property transition on primary solid surfaces. */
 :is(.app-shell,.main-pane,.chat-surface,.sidebar-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard)}
