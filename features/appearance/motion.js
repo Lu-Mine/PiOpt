@@ -381,6 +381,7 @@ details::details-content{transition-duration:80ms}
 
   const css = `/* Pi Modify Motion Lab: ${base} motion layer. No color tokens are changed. */
 :root{${tokenDeclarations(tokens)}}
+:root{--piopt-permission-icon-size:14px;--piopt-permission-icon-content:""}
 details{interpolate-size:allow-keywords}
 /* System palette cross-fade: cheap single-property transition on primary solid surfaces. */
 :is(.app-shell,.main-pane,.chat-surface,.sidebar-surface,.topbar,.settings-content){transition:background-color var(--pm-switch) var(--pm-ease-standard)}
