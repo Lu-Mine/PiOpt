@@ -173,7 +173,11 @@ function syncAction(button, kind, source) {
   if (button.title !== label) button.title = label;
   const svg = source ? source.querySelector("svg") : null;
   const icon = svg ? svg.outerHTML : FALLBACK_ICONS[kind];
-  if (button.innerHTML !== icon) button.innerHTML = icon;
+  // Browsers expand self-closing SVG elements while serializing innerHTML.
+  // Compare a canonical DOM serialization, not the original source string.
+  const probe = document.createElement("span");
+  probe.innerHTML = icon;
+  if (button.innerHTML !== probe.innerHTML) button.innerHTML = icon;
 }
 
 function ensureActions() {
