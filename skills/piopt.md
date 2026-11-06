@@ -281,5 +281,6 @@ about the calls, only about the prefix.
    found through the Steam registry value and `libraryfolders.vdf`, read-only;
    the panel rescans every time that tab is opened, so a newly subscribed
    wallpaper shows up without a restart. It sits in the same 背景 row as the
-   photos: one screen shows 30 cards, 显示全部（N） expands to all of them and
+   photos: one screen shows at most 3 rows of cards (columns × 3, read from the
+   grid so it follows the panel width), 显示全部（N） expands to all of them and
    收起 collapses back.

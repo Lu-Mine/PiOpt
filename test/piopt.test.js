@@ -200,9 +200,12 @@ test("dependent settings sit under the option they depend on", () => {
   assert.deepEqual(tabs, ["image", "engine"]);
   assert.match(html, /id="glass-panel-image" role="tabpanel"/);
   assert.match(html, /id="glass-panel-engine" role="tabpanel"[^>]*hidden/);
-  // Wallpaper Engine 列表一次 30 张，超出时给「显示全部 / 收起」。
-  assert.match(js, /const ENGINE_PAGE_SIZE = 30;/);
-  assert.match(js, /state\.engineExpanded \? items : items\.slice\(0, ENGINE_PAGE_SIZE\)/);
+  // Wallpaper Engine 列表收起时最多三行（按网格实际列数算），超出才给
+  // 「显示全部 / 收起」。
+  assert.match(js, /const ENGINE_ROWS = 3;/);
+  assert.match(js, /const capacity = engineColumnCount\(\) \* ENGINE_ROWS;/);
+  assert.match(js, /state\.engineExpanded \? items : items\.slice\(0, capacity\)/);
+  assert.match(js, /gridTemplateColumns/);
   assert.match(html, /id="glass-engine-more"/);
 
   // The three motion rows only exist inside the override block; the base colour

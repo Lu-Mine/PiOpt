@@ -60,6 +60,8 @@ const state = {
   backdropTab: "image",
   backdropTabSettled: false,
   engineExpanded: false,
+  // 上一次算出的三行容量（列数 × 3）；宽度变化时用它决定要不要重渲染。
+  engineCapacity: 0,
   appearance: { base: "dark", theme: "dark", pluginTheme: null },
   preference: "system",
   appliedBase: "dark",
@@ -433,8 +435,30 @@ async function selectBackdropTab(tab) {
   if (state.backdropTab === next) return;
   state.backdropTab = next;
   renderBackdropTabs();
-  // 第一次打开 Wallpaper Engine 那一面才去扫：别的操作不该让它去碰 Steam 目录。
-  if (next === "engine" && state.engineList === null) await scanEngine();
+  if (next === "engine") {
+    // 第一次打开这一面才去扫：别的操作不该让它去碰 Steam 目录。
+    if (state.engineList === null) await scanEngine();
+    // 这一面现在可见了：按真实列数重算三行容量。
+    else renderEngineGrid();
+  }
+}
+
+/*
+ * 面板宽度变了（拖窗口、拖面板）列数就变，三行的容量也跟着变。只有容量真的变了
+ * 才重渲染——否则 ResizeObserver 的每一条通知都会重建一次 DOM。
+ */
+let engineGridObserver = null;
+
+function watchEngineGrid() {
+  if (engineGridObserver || typeof ResizeObserver !== "function" || !elements.engineGrid) return;
+  engineGridObserver = new ResizeObserver(() => {
+    if (!state.engineList || !state.engineList.length) return;
+    const capacity = engineColumnCount() * ENGINE_ROWS;
+    if (capacity === state.engineCapacity) return;
+    renderEngineGrid();
+    void fillEngineThumbs();
+  });
+  engineGridObserver.observe(elements.engineGrid);
 }
 
 /*
@@ -738,26 +762,42 @@ function engineNote(item) {
 /*
  * 一张卡片一张壁纸：缩略图来自项目自带的预览（GIF 由面板解码首帧），下面两行
  * 是标题与「它是什么」。不支持的卡片留在原位、按禁用处理，理由写在第二行——
- * 把 30 张 scene 壁纸藏起来才是更糟的体验。
+ * 藏起来比置灰更糟。
  */
-// 一次先给 30 张：作者的库是 40 张，这一屏足够挑，剩下的点「显示全部」。
-const ENGINE_PAGE_SIZE = 30;
+// 收起时最多给三行卡片。列数由网格自己的宽度决定（面板可以被拖宽），所以每次
+// 渲染前读一次 grid-template-columns，而不是写死张数。
+const ENGINE_ROWS = 3;
+const ENGINE_COLUMN_GAP = 10;
+const ENGINE_MIN_COLUMN = 76;
+
+function engineColumnCount() {
+  const grid = elements.engineGrid;
+  if (!grid) return 1;
+  const columns = getComputedStyle(grid).gridTemplateColumns;
+  if (columns && columns !== "none") return Math.max(1, columns.trim().split(/\s+/).length);
+  // 这一面还没显示时读不到轨道：按宽度估一个，切到这一面时再算一次。
+  const width = grid.getBoundingClientRect().width || grid.parentElement?.getBoundingClientRect().width || 0;
+  return Math.max(1, Math.floor((width + ENGINE_COLUMN_GAP) / (ENGINE_MIN_COLUMN + ENGINE_COLUMN_GAP)));
+}
 
 function renderEngineGrid() {
   const grid = elements.engineGrid;
   if (!grid) return;
   const items = state.engineList;
+  const capacity = engineColumnCount() * ENGINE_ROWS;
+  state.engineCapacity = capacity;
 
-  // 「显示全部 / 收起」只在这一面真有超出时出现。
+  // 「显示全部 / 收起」只在列表超过三行时出现。
   const moreButton = elements.engineMore;
   if (moreButton) {
-    const overflow = Boolean(items) && items.length > ENGINE_PAGE_SIZE;
+    const overflow = Boolean(items) && items.length > capacity;
     moreButton.hidden = !overflow;
     if (overflow) {
-      const hidden = items.length - ENGINE_PAGE_SIZE;
       moreButton.textContent = state.engineExpanded ? "收起" : `显示全部（${items.length}）`;
       moreButton.setAttribute("aria-expanded", String(state.engineExpanded));
-      moreButton.title = state.engineExpanded ? `只留前 ${ENGINE_PAGE_SIZE} 张` : `还有 ${hidden} 张`;
+      moreButton.title = state.engineExpanded
+        ? `收起后只留前 ${ENGINE_ROWS} 行`
+        : `还有 ${items.length - capacity} 张`;
     }
   }
 
@@ -773,7 +813,7 @@ function renderEngineGrid() {
 
   elements.engineHead.textContent = `本机壁纸 · ${items.length}`;
   const currentId = state.glass.engine.id;
-  const visible = state.engineExpanded ? items : items.slice(0, ENGINE_PAGE_SIZE);
+  const visible = state.engineExpanded ? items : items.slice(0, capacity);
   grid.innerHTML = visible.map((item) => {
     const thumb = state.engineThumbs.get(item.id) || "";
     const current = item.id === currentId;
@@ -841,7 +881,7 @@ async function scanEngine() {
   void fillEngineThumbs();
 }
 
-/** 列表一次 30 张，超出时用这个按钮在「全部 / 收起」之间切换。 */
+/** 收起时只留三行，超出部分用这个按钮在「全部 / 收起」之间切换。 */
 function toggleEngineExpanded() {
   state.engineExpanded = !state.engineExpanded;
   renderEngineGrid();
@@ -1038,6 +1078,7 @@ async function initialize() {
     toast: byId("toast"),
   });
   bindEvents();
+  watchEngineGrid();
   renderMotion();
   renderGlass();
   setBusy(true);
