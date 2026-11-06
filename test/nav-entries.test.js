@@ -326,19 +326,19 @@ test("sidebar open: the two entries sit to the left of the collapse button", asy
 
     await mod.mountNavEntries(hostReturning(true));
 
-    // 头部最左边是那枚「收起侧边栏」（注入的），原按钮藏起来。
-    assert.equal(header.firstElementChild.getAttribute("data-piopt-nav-action"), "collapse");
+    // 头部右侧那一组的顺序就是 收起、新建任务、搜索；收起排在新建任务左边。
+    assert.deepEqual(kindsOf(actions), ["collapse", "new-task", "search"]);
+    assert.equal(actions.children[0].getAttribute("data-piopt-nav-action"), "collapse");
+    assert.equal(actions.children[1].getAttribute("data-piopt-nav-action"), "new-task");
+    assert.equal(actions.children[2].getAttribute("data-piopt-nav-action"), "search");
+    assert.equal(actions.children[3], collapse);
+    // 宿主那枚收起按钮藏起来了，但节点还在（锚点不动）。
     assert.equal(collapse.style.getPropertyValue("display"), "none");
-    // 原位置还是那一条：新建任务、搜索、收起（原按钮藏着，但仍占着锚点的位置）。
-    assert.deepEqual(kindsOf(actions), ["new-task", "search"]);
-    assert.equal(actions.children[0].getAttribute("data-piopt-nav-action"), "new-task");
-    assert.equal(actions.children[1].getAttribute("data-piopt-nav-action"), "search");
-    assert.equal(actions.children[2], collapse);
     assert.equal(actions.parentElement, header);
-    // 文案与图标照着宿主那一枚来。
-    assert.equal(actions.children[0].getAttribute("aria-label"), "新建任务");
-    assert.equal(actions.children[1].getAttribute("aria-label"), "搜索");
-    assert.ok(actions.children[0].innerHTML.includes("<svg"));
+    // 文案与图标照着宿主那一枚来（collapse 在 0 号位，新建任务在 1 号位）。
+    assert.equal(actions.children[1].getAttribute("aria-label"), "新建任务");
+    assert.equal(actions.children[2].getAttribute("aria-label"), "搜索");
+    assert.ok(actions.children[1].innerHTML.includes("<svg"));
     // 会话标题栏那一份不再是入口：原位置只是被隐掉，节点还在。
     assert.equal(menu.getAttribute("data-piopt-nav-moved"), "true");
     assert.equal(menu.children.length, 2);
@@ -383,19 +383,6 @@ test("sidebar closed: the two entries follow the toggle button", async () => {
 test("clicking an injected entry is clicking the host's own button", async () => {
   await withHost(async ({ mod, body }) => {
     const { actions } = withSidebar(body);
-
-test("sidebar closed: the injected collapse button goes away with the sidebar", async () => {
-  await withHost(async ({ mod, body }) => {
-    const { topbar, lead } = chatTopbar();
-    body.append(topbar);
-
-    await mod.mountNavEntries(hostReturning(true));
-
-    // 收起时「切换侧边栏」本就在最左，不需要再注入一枚收起按钮。
-    assert.deepEqual(kindsOf(lead), ["new-task", "search"]);
-    assert.equal(lead.querySelectorAll('[data-piopt-nav-action="collapse"]').length, 0);
-  });
-});
     const { topbar, newTask, search } = chatTopbar();
     body.append(topbar);
 
@@ -409,10 +396,24 @@ test("sidebar closed: the injected collapse button goes away with the sidebar", 
     search.addEventListener("click", () => {
       searched += 1;
     });
-    actions.children[0].click();
+    // 顺序是 收起、新建任务、搜索：新建任务在 1 号位，搜索在 2 号位。
     actions.children[1].click();
+    actions.children[2].click();
     assert.equal(opened, 1);
     assert.equal(searched, 1);
+  });
+});
+
+test("sidebar closed: the injected collapse button goes away with the sidebar", async () => {
+  await withHost(async ({ mod, body }) => {
+    const { topbar, lead } = chatTopbar();
+    body.append(topbar);
+
+    await mod.mountNavEntries(hostReturning(true));
+
+    // 收起时「切换侧边栏」本就在最左，不需要再注入一枚收起按钮。
+    assert.deepEqual(kindsOf(lead), ["new-task", "search"]);
+    assert.equal(lead.querySelectorAll('[data-piopt-nav-action="collapse"]').length, 0);
   });
 });
 
@@ -427,7 +428,7 @@ test("switching the feature off puts the window back the way the host drew it", 
     body.append(topbar);
 
     await mod.mountNavEntries(hostReturning(true));
-    assert.deepEqual(kindsOf(actions), ["new-task", "search"]);
+    assert.deepEqual(kindsOf(actions), ["collapse", "new-task", "search"]);
 
     // 关掉开关：注入的按钮离场，原来那两个位置重新露面，documentElement 也不再挂标记。
     const off = { dispatch: async () => ({ config: { entryActions: false } }) };

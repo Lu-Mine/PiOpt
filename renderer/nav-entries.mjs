@@ -61,8 +61,7 @@ export const NAV_ENTRIES_CSS = [
   `.${ACTION_CLASS}:hover{background:var(--ds-bg-hover);color:var(--ds-text-primary)}`,
   `.${ACTION_CLASS}:focus-visible{outline:2px solid var(--ds-focus);outline-offset:1px}`,
   `.${ACTION_CLASS}>svg{display:block;width:15px;height:15px}`,
-  // 展开时「收起侧边栏」摆到侧边栏头部最左边，与右边那几个入口之间拉开距离。
-  `.sidebar-header > .${ACTION_CLASS}{margin-right:8px}`,
+  // 展开时三个入口在头部右侧那一组里：收起、新建任务、搜索（收起在新建任务左边）。
   // 收起侧边栏时这一排贴在会话标题上，两个按钮之间留一道与宿主标题栏相同的缝。
   `.conversation-topbar .ct-lead > .${ACTION_CLASS}{margin-left:4px}`,
   // 会话标题的让位：宿主只给一个 28px 的「切换侧边栏」留了 36px（28 + 8 的缝）。
@@ -112,7 +111,7 @@ let scanQueued = false;
 let applying = false;
 let attentionBound = false;
 // 三个注入按钮一直留着，位置随侧边栏状态换：重建节点会让宿主的重绘踩空。
-// collapse 那枚是「收起侧边栏」：展开时摆到侧边栏头部最左边，收起时收起来。
+// collapse 那枚是「收起侧边栏」：展开时排在新建任务左边，收起时收起来。
 const actions = { "new-task": null, search: null, collapse: null };
 // 被我们藏起来的宿主节点：关闭时只还原这些，别人的样式一概不碰。
 const hiddenNodes = new Set();
@@ -224,7 +223,6 @@ function placeActions(toggle) {
     if (search.previousElementSibling !== newTask) search.before(newTask);
     if (collapse && newTask.previousElementSibling !== collapse) newTask.before(collapse);
     return;
-    return;
   }
   // 侧边栏收起：那枚 collapse 收起来，两个入口跟着「切换侧边栏」往右排。
   if (collapse && collapse.parentElement) collapse.remove();
@@ -257,7 +255,7 @@ function hideNativeSources(hide) {
     // ct-actions 里那一对按钮也各藏一次：有的宿主版本只给整组挂外壳，按钮自己仍占格子。
     for (const button of menu.querySelectorAll("button")) targets.add(button);
   }
-  // 侧边栏展开时那枚「收起侧边栏」挪到头部最左边的是注入按钮，原按钮藏起来。
+  // 侧边栏展开时那枚「收起侧边栏」由注入按钮顶替，原按钮藏起来。
   const nativeToggle = document.querySelector(`${SIDEBAR_HEADER_SELECTOR} ${NATIVE_TOGGLE_SELECTOR}`);
   if (nativeToggle) targets.add(nativeToggle);
   for (const element of targets) {
@@ -318,7 +316,7 @@ function apply() {
     root.setAttribute(ENABLED_ATTR, "true");
     ensureActions();
     const toggle = toggleButton();
-    // 展开时那枚「收起侧边栏」也注入一枚：摆到头部最左边，图标文案照抄宿主。
+    // 展开时那枚「收起侧边栏」也注入一枚：排在新建任务左边，图标文案照抄宿主。
     const inSidebar = !!(toggle && toggle.closest(SIDEBAR_HEADER_SELECTOR));
     if (inSidebar && !actions.collapse) actions.collapse = buildAction("collapse", toggle);
     if (actions.collapse) syncAction(actions.collapse, "collapse", inSidebar ? toggle : null);
