@@ -316,6 +316,21 @@ test("the setting itself is one boolean, off unless asked for", () => {
   assert.deepEqual(navEntries.normalizeConfig({ enabled: "yes" }), { enabled: false });
 });
 
+// 面板拨开关后主窗口不一定收到 focus（面板是浮层），所以设置靠一条便宜的轮询补上，
+// 而不是等用户切窗口。
+test("the switch is re-read on a timer, not only when the window gets focus", () => {
+  const source = read("renderer/nav-entries.mjs");
+  assert.match(source, /const POLL_MS = 1200;/);
+  assert.match(source, /pollTimer = setInterval\(\(\) => \{/);
+  // 窗口在后台不读：看不见的窗口不需要按钮，也省掉无谓的 IPC。
+  assert.match(source, /if \(typeof document !== "undefined" && document\.hidden\) return;/);
+  // 挂载时就开，卸载时停 —— 否则关掉插件后定时器还在跑。
+  assert.match(source, /startPolling\(\);[\s\S]{0,40}return refresh\(\);/);
+  assert.match(source, /export function unmountNavEntries\(\) \{\s*\n\s*stopPolling\(\);/);
+  // 同一时刻只允许一次在读，避免慢 IPC 叠起来。
+  assert.match(source, /if \(refreshing\) return;/);
+});
+
 // ------------------------------------------------------------------ 两种布局
 
 test("sidebar open: the two entries sit to the left of the collapse button", async () => {

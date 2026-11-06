@@ -219,7 +219,7 @@ const css = `${motion.buildThemeCss(motionLayer, base)}${glassLayer}`;
 - **原位不再有入口**：会话标题栏右上角那一对（连同标题栏里宿主自己的「新建任务」）用**内联** `display:none !important` 隐去 —— 是搬家，不是复制。用内联样式而不是属性 + 样式表，是因为宿主重绘会换掉节点、属性跟着没了，按钮就会在藏与露之间闪。点注入的按钮就是点宿主原来那一枚：新建任务仍走宿主自己的命令，搜索仍打开宿主自己的搜索框；原按钮不在这一页时才退回宿主的 ⌘/Ctrl+K 合成按键。
 - **右侧面板开关的图标摆正**：`.app-work-panel-toggle` 那枚图标在自己的方框里偏右下。这一层量两个盒子的中心差（`offset` 系列，不吃 `transform` 的影响），用 `--piopt-panel-icon-shift-x` / `-y` 把它平移回正中；一像素以内不动，宿主本来就在正中时什么都不设。
 
-设置存在插件 settings 的 `navEntries` 键里（`enabled` 一个布尔值），面板写、`renderer/nav-entries.mjs` 读；窗口重新获得焦点或重新可见时补看一眼，所以从面板切回来即时生效。
+设置存在插件 settings 的 `navEntries` 键里（`enabled` 一个布尔值），面板写、`renderer/nav-entries.mjs` 读。读取有三个触发点：挂载时、窗口重新获得焦点或重新可见时、以及一条 1.2 秒的轮询（窗口隐藏时跳过，同刻只允许一次在读）。面板是浮层，拨完开关主窗口未必收到 focus，只靠前两个触发点就会「拨了要等很久才出现」，轮询把这段等待压到一秒出头。
 
 实现上仍然不搬宿主的节点：注入的三个按钮是自己的（`data-piopt-nav-action`，样式 `piopt-nav-action` 沿用标题栏那一档 28px 与 `--radius-md`），位置随侧边栏状态在 `.sidebar-header-actions`（展开时 收起、新建任务、搜索）与 `.ct-lead`（或标题栏的 `.titlebar-nav`，收起时 切换、新建任务、搜索）之间挪；锚点找不到时先摘下来，等下一次扫描再放回去。宿主重绘会换掉它自己的节点（也可能带走注入的按钮），`MutationObserver` 每批 mutation 在一个 microtask 里同步复位 —— 不留几十毫秒的去抖窗口，那一小段真空期正是「闪一下才回来」的来源。控制台里 `__pioptNavEntries.inspect()` 能读出当前的锚点、三个入口挂在哪、藏了几个原按钮、以及图标的平移量，排查时先看它。
 ## 远程（局域网控制）

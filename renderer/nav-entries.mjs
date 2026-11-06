@@ -344,22 +344,64 @@ function scheduleScan() {
 
 // ------------------------------------------------------------------ 设置与生命周期
 
+// 上次读到的开关值：focus/可见时先用它摆一遍，不等 RPC 回来，按钮立刻就在。
+let lastKnownEnabled = false;
+let refreshing = false;
+let pollTimer = null;
+// 面板拨完开关，主窗口并不一定收到 focus（面板是浮层），所以补一条便宜的轮询：
+// 一秒多读一次，读到变化就摆。一次 IPC、一次幂等的 apply，代价远小于那一分钟的等待。
+const POLL_MS = 1200;
+
 async function refresh() {
   if (!host || typeof host.dispatch !== "function") return;
+  if (refreshing) return;
+  refreshing = true;
   try {
     const state = await host.dispatch("plugin.call", { method: "modelPickerState", args: {} });
     const config = (state && state.config) || state || {};
-    enabled = config.entryActions === true;
+    const next = config.entryActions === true;
+    const changed = next !== enabled;
+    lastKnownEnabled = next;
+    enabled = next;
+    if (changed || next) apply();
   } catch {
     // 读不到就沿用上一次的用法：窗口照常可用。
-    return;
+  } finally {
+    refreshing = false;
   }
+}
+
+function startPolling() {
+  if (pollTimer !== null) return;
+  pollTimer = setInterval(() => {
+    // 窗口在后台不读：看不见的窗口不需要按钮，也省掉无谓的 IPC。
+    if (typeof document !== "undefined" && document.hidden) return;
+    void refresh();
+  }, POLL_MS);
+}
+
+function stopPolling() {
+  if (pollTimer === null) return;
+  clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+// 面板一拨开关就推过来：不用等用户切回主窗口才读设置。
+function onEntryActionsChanged(value) {
+  lastKnownEnabled = value === true;
+  enabled = lastKnownEnabled;
   apply();
 }
 
 function onAttention() {
+  // 先用缓存值摆一遍（可能已经开了），再去读最新设置。
+  if (lastKnownEnabled !== enabled) {
+    enabled = lastKnownEnabled;
+    apply();
+  }
   void refresh();
 }
+
 
 function onDocumentKeydown() {
   // 只在功能开着时看键盘：宿主重绘后自己的按钮可能被换掉，扫描会在下一帧找回来。
@@ -411,13 +453,15 @@ export function mountNavEntries(bridge) {
     if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
       window.addEventListener("focus", onAttention);
       window.addEventListener("resize", scheduleScan);
-      window.__pioptNavEntries = { inspect, apply: () => apply() };
+      window.__pioptNavEntries = { inspect, apply: () => apply(), setEnabled: onEntryActionsChanged };
     }
   }
+  startPolling();
   return refresh();
 }
 
 export function unmountNavEntries() {
+  stopPolling();
   if (observer) {
     observer.disconnect();
     observer = null;
