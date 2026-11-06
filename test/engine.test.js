@@ -126,28 +126,32 @@ test("a video project plays from its own folder", () => {
   }
 });
 
-test("a scene project falls back to the preview image it ships with", () => {
+test("a scene project is not selectable, but its square cover still serves the list", () => {
   const root = tempDir("piopt-engine-");
   const dir = path.join(root, "1002");
   writeProject(dir, { type: "scene", title: "Night", file: "scene.json", preview: "preview.gif" });
+  // 真正的封面是本机那种 1:1 方图；内容不重要，只验证它只被当作缩略图来源。
   fs.writeFileSync(path.join(dir, "preview.gif"), "gif bytes");
 
   try {
     const item = engine.describeProject(dir, "1002");
-    assert.equal(item.kind, "still");
-    assert.equal(item.supported, true);
-    assert.equal(item.preview.mime, "image/gif");
+    // Wallpaper Engine 自己才画得出来：这里既没有 kind，也没有可播的文件。
+    assert.equal(item.kind, "");
+    assert.equal(item.supported, false);
+    assert.equal(item.reason, "engine-only");
     assert.equal(item.file, "");
 
-    const preview = engine.previewOf(item);
-    assert.equal(preview.mime, "image/gif");
-    assert.equal(Buffer.from(preview.data, "base64").toString(), "gif bytes");
+    // 封面仍然可读——但那是给列表卡片用的方图，不是壁纸画面。
+    assert.equal(item.preview.mime, "image/gif");
+    const cover = engine.previewOf(item);
+    assert.equal(cover.mime, "image/gif");
+    assert.equal(Buffer.from(cover.data, "base64").toString(), "gif bytes");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("a project with no preview, or one over the host's ceiling, is not selectable", () => {
+test("a missing or oversized cover changes nothing: the project stays unplayable", () => {
   const root = tempDir("piopt-engine-");
   const bare = path.join(root, "1003");
   writeProject(bare, { type: "scene", title: "Bare" });
@@ -159,11 +163,14 @@ test("a project with no preview, or one over the host's ceiling, is not selectab
   try {
     const missing = engine.describeProject(bare, "1003");
     assert.equal(missing.supported, false);
-    assert.equal(missing.reason, "no-preview");
+    assert.equal(missing.reason, "engine-only");
+    assert.equal(missing.preview, null);
 
+    // 超过 4 MB 的封面不进内存，也不影响结论。
     const oversized = engine.describeProject(heavy, "1004");
     assert.equal(oversized.supported, false);
-    assert.equal(oversized.reason, "preview-too-large");
+    assert.equal(oversized.reason, "engine-only");
+    assert.equal(oversized.preview, null);
     assert.equal(engine.previewOf(oversized), null);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

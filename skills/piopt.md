@@ -270,9 +270,10 @@ about the calls, only about the prefix.
    `media-src 'self' data: blob: https:` CSP). `scene` / `web` / `application`
    cannot be reproduced here — a scene is drawn by Wallpaper Engine's own
    DirectX runtime from `scene.pkg`, and the host's CSP (`frame-src pi-genui:`)
-   forbids loading a local web wallpaper in an iframe. Those fall back to the
-   project's own preview frame as a still wallpaper, and each card says which is
-   which. Never promise that a scene wallpaper will animate here, and do not
+   forbids loading a local web wallpaper in an iframe. They are listed with their
+   square cover but cannot be selected here, and the cards say so — the cover is
+   a 1:1 shop thumbnail, never the wallpaper itself, so do not treat it as a
+   still frame. Never promise that a scene wallpaper will animate here, and do not
    suggest running Wallpaper Engine as a workaround for a plugin panel.
    The list is read from `<Steam library>/steamapps/workshop/content/431960`,
    found through the Steam registry value and `libraryfolders.vdf`, read-only;

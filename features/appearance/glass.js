@@ -40,8 +40,9 @@ const WALLPAPER_MAX_BYTES = 4 * 1024 * 1024;
 
 // Wallpaper Engine 壁纸走另一条通道：video 类型由渲染模块注入一个原生
 // `<video>`，因为宿主的主题资源只吃静态图片（4 MB、png/jpg/webp/avif/svg）。
-// `engine` 记住这张壁纸的来源，`file` 只在 kind 为 video 时有意义。
-const ENGINE_KINDS = Object.freeze(["video", "still"]);
+// `engine` 记住这张壁纸的来源；只有 video 能在这里播放，其余类型属于
+// Wallpaper Engine 自己，不进这个字段。
+const ENGINE_KINDS = Object.freeze(["video"]);
 const ENGINE_VIDEO_EXTENSIONS = Object.freeze(["mp4", "webm"]);
 const EMPTY_ENGINE = Object.freeze({ id: "", title: "", kind: "", file: "" });
 
@@ -169,23 +170,21 @@ function isSupportedEngineVideo(value) {
 /**
  * The Wallpaper Engine source behind the current backdrop.
  *
- * `kind: "video"` carries the clip the renderer module plays; `kind: "still"`
- * means the project could not be drawn here and its preview image is being worn
- * as an ordinary wallpaper instead. An unusable entry collapses to empty rather
- * than leaving a dangling reference for `themes.upsert` to choke on.
+ * Only `kind: "video"` survives: it carries the clip the renderer module plays.
+ * Every other type belongs to Wallpaper Engine's own renderer, so it never
+ * reaches here; an entry that lost its clip collapses to empty rather than
+ * leaving a dangling reference for `themes.upsert` to choke on.
  */
 function normalizeEngine(input) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const id = /^\d{1,20}$/.test(String(source.id ?? "").trim()) ? String(source.id).trim() : "";
   const kind = ENGINE_KINDS.includes(source.kind) ? source.kind : "";
-  if (!id || !kind) return { ...EMPTY_ENGINE };
+  if (!id || kind !== "video") return { ...EMPTY_ENGINE };
 
+  const file = isSupportedEngineVideo(source.file) ? String(source.file).trim() : "";
+  if (!file) return { ...EMPTY_ENGINE };
   const title = typeof source.title === "string" ? source.title.trim().slice(0, 120) : "";
-  if (kind === "video") {
-    const file = isSupportedEngineVideo(source.file) ? String(source.file).trim() : "";
-    return file ? { id, title, kind, file } : { ...EMPTY_ENGINE };
-  }
-  return { id, title, kind, file: "" };
+  return { id, title, kind, file };
 }
 
 /** Whether the backdrop is a clip the renderer module has to play. */

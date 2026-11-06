@@ -435,22 +435,20 @@ async function saveWallpaperBytes(name, base64, thumb = "") {
 // --------------------------------------------------------- wallpaper engine
 
 /*
- * Wallpaper Engine 的壁纸在这里分三种命运，按各自的能力分：
+ * Wallpaper Engine 的壁纸只有一种能在这里画出来：
  *
  * - video（mp4 / webm）：真的播放。文件留在创意工坊目录里，渲染模块用
  *   `file:` URL 播它；设置里只记 id、标题与路径。
- * - scene / web / application：由 Wallpaper Engine 自己的 DirectX 渲染器绘制，
- *   插件复刻不了。退回项目自带的预览图（preview.gif 之类），面板把首帧画成
- *   一张 jpeg 交上来，于是它变成一张普通的静帧背景图。
- * - 预览图也没有：不支持，并说清楚为什么。
+ * - scene / web / application / preset：由 Wallpaper Engine 自己的渲染器绘制，
+ *   插件复刻不了，一律不可选。项目自带的 `preview.gif` / `preview.jpg` 是创意
+ *   工坊列表用的**方形封面**（本机 42 张全是 1:1、192–1024 px），只够当列表
+ *   卡片的缩略图——拿它铺窗口会是一张被裁切的方图，所以没有“静帧兜底”。
  */
 const ENGINE_ERRORS = Object.freeze({
   "no-workshop": "没找到 Wallpaper Engine 的创意工坊目录：Steam 里装过至少一张壁纸才会出现。",
-  "no-preview": "这个壁纸没有自带预览图，画不出画面。",
-  "preview-too-large": "预览图超过 4 MB，宿主不会接受它。",
+  "engine-only": "这类壁纸要由 Wallpaper Engine 本机渲染，这里只能播放 video 类。",
   "video-unplayable": "这个视频不是 mp4 / webm，或者文件已经不在了。",
   "unknown-project": "这个壁纸已经不在了，重新扫一次试试。",
-  unreadable: "预览图读不出来，换一张试试。",
 });
 
 // 不缓存扫描结果：几十个目录的一次 stat 是毫秒级，缓存只会让「刚装好的壁纸
@@ -482,12 +480,13 @@ function engineScanPayload() {
     items: items.map((item) => ({
       id: item.id,
       title: item.title,
-      // type 是 Wallpaper Engine 自己的分类（scene / video / web / …），
-      // kind 是这里打算怎么画它。面板把这两件事都说清楚。
+      // type 是 Wallpaper Engine 自己的分类（scene / video / web / …）；
+      // 只有 video 能播，其余在这里一律不可选。
       type: item.type,
       kind: item.kind,
       supported: item.supported,
       reason: item.reason,
+      // 方形封面只用来画列表缩略图。
       hasPreview: Boolean(item.preview),
     })),
   };
@@ -497,69 +496,52 @@ function enginePreviewPayload(id) {
   const item = engineItemById(id);
   if (!item) return { ok: false, reason: "unknown-project" };
   const preview = engine.previewOf(item);
-  if (!preview) return { ok: false, reason: item.reason || "no-preview" };
+  if (!preview) return { ok: false, reason: "no-preview" };
   return { ok: true, mime: preview.mime, data: preview.data };
 }
 
 async function applyEngineWallpaper(payload = {}) {
   const item = engineItemById(payload.id);
   if (!item) return engineRefuse("unknown-project");
-  if (!item.supported) return engineRefuse(item.reason || "no-preview");
-
-  if (item.kind === "video") {
-    const next = {
-      ...glassConfig,
-      // 视频层自己铺满窗口，图片层必须让位，否则会在它下面留一张旧图。
-      wallpaper: "",
-      engine: { id: item.id, title: item.title, kind: "video", file: item.file },
-    };
-    return { ok: true, ...(await persistGlass(next)) };
-  }
-
-  // 静帧：面板把预览图的首帧画成 jpeg（GIF 不在宿主的扩展名白名单里），
-  // 这里落盘，之后它就是一张普通的背景图。
-  let buffer;
-  try {
-    buffer = Buffer.from(String(payload.data ?? ""), "base64");
-  } catch {
-    return engineRefuse("unreadable");
-  }
-  if (!buffer.length) return engineRefuse("no-preview");
-  if (buffer.length > glass.WALLPAPER_MAX_BYTES) return engineRefuse("preview-too-large");
-
-  let dataDir;
-  try {
-    dataDir = await pi.plugin.getDataPath();
-  } catch {
-    return engineRefuse("unreadable");
-  }
-  const target = join(dataDir, `${DATA_PREFIX}engine-${item.id}.jpg`);
-  try {
-    writeFileSync(target, buffer);
-  } catch {
-    return engineRefuse("unreadable");
-  }
+  if (item.kind !== "video") return engineRefuse("engine-only");
+  if (!item.supported) return engineRefuse(item.reason || "video-unplayable");
 
   const next = {
     ...glassConfig,
-    wallpaper: target,
-    engine: { id: item.id, title: item.title, kind: "still", file: "" },
+    // 视频层自己铺满窗口，图片层必须让位，否则会在它下面留一张旧图。
+    wallpaper: "",
+    engine: { id: item.id, title: item.title, kind: "video", file: item.file },
   };
   return { ok: true, ...(await persistGlass(next)) };
 }
 
+/** 两种背景只能有一个生效，所以「不使用」把图片与视频一起撤掉。 */
 async function clearEngineWallpaper() {
-  // 属于 Wallpaper Engine 的那张静帧是本插件写的，清掉时一起删；普通图片不动。
-  if (glassConfig.engine.kind === "still" && glassConfig.wallpaper) {
-    try {
-      const dataDir = await pi.plugin.getDataPath();
-      if (ownsWallpaper(dataDir, glassConfig.wallpaper)) unlinkSync(glassConfig.wallpaper);
-    } catch {
-      /* 删不掉文件不影响把它从设置里去掉 */
-    }
-  }
   const next = { ...glassConfig, wallpaper: "", engine: { ...glass.EMPTY_ENGINE } };
   return { ok: true, ...(await persistGlass(next)) };
+}
+
+/**
+ * 旧版本曾把 scene 壁纸的方形封面当成静帧背景写进数据目录
+ * （`wallpaper.engine-<id>.jpg`）。那不是壁纸画面，升级时清掉它，免得窗口上
+ * 一直挂着一张被裁切的方图。
+ */
+async function dropLegacyEngineStill() {
+  const target = String(glassConfig.wallpaper ?? "");
+  if (!/^wallpaper\.engine-\d{1,20}\.jpg$/i.test(basename(target))) return false;
+  try {
+    const dataDir = await pi.plugin.getDataPath();
+    if (ownsWallpaper(dataDir, target)) unlinkSync(target);
+  } catch {
+    /* 删不掉文件不影响把它从设置里去掉 */
+  }
+  glassConfig = glass.normalizeGlassConfig({
+    ...glassConfig,
+    wallpaper: "",
+    engine: { ...glass.EMPTY_ENGINE },
+  });
+  await pi.plugin.setSettings({ [glass.SETTINGS_KEY]: glassConfig });
+  return true;
 }
 
 /** 渲染模块要的那一份：只有它能用的字段，不含面板用的元数据。 */
@@ -591,6 +573,8 @@ async function onLoad() {
   resetThemeCache();
   motionConfig = await readMotionConfig();
   glassConfig = await readGlassConfig();
+  // 旧版本把 scene 壁纸的方形封面写成了静帧背景：那不是画面，先清掉。
+  await dropLegacyEngineStill();
   // A wallpaper that moved or was deleted must not keep the theme pointing at a
   // path the host can no longer serve; the same goes for a Wallpaper Engine clip
   // the renderer module would chase forever.
@@ -679,6 +663,7 @@ async function onGlass(channel, payload) {
   switch (channel) {
     case "appearance.glass.getState":
       glassConfig = await readGlassConfig();
+      await dropLegacyEngineStill();
       if (glassConfig.wallpaper && wallpaperProblem(glassConfig.wallpaper)) {
         await persistGlass({ ...glassConfig, wallpaper: "" });
       }
@@ -756,8 +741,8 @@ async function onGlass(channel, payload) {
     case "appearance.glass.engineClear":
       return clearEngineWallpaper();
     case "appearance.glass.clearWallpaper":
-      // 「不使用」对两种来源是同一个意思：图片让位，Wallpaper Engine 的壁纸
-      // 也一起撤掉（它自己写的那张静帧文件由 clearEngineWallpaper 负责删）。
+      // 「不使用」对两种来源是同一个意思：图片让位，Wallpaper Engine 的视频
+      // 也一起撤掉（视频本体留在创意工坊目录，插件没有副本要删）。
       return clearEngineWallpaper();
     case "appearance.glass.reset": {
       // Reset keeps the backdrop: it is the user's own file (or their Wallpaper

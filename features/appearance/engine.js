@@ -8,14 +8,13 @@
  * 写着类型与入口文件。这里只做三件事：找到这些目录、读出每个项目的类型、
  * 指出哪一种能在这个窗口里真的播放。
  *
- * 两类壁纸的处理不同，因为能力不同：
+ * 只有 `video`（mp4 / webm）能播：渲染进程原生 `<video>` 解码。其余类型
+ * （`scene` / `web` / `application` / `preset`）由 Wallpaper Engine 自己的
+ * 渲染器绘制，插件里无法复刻——它们在这里一律不可选。
  *
- * - `video`（mp4 / webm）可以真的播放：渲染进程原生 `<video>` 解码。
- * - 其余（`scene` / `web` / `application` / `preset`）由 Wallpaper Engine 自己
- *   的场景渲染器绘制，插件里无法复刻。它们退回项目自带的预览图（`preview`
- *   字段或 preview.jpg / png / gif），只能当一张静帧。
- *
- * 所以每个条目都带 `kind` 与 `supported`：面板照实说，不假装 scene 壁纸会动。
+ * 项目自带的 `preview.gif` / `preview.jpg` 是创意工坊列表用的**方形封面**
+ * （本机 42 张全是 1:1，192–1024 px），只够当列表里那张卡片的缩略图，绝不是
+ * 壁纸画面：拿它铺窗口会是一张被裁切的方图，所以不能当背景用。
  */
 
 const { readdirSync, readFileSync, statSync } = require("node:fs");
@@ -240,6 +239,10 @@ function describeProject(dir, id = "") {
   const type = typeof project.type === "string" ? project.type.trim().toLowerCase() : "";
   const title = (typeof project.title === "string" ? project.title.trim() : "") || folderId;
 
+  // 封面图只给列表卡片用（1:1），超过 4 MB 就不为它做缩略图。
+  const cover = previewFileOf(dir, project);
+  const preview = cover && cover.size <= MAX_PREVIEW_BYTES ? cover : null;
+
   if (type === "video") {
     const declared = typeof project.file === "string" ? project.file.trim() : "";
     const file = declared && !/[\\/]/.test(declared) ? join(dir, declared) : "";
@@ -259,22 +262,18 @@ function describeProject(dir, id = "") {
       supported: playable,
       reason: playable ? "" : "video-unplayable",
       file: playable ? file : "",
-      preview: null,
+      preview,
     };
   }
 
-  const preview = previewFileOf(dir, project);
-  let reason = "";
-  if (!preview) reason = "no-preview";
-  else if (preview.size > MAX_PREVIEW_BYTES) reason = "preview-too-large";
-
+  // scene / web / application / preset：只有 Wallpaper Engine 自己画得出来。
   return {
     id: folderId,
     title,
     type,
-    kind: "still",
-    supported: !reason,
-    reason,
+    kind: "",
+    supported: false,
+    reason: "engine-only",
     file: "",
     preview,
   };
@@ -318,7 +317,7 @@ function scanAll(roots) {
   return items;
 }
 
-/** 预览图字节，交给面板画缩略图（GIF 的首帧也由面板解码）。 */
+/** 封面图字节，交给面板画列表里那张方形缩略图（GIF 的首帧也由面板解码）。 */
 function previewOf(item) {
   if (!item || !item.preview) return null;
   if (item.preview.size > MAX_PREVIEW_BYTES) return null;

@@ -819,7 +819,8 @@ test("an engine clip takes the image layer's place and keeps the glass variables
   assert.doesNotMatch(css, /url\(/);
   // The content pane thins out for the clip exactly as it does for a photo.
   assert.ok(glass.glassTokens(config).canvas < 100);
-  // No clip, no photo, no switch: still nothing at all.
+  // No clip, no photo, no switch: still nothing at all. A legacy `still` entry is
+  // dropped by normalizeEngine, which is why it lands here too.
   assert.equal(glass.buildGlassCss({ engine: { id: "1", title: "t", kind: "still" } }), "");
 });
 
@@ -828,12 +829,8 @@ test("an engine entry that lost its clip, or names another kind, is dropped", ()
   assert.deepEqual(glass.normalizeEngine({ id: "1", kind: "video", file: "relative.mp4" }), dropped);
   assert.deepEqual(glass.normalizeEngine({ id: "1", kind: "video", file: "D:\\a\\b.mkv" }), dropped);
   assert.deepEqual(glass.normalizeEngine({ id: "not-an-id", kind: "video" }), dropped);
-  assert.deepEqual(glass.normalizeEngine({ id: "9", title: "t", kind: "still" }), {
-    id: "9",
-    title: "t",
-    kind: "still",
-    file: "",
-  });
+  // 只有 video 进这个字段：方形封面不算壁纸，所以 still 一律不认。
+  assert.deepEqual(glass.normalizeEngine({ id: "9", title: "t", kind: "still" }), dropped);
 });
 
 test("the wallpaper engine list explains itself when Steam has no workshop folder", async () => {
@@ -887,40 +884,29 @@ test("picking an engine clip stores the clip and drops the photo", async () => {
   }
 });
 
-test("a scene wallpaper is worn as the preview frame the panel drew", async () => {
+test("a scene wallpaper is refused with the reason Wallpaper Engine owns it", async () => {
   const { root } = tempEngineRoot(
     { id: "600", body: { type: "scene", title: "Night", file: "scene.json" } },
     { "preview.gif": Buffer.from("gif bytes") }
   );
   const restore = stubEngineRoots(root);
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-data-"));
   const host = makePi();
-  host.pi.plugin.getDataPath = async () => dataDir;
   host.pi.ui.showToast = async () => {};
   global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const frame = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 1, 2, 3, 4]);
-    const result = await feature.onPanelInvoke(glassChannel("engineApply"), {
-      id: "600",
-      data: frame.toString("base64"),
-    });
-    assert.equal(result.ok, true);
-
-    const stored = host.store[glass.SETTINGS_KEY];
-    assert.equal(stored.engine.kind, "still");
-    assert.match(path.basename(stored.wallpaper), /^wallpaper\.engine-600\.jpg$/);
-    assert.deepEqual(fs.readFileSync(stored.wallpaper), frame);
-    // It is an ordinary wallpaper from here on, so the theme carries it.
-    assert.ok(glass.buildGlassCss(stored).includes("url("));
+    const result = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "600" });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "engine-only");
+    // 什么都没存：方形封面不是壁纸画面，不该被写成背景。
+    assert.equal(host.store[glass.SETTINGS_KEY], undefined);
   } finally {
     restore();
     delete global.pi;
-    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
 
-test("a preview request reports the project's own reason, not a generic failure", async () => {
+test("a cover request is refused with the project's own reason", async () => {
   const { root } = tempEngineRoot({ id: "700", body: { type: "scene", title: "Bare" } });
   const restore = stubEngineRoots(root);
   const host = makePi();
@@ -932,9 +918,9 @@ test("a preview request reports the project's own reason, not a generic failure"
     assert.equal(preview.ok, false);
     assert.equal(preview.reason, "no-preview");
 
-    const apply = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "700", data: "AA==" });
+    const apply = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "700" });
     assert.equal(apply.ok, false);
-    assert.equal(apply.reason, "no-preview");
+    assert.equal(apply.reason, "engine-only");
   } finally {
     restore();
     delete global.pi;
@@ -959,5 +945,33 @@ test("“不使用” clears the engine clip as well as the photo", async () => 
     assert.equal(host.store[glass.SETTINGS_KEY].engine.id, "");
   } finally {
     delete global.pi;
+  }
+});
+
+test("a square cover left over from the old still fallback is dropped on load", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-data-"));
+  const legacy = path.join(dataDir, "wallpaper.engine-555.jpg");
+  fs.writeFileSync(legacy, Buffer.from([1, 2, 3]));
+  const host = makePi({
+    [glass.SETTINGS_KEY]: {
+      enabled: true,
+      wallpaper: legacy,
+      engine: { id: "555", title: "Sky", kind: "still", file: "" },
+    },
+  });
+  host.pi.plugin.getDataPath = async () => dataDir;
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const state = await feature.onPanelInvoke(glassChannel("getState"), {});
+    // 那张方图不是壁纸画面：引用与文件都清掉，窗口不再挂着一张被裁的封面。
+    assert.equal(state.config.wallpaper, "");
+    assert.equal(state.config.engine.kind, "");
+    assert.equal(fs.existsSync(legacy), false);
+    assert.equal(host.store[glass.SETTINGS_KEY].wallpaper, "");
+  } finally {
+    delete global.pi;
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });

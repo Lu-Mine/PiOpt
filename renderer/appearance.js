@@ -22,7 +22,7 @@ const DEFAULT_CONFIG = {
 const MOTION_LIMITS = { intensity: [0.5, 1.5], speed: [0.4, 2] };
 // ---------------------------------------------------------------- glass model
 
-const ENGINE_KINDS = ["video", "still"];
+const ENGINE_KINDS = ["video"];
 const DEFAULT_ENGINE = { id: "", title: "", kind: "", file: "" };
 const DEFAULT_GLASS = {
   enabled: false,
@@ -134,10 +134,10 @@ function normalizeEngine(input) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const id = /^\d{1,20}$/.test(String(source.id ?? "").trim()) ? String(source.id).trim() : "";
   const kind = ENGINE_KINDS.includes(source.kind) ? source.kind : "";
-  if (!id || !kind) return { ...DEFAULT_ENGINE };
+  if (!id || kind !== "video") return { ...DEFAULT_ENGINE };
   const title = typeof source.title === "string" ? source.title.trim() : "";
-  const file = kind === "video" && typeof source.file === "string" ? source.file : "";
-  if (kind === "video" && !file) return { ...DEFAULT_ENGINE };
+  const file = typeof source.file === "string" ? source.file : "";
+  if (!file) return { ...DEFAULT_ENGINE };
   return { id, title, kind, file };
 }
 
@@ -401,8 +401,7 @@ function renderGlass() {
 
   // Wallpaper Engine 那一行说的是「它自己是谁」，不假装它是一张图片。
   const engineName = config.engine.id ? config.engine.title || config.engine.id : "";
-  const suffix = config.engine.kind === "video" ? "动态" : config.engine.kind === "still" ? "静帧" : "";
-  elements.engineName.textContent = engineName ? (suffix ? `${engineName} · ${suffix}` : engineName) : "未选择壁纸";
+  elements.engineName.textContent = engineName ? `${engineName} · 动态` : "未选择壁纸";
   elements.engineName.dataset.empty = String(!engineName);
 
   renderRecent();
@@ -682,16 +681,14 @@ async function clearWallpaper() {
 
 // --------------------------------------------------------- wallpaper engine
 
-const ENGINE_KIND_COPY = { video: "动态", still: "静帧" };
+const ENGINE_KIND_COPY = { video: "动态" };
 const ENGINE_TYPE_COPY = { video: "视频", scene: "场景", web: "网页", application: "程序", preset: "预设" };
 const ENGINE_REASON_COPY = {
-  "no-preview": "没有预览图",
-  "preview-too-large": "预览图超过 4 MB",
+  // 封面图是创意工坊列表用的方图，不是壁纸画面，所以没有"静帧预览"这条路。
+  "engine-only": "需 Wallpaper Engine 渲染",
   "video-unplayable": "视频格式不支持",
   "unknown-project": "壁纸已不存在",
 };
-// 静帧要经过宿主的 4 MB 主题资源上限；先缩到 2560 再压成 jpeg，宽屏预览也够看。
-const STILL_MAX_EDGE = 2560;
 
 function engineMeta(item) {
   const kind = ENGINE_KIND_COPY[item.kind] || "";
@@ -701,8 +698,8 @@ function engineMeta(item) {
 
 function engineNote(item) {
   if (!item.supported) return ENGINE_REASON_COPY[item.reason] || "不可用";
-  // 视频真的会动；其余类型只能是一张静帧，卡片上照实说。
-  return item.kind === "video" ? "动态播放" : "静帧预览";
+  // 能选中的只有 video：它真的会动。
+  return "动态播放";
 }
 
 /*
@@ -800,22 +797,6 @@ async function toggleEngineList() {
   if (expanded) await scanEngine();
 }
 
-async function toStillJpeg(dataUrl) {
-  const image = new Image();
-  image.src = dataUrl;
-  await image.decode();
-  const longest = Math.max(image.naturalWidth, image.naturalHeight);
-  if (!longest) return "";
-  const scale = Math.min(1, STILL_MAX_EDGE / longest);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-  const encoded = canvas.toDataURL("image/jpeg", 0.92);
-  const comma = encoded.indexOf(",");
-  return comma >= 0 ? encoded.slice(comma + 1) : "";
-}
-
 async function useEngineItem(id) {
   if (state.busy) return;
   const item = (state.engineList || []).find((entry) => entry.id === id);
@@ -823,26 +804,13 @@ async function useEngineItem(id) {
 
   setBusy(true);
   try {
-    let data = "";
-    if (item.kind === "still") {
-      const bytes = await invoke(`${GLASS}.enginePreview`, { id });
-      if (!bytes || bytes.ok === false || !bytes.data) {
-        toast("这个壁纸没有可用的预览图", true);
-        return;
-      }
-      data = await toStillJpeg(`data:${bytes.mime};base64,${bytes.data}`);
-      if (!data) {
-        toast("预览图解码失败", true);
-        return;
-      }
-    }
-    const result = await invoke(`${GLASS}.engineApply`, { id, data });
+    const result = await invoke(`${GLASS}.engineApply`, { id });
     adoptGlassState(result);
     if (result && result.ok === false) {
       toast(result.message || "无法使用这张壁纸", true);
       return;
     }
-    toast(item.kind === "video" ? `已启用动态壁纸：${item.title}` : `已使用静帧预览：${item.title}`);
+    toast(`已启用动态壁纸：${item.title}`);
   } catch (error) {
     toast(error.message || "无法使用这张壁纸", true);
   } finally {

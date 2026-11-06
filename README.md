@@ -4,7 +4,7 @@ PI-Desktop 的控制台插件：一个插件，四个功能。
 
 | 功能 | 做什么 |
 |---|---|
-| **外观** | 一处调窗口长什么样：界面动效（动画优化，强度与速度两把滑杆挂在它下面）与窗口材质（磨砂玻璃开关带模糊强度、背景图带填充方式与最近使用的缩略图网格、Wallpaper Engine 壁纸按类型决定动态播放还是退回静帧）。依赖某个开关的选项是那个开关的二级内容，开关关掉就收起。 |
+| **外观** | 一处调窗口长什么样：界面动效（动画优化，强度与速度两把滑杆挂在它下面）与窗口材质（磨砂玻璃开关带模糊强度、背景图带填充方式与最近使用的缩略图网格、Wallpaper Engine 壁纸（video 类可动态播放、其余类型在这里不可选））。依赖某个开关的选项是那个开关的二级内容，开关关掉就收起。 |
 | **行为** | 聊天框里的模型浮窗：总是列出全部模型（限高仍是宿主的），搜索框下面一条「默认 / 供应商 / 厂商 / 名称」切换排列方式（面板里同一组排列方式也是一个四选一）：默认按宿主自己的顺序平铺（一行不重排，不含「最近使用」这一类），其余三种的分组与组内都按 A–Z。另有三个开关：选中行的那枚对勾换成一圈圆角边框、推理强度滑杆的档位译成中文、窗口入口搬进侧边栏（右侧面板开关的图标一并摆正）。 |
 | **插件市场** | 读取已装插件与官方 catalog，经 jsDelivr / raw / GitHub Blobs API 下载更新包，按 `sizeBytes` 与 `sha256` 逐位校验后再交给你在 Plugins 页安装。 |
 | **远程** | 同一 Wi-Fi 下的手机、平板或另一台电脑配对后可以看会话、发指令、停止正在运行的一轮；面板里只有一个开关、一个访问地址和一个六位配对码。 |
@@ -150,9 +150,11 @@ Wallpaper Engine 的创意工坊内容放在 `<Steam 库>/steamapps/workshop/con
 | 类型 | 作者库里 40 张的分布 | 这个窗口怎么画 |
 |---|---|---|
 | `video`（mp4 / webm） | 7 | **真的播放**：渲染模块往 `.app-shell` 插一个原生 `<video>`，`file:` URL、`muted`、`loop`，由 Chromium 硬解 |
-| `scene` / `web` / `application` / `preset` | 33 | **退回静帧**：用项目自带的 `preview.jpg` / `preview.gif`，面板把首帧画成 jpeg 写进数据目录，之后它就是一张普通背景图 |
+| `scene` / `web` / `application` / `preset` | 33 | **不可用**：卡片照常列出并显示封面，但选不了，也不做任何背景 |
 
-`scene` 那类没法在这里动起来：它由 Wallpaper Engine 自己的 DirectX 场景渲染器绘制 `scene.pkg`，插件复刻不了。`web` 那类被宿主的 CSP 拦住——`frame-src pi-genui:` 只允许宿主自己的生成式 UI 协议，iframe 加载不了本地网页。所以卡片上写的是「动态播放」还是「静帧预览」，没有预览图的项目直接置灰并给出理由。
+`scene` 那类没法在这里动起来：它由 Wallpaper Engine 自己的 DirectX 场景渲染器绘制 `scene.pkg`，插件复刻不了。`web` 那类被宿主的 CSP 拦住——`frame-src pi-genui:` 只允许宿主自己的生成式 UI 协议，iframe 加载不了本地网页。所以只有 video 卡片写「动态播放」，其余写「需 Wallpaper Engine 渲染」并置灰。
+
+项目自带的 `preview.gif` / `preview.jpg` **不是壁纸画面**：它是创意工坊列表用的方形封面（本机 42 张全是 1:1、192–1024 px），只用来画列表里那张卡片的缩略图。拿它铺窗口会是一张被裁切的方图，所以这里没有「静帧兜底」；旧版本误把它写进数据目录的，加载时会清掉（`wallpaper.engine-<id>.jpg`）。
 
 视频层的两个细节：
 
@@ -297,8 +299,8 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 - 市场功能不安装、不卸载、不启用/禁用、不改 `registry.json`、不启动任何进程。
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
-- 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token；文件访问只有两处：自己数据目录里那张用户选的背景图 / Wallpaper Engine 静帧，以及下面这条里的创意工坊目录；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
-- Wallpaper Engine 支持全程只读：扫描 `<Steam 库>/steamapps/workshop/content/431960/<id>/project.json` 与项目自带的预览图，改动只发生在自己的设置与数据目录里，从不写创意工坊目录、不复制视频、不启动 Wallpaper Engine。选中 `video` 类型时把视频的绝对路径交给宿主窗口里的渲染模块，由一个 `<video>` 用 `file:` 播放（路径不经过网络，也不经过 `plugin-asset:`）；选中其余类型时把预览首帧写成数据目录里的 `wallpaper.engine-<id>.jpg`，与普通背景图同等对待（同样受宿主 4 MB 资源上限约束）。
+- 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token；文件访问只有两处：自己数据目录里用户选的背景图，以及下面这条里的创意工坊目录；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
+- Wallpaper Engine 支持全程只读：扫描 `<Steam 库>/steamapps/workshop/content/431960/<id>/project.json` 与项目自带的预览图，改动只发生在自己的设置与数据目录里，从不写创意工坊目录、不复制视频、不启动 Wallpaper Engine。选中 `video` 类型时把视频的绝对路径交给宿主窗口里的渲染模块，由一个 `<video>` 用 `file:` 播放（路径不经过网络，也不经过 `plugin-asset:`）；其余类型在这里不可选——它们只能由 Wallpaper Engine 本机渲染，方形封面只用于列表缩略图，不复制、不写入数据目录。
 - `agent.prompt.inject` 只用于收录 `skills/piopt.md`（按需加载），不会自动往消息里注入内容。
 - `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；它还在 `.app-shell` 里维护视频壁纸那一层（一个 `<video>` 指向插件进程给出的 `file:` 路径，模块自己不做文件读写）、协调可往返动画的克隆、改写聊天框的模型浮窗。除轮询 `plugin.call` 拿状态外不访问网络，不改动其他插件的界面，卸载时移除自己挂的东西。
 - 远程功能只在开关打开时占用一个局域网端口，服务的是插件自己的远程页面与四类接口（列会话、读一个会话、发指令、中止）；数据全部经 `pi.session.*` 与 `pi.desktop.invoke` 的 `agent/prompt`、`agent/abort` 取用，审批类（`dangerous`）操作一律不开放，设备令牌保存在插件设置里，关闭开关或卸载时端口立即释放。
