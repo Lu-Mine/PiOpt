@@ -301,14 +301,14 @@
         <section class="behavior-section" aria-labelledby="behavior-model-title">
           <header class="behavior-heading">
             <h1 id="behavior-model-title">模型选择器</h1>
-            <p>聊天框里模型浮窗的展开与排列。</p>
+            <p>调整聊天框中模型列表的显示方式。</p>
           </header>
 
           <div class="settings-group">
             <div class="settings-row">
               <div class="settings-row-copy">
                 <div class="settings-row-title">排列方式</div>
-                <div class="settings-row-detail">模型浮窗里按哪一种顺序列出来</div>
+                <div class="settings-row-detail">选择模型列表的排列顺序</div>
               </div>
               <div class="settings-row-control">
                 <!-- 四选一，点哪个是哪个：与浮窗里那条切换是同一个值。 -->
@@ -324,7 +324,7 @@
             <label class="settings-row switch-row" for="behavior-frame">
               <span class="settings-row-copy">
                 <span class="settings-row-title">圆角框替代对勾</span>
-                <span class="settings-row-detail">选中的模型用圆角矩形框住，不画对勾</span>
+                <span class="settings-row-detail">用圆角框标记选中的模型</span>
               </span>
               <span class="settings-row-control">
                 <input id="behavior-frame" type="checkbox" />
@@ -332,13 +332,33 @@
               </span>
             </label>
 
+          </div>
+        </section>
+
+        <section class="behavior-section" aria-labelledby="behavior-composer-title">
+          <header class="behavior-heading">
+            <h1 id="behavior-composer-title">聊天框</h1>
+            <p>调整聊天框中的指令入口和推理强度显示。</p>
+          </header>
+
+          <div class="settings-group">
             <label class="settings-row switch-row" for="behavior-thinking-zh">
               <span class="settings-row-copy">
                 <span class="settings-row-title">中文推理强度</span>
-                <span class="settings-row-detail">把滑杆与思考按钮上的 off / low / high 译成中文</span>
+                <span class="settings-row-detail">将推理强度滑杆和聊天框按钮的档位名称显示为中文</span>
               </span>
               <span class="settings-row-control">
                 <input id="behavior-thinking-zh" type="checkbox" />
+                <span class="switch" aria-hidden="true"><span></span></span>
+              </span>
+            </label>
+            <label class="settings-row switch-row" for="behavior-command-button">
+              <span class="settings-row-copy">
+                <span class="settings-row-title">指令按钮</span>
+                <span class="settings-row-detail">在全自动旁添加按钮，输入斜杠以打开指令列表</span>
+              </span>
+              <span class="settings-row-control">
+                <input id="behavior-command-button" type="checkbox" />
                 <span class="switch" aria-hidden="true"><span></span></span>
               </span>
             </label>
@@ -350,27 +370,17 @@
         <section class="behavior-section" aria-labelledby="behavior-entry-title">
           <header class="behavior-heading">
             <h1 id="behavior-entry-title">窗口入口</h1>
-            <p>侧边栏头部那几个按钮摆在哪。</p>
+            <p>调整窗口中的功能入口位置。</p>
           </header>
 
           <div class="settings-group">
             <label class="settings-row switch-row" for="behavior-entry-actions">
               <span class="settings-row-copy">
                 <span class="settings-row-title">调整功能入口</span>
-                <span class="settings-row-detail">「新建任务」「搜索」挪到侧边栏，收起侧边栏后跟着「切换侧边栏」排；右侧面板开关的图标也摆正</span>
+                <span class="settings-row-detail">将新建任务和搜索移至侧边栏，并对齐右侧面板开关图标</span>
               </span>
               <span class="settings-row-control">
                 <input id="behavior-entry-actions" type="checkbox" />
-                <span class="switch" aria-hidden="true"><span></span></span>
-              </span>
-            </label>
-            <label class="settings-row switch-row" for="behavior-command-button">
-              <span class="settings-row-copy">
-                <span class="settings-row-title">聊天框指令按钮</span>
-                <span class="settings-row-detail">在全自动旁添加按钮，打开斜杠指令列表</span>
-              </span>
-              <span class="settings-row-control">
-                <input id="behavior-command-button" type="checkbox" />
                 <span class="switch" aria-hidden="true"><span></span></span>
               </span>
             </label>
