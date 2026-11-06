@@ -364,11 +364,9 @@ test("the behavior screen offers four arrangements on the right and three switch
 
 test("行为设置按作用区域分组", () => {
   const html = read("renderer/index.html");
-  const model = html.slice(html.indexOf('aria-labelledby="behavior-model-title"'), html.indexOf('aria-labelledby="behavior-composer-title"'));
   const composer = html.slice(html.indexOf('aria-labelledby="behavior-composer-title"'), html.indexOf('aria-labelledby="behavior-entry-title"'));
   const entries = html.slice(html.indexOf('aria-labelledby="behavior-entry-title"'), html.indexOf('id="view-remote"'));
-  for (const id of ["behavior-grouping", "behavior-frame"]) assert.ok(model.includes(`id="${id}"`));
-  for (const id of ["behavior-thinking-zh", "behavior-command-button"]) assert.ok(composer.includes(`id="${id}"`));
+  for (const id of ["behavior-grouping", "behavior-frame", "behavior-thinking-zh", "behavior-command-button"]) assert.ok(composer.includes(`id="${id}"`));
   assert.ok(entries.includes('id="behavior-entry-actions"'));
   for (const id of ["behavior-grouping", "behavior-frame", "behavior-thinking-zh", "behavior-command-button", "behavior-entry-actions"]) {
     assert.equal(html.split(`id="${id}"`).length - 1, 1, id);
