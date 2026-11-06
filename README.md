@@ -159,7 +159,7 @@ Wallpaper Engine 的创意工坊内容放在 `<Steam 库>/steamapps/workshop/con
 1. **位置**：`.app-shell::before` 已经占着 `z-index:-1`，视频容器用同一个 `-1` 并排在它后面（同层按 DOM 顺序绘制），所以视频压在柔光场之上、内容之下。这时生成器把 `::before` 的 `background-image` 置为 `none`，压暗改由容器自己的 `::after` 画 `--pg-scrim`——否则两个暗层会叠在一起。
 2. **来源受宿主 CSP 限制**：主窗口以 `file://` 加载（`window.loadFile`），CSP 的 `media-src 'self' data: blob: https:` 覆盖 `file:`，视频可以零拷贝流式播放。反过来 `plugin-asset:` 不在 `media-src` 里，本地 HTTP 也不行（`connect-src 'self'`），这两条路都不通，也没必要。
 
-状态同步靠轮询：渲染模块拿不到设置变更事件，所以窗口可见时每 4 秒问一次 `plugin.call` 的 `engineWallpaperState`，并在 `.app-shell` 被 React 重建后用 MutationObserver 把自己挂回去。窗口隐藏或 `prefers-reduced-motion` 时暂停播放，只留首帧。
+状态同步靠轮询：渲染模块拿不到设置变更事件，所以窗口可见时每 2 秒问一次 `plugin.call` 的 `engineWallpaperState`，并在 `.app-shell` 被 React 重建后用 MutationObserver 把自己挂回去。窗口隐藏或 `prefers-reduced-motion` 时暂停播放，只留首帧。
 
 
 ### 平台限制：插件不能让窗口透出桌面

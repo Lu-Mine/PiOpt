@@ -16,7 +16,7 @@
 //    也不能连本地 HTTP。`file:` 与页面同源，是唯一不把整段视频读进内存的路。
 //
 // 3. 状态。渲染模块没有设置变更事件，而这个层必须跟着面板走。所以它轮询
-//    `plugin.call`（4 秒一次、窗口隐藏时不跑），并在 `.app-shell` 被 React
+//    `plugin.call`（2 秒一次、窗口隐藏时不跑），并在 `.app-shell` 被 React
 //    重建后把自己挂回去。
 
 export const WALLPAPER_RUNTIME_CSS = [
@@ -30,7 +30,7 @@ const CONTAINER_ATTR = "data-piopt-engine-wallpaper";
 const VIDEO_ATTR = "data-piopt-engine-video";
 const SHELL_SELECTOR = ".app-shell";
 const FIT_VALUES = ["fill", "contain", "cover", "none"];
-const POLL_MS = 4000;
+const POLL_MS = 2000;
 const ENSURE_DELAY_MS = 180;
 
 let host = null;
@@ -135,6 +135,8 @@ function play() {
     video.pause();
     return;
   }
+  // 状态轮询每 2 秒回来一次；已经在播就别每次再敲一次 play()。
+  if (!video.paused) return;
   try {
     const promise = video.play();
     if (promise && typeof promise.catch === "function") {
