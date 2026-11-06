@@ -533,6 +533,7 @@ test("the entry switch is stored on its own key, next to the popup settings", as
       frameSelected: true,
       translateThinking: true,
       entryActions: false,
+      commandButton: false,
     });
 
     const saved = await feature.setOptions({ entryActions: true });

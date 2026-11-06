@@ -199,7 +199,7 @@ test("manifest declares the renderer entry and keeps the whitelists exact", () =
   assert.equal(manifest.renderer, "renderer/entry.mjs");
   assert.ok(fs.existsSync(path.join(root, manifest.renderer)));
   assert.ok(manifest.permissions.includes("renderer.extension"));
-  assert.deepEqual(manifest.rendererActions, ["plugin.call"]);
+  assert.deepEqual(manifest.rendererActions, ["plugin.call", "composer.insertText"]);
   // The host window asks the plugin two more things: the popup's grouping, and
   // the value the user just picked in the console.
   assert.deepEqual(manifest.rendererCallMethods, [

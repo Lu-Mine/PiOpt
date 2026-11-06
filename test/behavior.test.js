@@ -310,6 +310,7 @@ test("the panel writes the two popup rewrites through setOptions", async () => {
       frameSelected: false,
       translateThinking: true,
       entryActions: false,
+      commandButton: false,
     });
     assert.deepEqual(fake.store[modelPicker.SETTINGS_KEY], { grouping: "vendor", frameSelected: false, translateThinking: true });
   } finally {
@@ -536,4 +537,41 @@ test("两项改写与排列方式一起从主进程读回来", () => {
   // 滑杆是宿主自己的另一块：它的高亮/译文变化不该触发整份重建。
   assert.match(source, /function touchesThinking\(record\)/);
   assert.match(source, /if \(closestOf\(record\.target, THINKING_SLIDER_SELECTOR\)\) return true;/);
+});
+
+test("command button setting persists independently", async () => {
+  const fake = makePi();
+  const feature = loadFeature(fake);
+  try {
+    await feature.onLoad();
+    assert.equal(feature.getState().config.commandButton, false);
+    await feature.setOptions({ commandButton: true });
+    assert.equal(fake.store.commandButton, true);
+    assert.equal(fake.store.modelPicker, undefined);
+    await feature.onLoad();
+    assert.equal(feature.getState().config.commandButton, true);
+    await feature.setOptions({ commandButton: false });
+    assert.equal(fake.store.commandButton, false);
+  } finally { delete global.pi; }
+});
+
+test("command button mounts, dispatches slash and cleans up", async () => {
+  const listeners = {};
+  const toolbar = { lastElementChild: null, append(node) { this.lastElementChild = node; node.parentElement = this; } };
+  const doc = { documentElement: {}, querySelector: () => toolbar, addEventListener() {}, removeEventListener() {},
+    createElement() { return { setAttribute() {}, addEventListener(type, fn) { listeners[type] = fn; }, remove() { if (this.parentElement) this.parentElement.lastElementChild = null; this.parentElement = null; } }; } };
+  const oldDoc = global.document, oldWindow = global.window;
+  global.document = doc;
+  global.window = { addEventListener() {}, removeEventListener() {} };
+  const calls = [];
+  const pi = { dispatch(action, payload) { calls.push([action, payload]); return action === 'plugin.call' ? { config: { commandButton: true } } : { ok: true }; } };
+  try {
+    const module = await import('../renderer/command-button.mjs');
+    await module.mountCommandButton(pi);
+    assert.ok(toolbar.lastElementChild);
+    listeners.click();
+    assert.deepEqual(calls.at(-1), ['composer.insertText', { text: '/' }]);
+    module.unmountCommandButton();
+    assert.equal(toolbar.lastElementChild, null);
+  } finally { global.document = oldDoc; global.window = oldWindow; }
 });

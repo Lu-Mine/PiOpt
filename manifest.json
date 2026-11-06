@@ -26,7 +26,8 @@
   },
   "renderer": "renderer/entry.mjs",
   "rendererActions": [
-    "plugin.call"
+    "plugin.call",
+    "composer.insertText"
   ],
   "rendererCallMethods": [
     "openConsole",

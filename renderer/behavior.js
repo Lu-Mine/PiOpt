@@ -14,6 +14,7 @@
     frameSelected: false,
     translateThinking: false,
     entryActions: false,
+    commandButton: false,
   };
   const GROUPINGS = ["default", "provider", "vendor", "name"];
 
@@ -31,6 +32,7 @@
       frameSelected: source.frameSelected === true,
       translateThinking: source.translateThinking === true,
       entryActions: source.entryActions === true,
+      commandButton: source.commandButton === true,
     };
   }
 
@@ -58,9 +60,11 @@
     elements.frame.checked = config.frameSelected;
     elements.thinking.checked = config.translateThinking;
     elements.entries.checked = config.entryActions;
+    elements.command.checked = config.commandButton;
     elements.frame.disabled = state.busy;
     elements.thinking.disabled = state.busy;
     elements.entries.disabled = state.busy;
+    elements.command.disabled = state.busy;
     elements.status.textContent = state.error;
     elements.status.hidden = !state.error;
   }
@@ -108,6 +112,9 @@
     elements.entries.addEventListener("change", () => {
       void save(`${CHANNEL}.setOptions`, { entryActions: elements.entries.checked });
     });
+    elements.command.addEventListener("change", () => {
+      void save(`${CHANNEL}.setOptions`, { commandButton: elements.command.checked });
+    });
   }
 
   async function boot() {
@@ -116,6 +123,7 @@
       frame: byId("behavior-frame"),
       thinking: byId("behavior-thinking-zh"),
       entries: byId("behavior-entry-actions"),
+      command: byId("behavior-command-button"),
       status: byId("behavior-status"),
     });
     bindEvents();

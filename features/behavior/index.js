@@ -19,6 +19,7 @@ const navEntries = require("./nav-entries.js");
 
 let picker = { ...modelPicker.DEFAULT_CONFIG };
 let entries = { ...navEntries.DEFAULT_CONFIG };
+let commandButton = false;
 
 async function readSettings() {
   try {
@@ -33,13 +34,14 @@ async function readConfig() {
   return {
     picker: modelPicker.normalizeConfig(settings[modelPicker.SETTINGS_KEY]),
     entries: navEntries.normalizeConfig(settings[navEntries.SETTINGS_KEY]),
+    commandButton: settings.commandButton === true,
   };
 }
 
 // 面板要的东西：当前设置，以及可以选哪些排列方式。
 function statePayload() {
   return {
-    config: { ...picker, entryActions: entries.enabled },
+    config: { ...picker, entryActions: entries.enabled, commandButton },
     groupings: [...modelPicker.GROUPINGS],
   };
 }
@@ -55,12 +57,17 @@ async function setGrouping(input) {
 async function setOptions(patch = {}) {
   const source = patch && typeof patch === "object" ? patch : {};
   const writes = {};
+  if (Object.prototype.hasOwnProperty.call(source, "commandButton")) {
+    commandButton = source.commandButton === true;
+    writes.commandButton = commandButton;
+  }
   if (Object.prototype.hasOwnProperty.call(source, "entryActions")) {
     entries = navEntries.normalizeConfig({ enabled: source.entryActions === true });
     writes[navEntries.SETTINGS_KEY] = entries;
   }
   const pickerPatch = { ...source };
   delete pickerPatch.entryActions;
+  delete pickerPatch.commandButton;
   if (Object.keys(pickerPatch).length > 0) {
     picker = modelPicker.normalizeConfig({ ...picker, ...pickerPatch });
     writes[modelPicker.SETTINGS_KEY] = picker;
@@ -73,6 +80,7 @@ async function onLoad() {
   const loaded = await readConfig();
   picker = loaded.picker;
   entries = loaded.entries;
+  commandButton = loaded.commandButton;
 }
 
 async function onUnload() {
@@ -85,6 +93,7 @@ async function onPanelInvoke(channel, payload = {}) {
       const loaded = await readConfig();
       picker = loaded.picker;
       entries = loaded.entries;
+      commandButton = loaded.commandButton;
       return statePayload();
     }
     case "behavior.modelPicker.setGrouping":
