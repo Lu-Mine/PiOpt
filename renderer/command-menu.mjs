@@ -51,7 +51,7 @@ export async function openCommandMenu(button, host) {
   const editor = document.querySelector('.composer-input');
   const selection = window.getSelection();
   const range = selection?.rangeCount && editor?.contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
-  menu = document.createElement('div'); menu.className = 'composer-autocomplete is-open';
+  menu = document.createElement('div'); menu.className = 'composer-autocomplete is-open'; menu.setAttribute('data-piopt-command-menu', '');
   menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', '指令');
   const search = document.createElement('input'); search.className = 'piopt-command-search'; search.placeholder = '搜索指令'; search.setAttribute('aria-label', '搜索指令');
   const list = document.createElement('div'); list.className = 'composer-ac-list';

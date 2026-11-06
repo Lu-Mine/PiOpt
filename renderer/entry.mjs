@@ -19,6 +19,7 @@ import { NAV_ENTRIES_CSS, mountNavEntries, unmountNavEntries } from "./nav-entri
 import { COMMAND_BUTTON_CSS, mountCommandButton, unmountCommandButton } from "./command-button.mjs";
 import { PERMISSION_ICON_CSS, mountPermissionIcons, unmountPermissionIcons } from "./permission-icons.mjs";
 import { mountComposerCompact, unmountComposerCompact } from "./composer-compact.mjs";
+import { COMMAND_ENHANCE_CSS, mountCommandEnhance, unmountCommandEnhance } from "./command-enhance.mjs";
 import {
   WALLPAPER_RUNTIME_CSS,
   mountEngineWallpaper,
@@ -52,6 +53,7 @@ const STYLE = [
   MOTION_RUNTIME_CSS,
   NAV_ENTRIES_CSS,
   PERMISSION_ICON_CSS,
+  COMMAND_ENHANCE_CSS,
   COMMAND_BUTTON_CSS,
   WALLPAPER_RUNTIME_CSS,
 ].join("\n");
@@ -160,6 +162,7 @@ export async function onLoad(pi) {
   // The popup rewrite and reversible motion coordinator ride along: same window, same lifecycle.
   mountComposerCompact();
   mountMotionRuntime();
+  mountCommandEnhance();
   mountPermissionIcons();
   await mountNavEntries(pi);
   await mountCommandButton(pi);
@@ -178,6 +181,7 @@ export async function onUnload() {
     scanTimer = null;
   }
   unmountComposerCompact();
+  unmountCommandEnhance();
   document.removeEventListener("visibilitychange", scheduleScan);
   unmountPermissionIcons();
   unmountModelPicker();
