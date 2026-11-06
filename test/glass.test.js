@@ -879,7 +879,7 @@ test("picking an engine clip stores the clip and drops the photo", async () => {
     assert.equal(stored.wallpaper, "");
 
     // What the renderer module is handed: the clip, the fit mode, and whether the
-    // clip should stay frozen instead of playing.
+    // clip should be redrawn at a capped frame rate.
     assert.deepEqual(feature.getEngineWallpaperState(), {
       engine: { id: "555", title: "Sky", kind: "video", file: path.join(dir, "clip.mp4") },
       fit: "fill",

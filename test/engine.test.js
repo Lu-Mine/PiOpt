@@ -245,6 +245,37 @@ test("the fit mode is the one the video layer can express", async () => {
   assert.equal(runtime.fitOf(undefined), "cover");
 });
 
+test("the capped frame maps object-fit onto the canvas the way the video would", async () => {
+  const runtime = await import("../renderer/wallpaper-runtime.mjs");
+  const { frameBox } = runtime;
+  const near = (actual, expected, label) =>
+    assert.ok(Math.abs(actual - expected) < 0.01, `${label}: expected ${expected}, got ${actual}`);
+
+  // 3840x2400 的源铺进 1280x720 的画布。
+  const cover = frameBox(1280, 720, 3840, 2400, "cover");
+  near(cover.dw, 1280, "cover width"); // 宽度正好铺满
+  near(cover.dh, 800, "cover height"); // 高度溢出，上下各裁 40
+  near(cover.dx, 0, "cover dx");
+  near(cover.dy, -40, "cover dy");
+
+  const contain = frameBox(1280, 720, 3840, 2400, "contain");
+  near(contain.dw, 1152, "contain width"); // 高度贴边，两侧各留 64
+  near(contain.dh, 720, "contain height");
+  near(contain.dx, 64, "contain dx");
+  near(contain.dy, 0, "contain dy");
+
+  assert.deepEqual(frameBox(1280, 720, 3840, 2400, "fill"), { dx: 0, dy: 0, dw: 1280, dh: 720 });
+
+  const none = frameBox(1280, 720, 3840, 2400, "none");
+  near(none.dw, 3840, "none width"); // 原尺寸居中，四周溢出
+  near(none.dx, -1280, "none dx");
+  near(none.dy, -840, "none dy");
+
+  // 未知 fill 退回 cover；还没解出尺寸时不能产生 NaN。
+  near(frameBox(1280, 720, 3840, 2400, "stretch").dw, 1280, "fallback uses cover");
+  assert.deepEqual(frameBox(0, 0, 3840, 2400, "cover"), { dx: 0, dy: 0, dw: 0, dh: 0 });
+});
+
 test("the video layer sits under the shell's content and carries its own scrim", async () => {
   const runtime = await import("../renderer/wallpaper-runtime.mjs");
   const css = runtime.WALLPAPER_RUNTIME_CSS;

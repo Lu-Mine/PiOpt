@@ -268,11 +268,11 @@
                 </div>
 
                 <div class="backdrop-panel" id="glass-panel-engine" role="tabpanel" aria-labelledby="glass-tab-engine" hidden>
-                  <!-- 视频壁纸的常驻开销只有这一处能降：停播放就是停解码。 -->
+                  <!-- 降开销不靠停播放：解码照跑，只按目标帧率重绘上屏。 -->
                   <label class="settings-row switch-row" for="glass-performance">
                     <span class="settings-row-copy">
                       <span class="settings-row-title">性能模式</span>
-                      <span class="settings-row-detail">视频壁纸停住画面，不再持续解码与合成</span>
+                      <span class="settings-row-detail">按 30fps 重绘上屏，窗口失焦时降到 20fps，最小化时暂停</span>
                     </span>
                     <span class="settings-row-control">
                       <input id="glass-performance" type="checkbox" />
