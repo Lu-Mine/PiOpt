@@ -570,7 +570,7 @@ test("command button mounts, dispatches slash and cleans up", async () => {
   const listeners = {};
   const toolbar = { lastElementChild: null, append(node) { this.lastElementChild = node; node.parentElement = this; } };
   const doc = { documentElement: {}, querySelector: () => toolbar, addEventListener() {}, removeEventListener() {},
-    createElement() { return { setAttribute() {}, addEventListener(type, fn) { listeners[type] = fn; }, remove() { if (this.parentElement) this.parentElement.lastElementChild = null; this.parentElement = null; } }; } };
+    createElement() { return { setAttribute() {}, removeAttribute() {}, addEventListener(type, fn) { listeners[type] = fn; }, remove() { if (this.parentElement) this.parentElement.lastElementChild = null; this.parentElement = null; } }; } };
   const oldDoc = global.document, oldWindow = global.window;
   global.document = doc;
   global.window = { addEventListener() {}, removeEventListener() {} };
@@ -580,6 +580,9 @@ test("command button mounts, dispatches slash and cleans up", async () => {
     const module = await import('../renderer/command-button.mjs');
     await module.mountCommandButton(pi);
     assert.ok(toolbar.lastElementChild);
+    assert.equal(toolbar.lastElementChild.className, 'icon-btn mode-chip');
+    assert.match(toolbar.lastElementChild.innerHTML, /<svg.*指令/);
+    assert.equal(toolbar.lastElementChild.title, undefined);
     listeners.click();
     assert.deepEqual(calls.at(-1), ['composer.insertText', { text: '/' }]);
     module.unmountCommandButton();

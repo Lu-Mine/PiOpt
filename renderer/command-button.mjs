@@ -1,12 +1,43 @@
 // A shortcut to the host's own slash-command completion, not a separate list.
 const ATTR = "data-piopt-command-button";
-export const COMMAND_BUTTON_CSS = `[${ATTR}]{border:0;background:transparent;color:var(--ds-text-secondary);border-radius:var(--radius-md,6px);height:28px;padding:0 8px;cursor:pointer;font:inherit} [${ATTR}]:hover{background:var(--ds-bg-hover);color:var(--ds-text-primary)} [${ATTR}]:focus-visible{outline:2px solid var(--ds-focus);outline-offset:1px}`;
-let host, observer, button, enabled = false, active = false, generation = 0;
+export const COMMAND_BUTTON_CSS = `[${ATTR}]{cursor:pointer} [${ATTR}] .piopt-command-icon{width:15px;height:15px;flex:none}`;
+let host, observer, button, tooltip, tooltipTimer, enabled = false, active = false, generation = 0;
+
+function hideTooltip() {
+  clearTimeout(tooltipTimer);
+  tooltipTimer = null;
+  tooltip?.remove();
+  tooltip = null;
+  button?.removeAttribute('aria-describedby');
+}
+
+function showTooltip() {
+  if (tooltip || tooltipTimer) return;
+  tooltipTimer = setTimeout(() => {
+    tooltipTimer = null;
+    if (!button?.isConnected) return;
+    tooltip = document.createElement('span');
+    tooltip.className = 'ui-tooltip';
+    tooltip.id = 'piopt-command-tooltip';
+    tooltip.setAttribute('role', 'tooltip');
+    tooltip.textContent = '指令';
+    document.body.append(tooltip);
+    const anchor = button.getBoundingClientRect();
+    const bounds = tooltip.getBoundingClientRect();
+    const left = Math.min(Math.max(anchor.left + anchor.width / 2, bounds.width / 2 + 8), Math.max(bounds.width / 2 + 8, window.innerWidth - bounds.width / 2 - 8));
+    const below = anchor.top - 8 - bounds.height < 8;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${below ? anchor.bottom + 8 : anchor.top - 8}px`;
+    tooltip.style.transform = below ? 'translateX(-50%)' : 'translate(-50%, -100%)';
+    button.setAttribute('aria-describedby', tooltip.id);
+  }, 300);
+}
 
 function scan() {
   if (!active) return;
   const toolbar = document.querySelector('.composer-left');
   if (!enabled || !toolbar) {
+    hideTooltip();
     button?.remove();
     return;
   }
@@ -14,12 +45,18 @@ function scan() {
     button = document.createElement('button');
     button.type = 'button';
     button.setAttribute(ATTR, '');
+    button.className = 'icon-btn mode-chip';
     button.setAttribute('aria-label', '指令');
-    button.title = '指令';
-    button.textContent = '/';
+    button.innerHTML = '<span class="composer-mode-chip-face"><svg class="piopt-command-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M16 4 8 20"/></svg><span class="composer-mode-chip-label text-sm">指令</span></span>';
+    button.addEventListener('pointerenter', showTooltip);
+    button.addEventListener('pointerleave', hideTooltip);
+    button.addEventListener('focus', showTooltip);
+    button.addEventListener('blur', hideTooltip);
+    button.addEventListener('keydown', event => { if (event.key === 'Escape') hideTooltip(); });
     // Keep the editor selection when the shortcut is clicked.
     button.addEventListener('mousedown', event => event.preventDefault());
     button.addEventListener('click', () => {
+      hideTooltip();
       try {
         Promise.resolve(host.dispatch('composer.insertText', { text: '/' })).catch(error => console.warn('[PiOpt] 指令按钮不可用', error));
       } catch (error) { console.warn('[PiOpt] 指令按钮不可用', error); }
@@ -54,6 +91,7 @@ export function unmountCommandButton() {
   active = false;
   generation++;
   observer?.disconnect();
+  hideTooltip();
   observer = null;
   if (typeof window !== 'undefined') window.removeEventListener('focus', refresh);
   document.removeEventListener('visibilitychange', refresh);
