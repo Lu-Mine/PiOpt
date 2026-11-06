@@ -1,6 +1,7 @@
+import { COMMAND_MENU_CSS, openCommandMenu, closeCommandMenu } from './command-menu.mjs';
 // A shortcut to the host's own slash-command completion, not a separate list.
 const ATTR = "data-piopt-command-button";
-export const COMMAND_BUTTON_CSS = `[${ATTR}]{cursor:pointer} [${ATTR}] .piopt-command-icon{width:15px;height:15px;flex:none}`;
+export const COMMAND_BUTTON_CSS = `[${ATTR}]{cursor:pointer} [${ATTR}] .piopt-command-icon{width:15px;height:15px;flex:none}` + COMMAND_MENU_CSS;
 let host, observer, button, tooltip, tooltipTimer, enabled = false, active = false, generation = 0;
 
 function hideTooltip() {
@@ -37,6 +38,7 @@ function scan() {
   if (!active) return;
   const toolbar = document.querySelector('.composer-left');
   if (!enabled || !toolbar) {
+    closeCommandMenu();
     hideTooltip();
     button?.remove();
     return;
@@ -46,6 +48,8 @@ function scan() {
     button.type = 'button';
     button.setAttribute(ATTR, '');
     button.className = 'icon-btn mode-chip';
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-label', '指令');
     button.innerHTML = '<span class="composer-mode-chip-face"><svg class="piopt-command-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M16 4 8 20"/></svg><span class="composer-mode-chip-label text-sm">指令</span></span>';
     button.addEventListener('pointerenter', showTooltip);
@@ -57,9 +61,7 @@ function scan() {
     button.addEventListener('mousedown', event => event.preventDefault());
     button.addEventListener('click', () => {
       hideTooltip();
-      try {
-        Promise.resolve(host.dispatch('composer.insertText', { text: '/' })).catch(error => console.warn('[PiOpt] 指令按钮不可用', error));
-      } catch (error) { console.warn('[PiOpt] 指令按钮不可用', error); }
+      void openCommandMenu(button, host);
     });
   }
   if (button.parentElement !== toolbar || button !== toolbar.lastElementChild) toolbar.append(button);
@@ -91,6 +93,7 @@ export function unmountCommandButton() {
   active = false;
   generation++;
   observer?.disconnect();
+  closeCommandMenu();
   hideTooltip();
   observer = null;
   if (typeof window !== 'undefined') window.removeEventListener('focus', refresh);

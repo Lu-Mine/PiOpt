@@ -566,7 +566,7 @@ test("command button setting persists independently", async () => {
   } finally { delete global.pi; }
 });
 
-test("command button mounts, dispatches slash and cleans up", async () => {
+test("command button mounts and cleans up", async () => {
   const listeners = {};
   const toolbar = { lastElementChild: null, append(node) { this.lastElementChild = node; node.parentElement = this; } };
   const doc = { documentElement: {}, querySelector: () => toolbar, addEventListener() {}, removeEventListener() {},
@@ -583,8 +583,6 @@ test("command button mounts, dispatches slash and cleans up", async () => {
     assert.equal(toolbar.lastElementChild.className, 'icon-btn mode-chip');
     assert.match(toolbar.lastElementChild.innerHTML, /<svg.*指令/);
     assert.equal(toolbar.lastElementChild.title, undefined);
-    listeners.click();
-    assert.deepEqual(calls.at(-1), ['composer.insertText', { text: '/' }]);
     module.unmountCommandButton();
     assert.equal(toolbar.lastElementChild, null);
   } finally { global.document = oldDoc; global.window = oldWindow; }
