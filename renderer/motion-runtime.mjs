@@ -118,6 +118,15 @@ const ALL_PORTAL_SELECTOR = [
 
 const INLINE_FLOAT_SELECTOR = ".jump-latest-btn,.chat-error-notice,.update-notice,.p-notice";
 
+
+// Everything captureSnapshot has to measure: four selectors, and it used to walk
+// the whole tree once per selector. One joint list walks it once.
+const SNAPSHOT_SELECTOR = [
+  DISCLOSURE_SELECTOR,
+  ALL_PORTAL_SELECTOR,
+  INLINE_FLOAT_SELECTOR,
+  ".dock-content,.todo-dock-content",
+].join(",");
 // ------------------------------------------------------------ bezier & math
 
 function clamp(value, min, max) {
@@ -367,14 +376,38 @@ function flightProgress(record, bezier) {
   return sampleCubicBezier(bezier, linear);
 }
 
+
+// A real click reaches the capture phase twice: pointerdown first, then click on
+// the same target a few milliseconds later. The first pass already took the
+// snapshot, so the second would only repeat the whole sweep for nothing. A click
+// with no preceding pointerdown (keyboard activation, a programmatic click)
+// still captures, and keydown always captures.
+const DUPLICATE_GESTURE_MS = 500;
+let lastPointerSnapshot = { at: 0, target: null };
+
+function isDuplicateGesture(event) {
+  const type = event?.type;
+  const target = event?.target ?? null;
+  if (type === "pointerdown") {
+    lastPointerSnapshot = { at: nowMs(), target };
+    return false;
+  }
+  if (type !== "click") return false;
+  const duplicated = nowMs() - lastPointerSnapshot.at < DUPLICATE_GESTURE_MS
+    && lastPointerSnapshot.target === target;
+  lastPointerSnapshot = { at: 0, target: null };
+  return duplicated;
+}
 // Snapshot visible disclosures, overlays and panels right as an input event
 // begins (capture phase), before React processes the click/key and unmounts them.
 function captureSnapshot(event) {
   if (isExcludedRoute()) return;
   if (typeof document === "undefined" || !document.body) return;
+  if (isDuplicateGesture(event)) return;
   const tokens = readMotionState(document);
   if (!tokens.active) return;
-  const dock = isElement(event?.target) ? event.target.closest(".dock,.todo-dock") : null;
+  const target = isElement(event?.target) ? event.target : null;
+  const dock = target && typeof target.closest === "function" ? target.closest(".dock,.todo-dock") : null;
   if (dock) {
     const content = dock.querySelector(".dock-content,.todo-dock-content");
     if (content) rectSnapshots.set(content, { height: content.getBoundingClientRect().height });
@@ -386,23 +419,29 @@ function captureSnapshot(event) {
     return;
   }
 
-  for (const selector of [DISCLOSURE_SELECTOR, ALL_PORTAL_SELECTOR, INLINE_FLOAT_SELECTOR, ".dock-content,.todo-dock-content"]) {
-    for (const el of document.querySelectorAll(selector)) {
-      if (isGhost(el)) continue;
-      const rect = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect() : null;
-      if (rect && rect.width > 0 && rect.height > 0) {
-        rectSnapshots.set(el, {
-          top: rect.top,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
-          offsetTop: el.offsetTop || 0,
-          offsetLeft: el.offsetLeft || 0,
-        });
-      }
+  // One joint selector walks the tree once; this used to be four separate sweeps.
+  for (const el of document.querySelectorAll(SNAPSHOT_SELECTOR)) {
+    if (isGhost(el)) continue;
+    const rect = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect() : null;
+    if (rect && rect.width > 0 && rect.height > 0) {
+      rectSnapshots.set(el, {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        offsetTop: el.offsetTop || 0,
+        offsetLeft: el.offsetLeft || 0,
+      });
     }
   }
-  for (const rowBtn of document.querySelectorAll("button.file-tree-row")) {
+  // A folder's expansion only flips on its own row, so only the folder that was
+  // actually hit needs measuring — and measuring one means reading a rect for
+  // every child it has, which is the expensive half of this whole function.
+  // Without an event target (a programmatic call) the old full sweep stays.
+  const dirRows = target && typeof target.closest === "function"
+    ? [target.closest("button.file-tree-row")].filter(Boolean)
+    : [...document.querySelectorAll("button.file-tree-row")];
+  for (const rowBtn of dirRows) {
     const dirBox = rowBtn.parentElement;
     if (!dirBox || isGhost(dirBox) || !dirBox.children || dirBox.children.length <= 1) continue;
     let totalHeight = 0;
@@ -1262,6 +1301,7 @@ export function unmountMotionRuntime() {
   activeOverlayGhosts.clear();
   activeFloatGhosts.clear();
   rectSnapshots = new WeakMap();
+  lastPointerSnapshot = { at: 0, target: null };
   activeExpands = new WeakMap();
   activeOverlayEntrances = new WeakMap();
   panelFlights = new WeakMap();
