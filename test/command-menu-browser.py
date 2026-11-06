@@ -8,11 +8,15 @@ with sync_playwright() as p:
     page = browser.new_page()
     page.set_content('<div contenteditable="true" class="composer-input">草稿</div><button id="trigger">指令</button>')
     page.evaluate('''() => { window.calls=[]; window.fetches=0; window.piDesktop={invoke:async()=>{window.fetches++; await new Promise(r=>setTimeout(r,150)); return {ok:true,data:{commands:[{name:'help',kind:'builtin',description:'帮助'},{name:'skill-test',kind:'skill',description:'技能'}]}}}}; window.host={dispatch:(action,payload)=>{window.calls.push({action,payload})}} }''')
-    page.add_script_tag(content='(() => {' + script + '\nwindow.openMenu=()=>openCommandMenu(document.querySelector("#trigger"),window.host);window.closeMenu=closeCommandMenu;window.prefetch=prefetchCommands;})()')
+    page.add_script_tag(content='(() => {' + script + '\nwindow.openMenu=()=>openCommandMenu(document.querySelector("#trigger"),window.host);window.closeMenu=closeCommandMenu;window.prefetch=prefetchCommands;window.commandCss=COMMAND_MENU_CSS;})()')
+    page.add_style_tag(content='input { background: white !important; box-shadow: 0 0 0 2px white !important; }')
+    page.evaluate('''() => { const style=document.createElement('style'); style.textContent=window.commandCss; document.head.append(style); }''')
     page.evaluate('prefetch()')
     assert page.evaluate('fetches') == 1
     page.evaluate('openMenu()')
     assert page.locator('.composer-ac-item').count() == 2
+    assert page.locator('.piopt-command-search').evaluate("e => getComputedStyle(e).backgroundColor") == 'rgba(0, 0, 0, 0)'
+    assert page.locator('.piopt-command-search').evaluate("e => getComputedStyle(e).boxShadow") == 'none'
     page.locator('.composer-ac-item').first.wait_for()
     assert page.locator('.composer-input').inner_text() == '草稿'
     assert page.evaluate('calls.length') == 0

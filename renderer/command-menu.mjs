@@ -24,7 +24,7 @@ const ICONS = {
   plugin: '<path d="M8 3v4M16 3v4M5 7h14v3a7 7 0 0 1-14 0zM12 17v4"/>',
   skill: '<path d="m12 3 2.2 5.2L20 10l-4.5 3.7L16 20l-4-3-4 3 .5-6.3L4 10l5.8-1.8z"/>',
 };
-export const COMMAND_MENU_CSS = `.piopt-command-search{flex:none;margin:6px 6px 0;padding:7px 8px;min-width:0;border:0;border-bottom:1px solid var(--ds-border-subtle);outline:none;color:inherit;background:transparent;font:inherit}.piopt-command-search:focus-visible{outline:2px solid var(--ds-focus);outline-offset:-2px}`;
+export const COMMAND_MENU_CSS = `.composer-autocomplete .piopt-command-search{appearance:none;flex:none;margin:6px 6px 0;padding:7px 8px;min-width:0;border:0;border-bottom:1px solid var(--ds-border-subtle);border-radius:0;outline:none;box-shadow:none!important;color:var(--ds-text-primary);background:transparent!important;font:inherit}.composer-autocomplete .piopt-command-search:focus-visible{border-bottom-color:var(--ds-focus);outline:none;box-shadow:none!important}.composer-autocomplete .piopt-command-search::placeholder{color:var(--ds-text-muted)}`;
 function dismiss(event) { if (!menu?.contains(event.target) && !owner?.contains(event.target)) closeCommandMenu(); }
 function position() {
   if (!menu || !owner) return;
