@@ -15,6 +15,10 @@ with sync_playwright() as p:
     page.wait_for_selector('[data-piopt-native-search]')
     assert page.locator('[data-piopt-native-search]').count()==1
     assert page.locator('[data-piopt-slash-title]').count()==3
+    page.evaluate('''() => { const editor=document.querySelector('.composer-input'); document.addEventListener('focusout', e => { if(e.target===editor) document.querySelector('.composer-autocomplete:not([data-piopt-command-menu])')?.remove(); }); editor.focus(); }''')
+    page.locator('[data-piopt-native-search]').click()
+    assert page.locator('.composer-autocomplete:not([data-piopt-command-menu])').count()==1
+    assert page.locator('[data-piopt-native-search]').evaluate('e => document.activeElement === e')
     page.locator('[data-piopt-native-search]').fill('skill')
     assert page.locator('.composer-ac-item:visible').count()==1
     assert page.locator('[data-piopt-slash-hidden]').count()==2

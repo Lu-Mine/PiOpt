@@ -63,7 +63,13 @@ function addSearch(menu) {
   input._cleanup = () => editor?.removeEventListener('focus', resetOnEditorFocus);
   input.type = 'search'; input.className = 'piopt-command-search';
   input.setAttribute(SEARCH, ''); input.setAttribute('aria-label', '搜索指令'); input.placeholder = '搜索指令';
+  // React's delegated focusout handler dismisses autocomplete when the editor
+  // loses focus. Suppress only the transfer into this menu's search input.
+  const keepOpen = event => { if (event.relatedTarget === input) event.stopPropagation(); };
+  editor?.addEventListener('focusout', keepOpen);
+  const oldCleanup = input._cleanup;
   input.addEventListener('input', () => { input._index = 0; filter(menu, input); });
+  input._cleanup = () => { oldCleanup(); editor?.removeEventListener('focusout', keepOpen); };
   input.addEventListener('keydown', event => {
     const rows = input._rows || [];
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && rows.length) {
