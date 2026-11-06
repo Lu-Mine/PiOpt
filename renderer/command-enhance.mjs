@@ -6,6 +6,7 @@ export const COMMAND_ENHANCE_CSS = `
 .composer-autocomplete[data-piopt-slash-menu] .composer-model-group-label[data-piopt-slash-title]{background:transparent;background-image:none;-webkit-backdrop-filter:none;backdrop-filter:none;container-type:scroll-state;color:transparent;position:sticky}
 .composer-autocomplete[data-piopt-slash-menu] .composer-model-group-label[data-piopt-slash-title]::after{content:attr(data-piopt-slash-title);position:absolute;left:8px;top:6px;color:var(--ds-text-muted);display:inline-block;padding:2px 6px;margin:-2px -6px;border-radius:6px}
 @container scroll-state(stuck: top){.composer-autocomplete[data-piopt-slash-menu] .composer-model-group-label[data-piopt-slash-title]::after{background:color-mix(in oklab,var(--ds-bg-elevated-opaque) 96%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(20px);backdrop-filter:saturate(1.4) blur(20px);box-shadow:0 1px 2px color-mix(in oklab,#000000 30%,transparent),0 8px 18px -6px color-mix(in oklab,#000000 42%,transparent)}}
+.composer-autocomplete[data-piopt-slash-menu] .composer-model-group-label[data-piopt-slash-title]{transform:translateY(var(--piopt-heading-shift,0px));clip-path:inset(0)}
 .composer-autocomplete[data-piopt-slash-menu] [data-piopt-slash-hidden]{display:none!important}`;
 const SEARCH = 'data-piopt-native-search';
 let observer, scheduled = false, active = false;
@@ -14,6 +15,24 @@ const inputs = new Map();
 function isSlashMenu(menu) {
   if (menu.hasAttribute('data-piopt-command-menu')) return true;
   return [...menu.querySelectorAll('.composer-ac-name')].some(node => node.textContent.trim().startsWith('/'));
+}
+const scrollLists = new Map();
+function updateSticky(list) {
+  const headers = [...list.querySelectorAll('.composer-model-group-label[data-piopt-slash-title]:not([data-piopt-slash-hidden])')];
+  const top = list.getBoundingClientRect().top + (parseFloat(getComputedStyle(list).borderTopWidth) || 0);
+  for (let i = headers.length - 1; i >= 0; i--) {
+    const heading = headers[i], next = headers[i + 1];
+    const shift = next ? Math.min(0, next.getBoundingClientRect().top - top - heading.offsetHeight) : 0;
+    const value = `${Math.max(-heading.offsetHeight, shift)}px`;
+    if (heading.style.getPropertyValue('--piopt-heading-shift') !== value) heading.style.setProperty('--piopt-heading-shift', value);
+  }
+}
+function observeList(menu) {
+  const list = menu.querySelector('.composer-ac-list');
+  const old = scrollLists.get(menu);
+  if (old && old.list !== list) { old.list.removeEventListener('scroll', old.handler); scrollLists.delete(menu); }
+  if (list && !scrollLists.has(menu)) { const handler = () => updateSticky(list); list.addEventListener('scroll', handler, { passive: true }); scrollLists.set(menu, { list, handler }); }
+  if (list) updateSticky(list);
 }
 function motionEnabled() {
   return typeof getComputedStyle === 'function' && getComputedStyle(document.documentElement).getPropertyValue('--piopt-permission-icon-size').trim() !== '';
@@ -68,12 +87,15 @@ function addSearch(menu) {
 function clean(menu) {
   inputs.get(menu)?._cleanup?.(); inputs.get(menu)?.remove(); inputs.delete(menu);
   menu.removeAttribute(MENU_ATTR);
+  const scroll = scrollLists.get(menu); if (scroll) { scroll.list.removeEventListener('scroll', scroll.handler); scrollLists.delete(menu); }
+  for (const heading of menu.querySelectorAll(`[${TITLE}]`)) heading.style.removeProperty('--piopt-heading-shift');
   for (const node of menu.querySelectorAll(`[${HIDDEN}],[${TITLE}]`)) { node.removeAttribute(HIDDEN); node.removeAttribute(TITLE); }
 }
 function scan() {
   scheduled = false;
   if (!active) return;
   const enabled = motionEnabled();
+  for (const [menu] of scrollLists) if (!enabled || !menu.isConnected || !isSlashMenu(menu)) clean(menu);
   for (const [menu] of inputs) if (!enabled || !menu.isConnected || !isSlashMenu(menu)) clean(menu);
   for (const menu of document.querySelectorAll('.composer-autocomplete')) {
     if (!enabled || !isSlashMenu(menu)) { if (menu.hasAttribute(MENU_ATTR)) clean(menu); continue; }
@@ -83,6 +105,7 @@ function scan() {
       if (heading.getAttribute(TITLE) !== text) heading.setAttribute(TITLE, text);
     }
     if (!menu.hasAttribute('data-piopt-command-menu')) { addSearch(menu); filter(menu, inputs.get(menu)); }
+    observeList(menu);
   }
 }
 function schedule() { if (!scheduled && active) { scheduled = true; queueMicrotask(scan); } }
