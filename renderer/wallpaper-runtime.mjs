@@ -372,6 +372,33 @@ function syncScene() {
   if (sceneInstance.paused) sceneInstance.resume();
 }
 
+/**
+ * 上一次 scene 挂载的结果，报到插件进程去。
+ *
+ * 渲染进程的 console 不进宿主的日志，而一条挂不上的壁纸在界面上就是「什么都
+ * 没有」——真机上出过一次，只能靠日志里每 2 秒一条的 `reg query` 失败猜到
+ * 它在反复重试。所以这里把阶段和原因一起交回去，插件进程落一份文件给面板和
+ * 排障用。同一个签名只报一次：失败会重试，重复上报只会刷屏。
+ */
+let lastReported = "";
+
+function reportEngineStatus(payload) {
+  if (!host || typeof host.dispatch !== "function") return;
+  const signature = `${payload.ok ? "ok" : "fail"}|${payload.id || ""}|${payload.stage || ""}|${payload.message || ""}`;
+  if (signature === lastReported) return;
+  lastReported = signature;
+  Promise.resolve()
+    .then(() => host.dispatch("plugin.call", { method: "reportEngineStatus", args: payload }))
+    .catch(() => {
+      /* 上报失败不该影响渲染本身 */
+    });
+}
+
+// 挂不上就别每 2 秒再试一遍：重试每次都要扫一遍 Steam 目录，日志里会全是
+// reg query 的失败行，而界面还是什么都没有。
+const SCENE_RETRY_MS = 30000;
+let sceneRetryAt = 0;
+
 async function mountScene(source) {
   const box = ensureContainer();
   if (!box) return;
@@ -380,14 +407,17 @@ async function mountScene(source) {
     syncScene();
     return;
   }
+  if (!sceneInstance && Date.now() < sceneRetryAt) return;
   // 上一次为同一个包取的字节还没回来（轮询每 2 秒回来一次）：等它，别再来一遍。
   if (scenePending && scenePending.id === source.id) return;
 
   const token = (sceneToken += 1);
   sceneKey = "";
   scenePending = { id: source.id, token };
+  let stage = "engine";
   try {
     const engine = await loadSceneEngine();
+    stage = "pkg";
     const bytes = await fetchScenePkg(source.id);
     // 收字节的这段时间里用户可能已经换了一张：对不上就整段丢弃。
     if (token !== sceneToken) return;
@@ -401,6 +431,7 @@ async function mountScene(source) {
       sceneInstance = null;
     }
 
+    stage = "mount";
     const instance = await engine.mount(box, {
       source: {
         key: source.id,
@@ -429,13 +460,18 @@ async function mountScene(source) {
 
     sceneInstance = instance;
     sceneKey = source.id;
+    sceneRetryAt = 0;
     current = { kind: "scene", file: source.file, title: source.title || "" };
     syncScene();
+    reportEngineStatus({ ok: true, stage: "mounted", id: source.id, bytes: bytes.length });
   } catch (error) {
     if (token !== sceneToken) return;
     sceneKey = "";
+    sceneRetryAt = Date.now() + SCENE_RETRY_MS;
     if (container) container.setAttribute("data-piopt-engine-failed", "true");
-    console.warn("[PiOpt] scene 壁纸渲染失败：", source.id, error);
+    const message = String((error && (error.message || error)) || "unknown");
+    console.warn("[PiOpt] scene 壁纸渲染失败：", source.id, stage, message);
+    reportEngineStatus({ ok: false, stage, id: source.id, message });
   } finally {
     // 只有自己那道锁能解：中途换壁纸时上一次的 finally 不该把新锁清掉。
     if (scenePending && scenePending.token === token) scenePending = null;

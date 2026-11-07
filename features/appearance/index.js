@@ -315,6 +315,8 @@ function glassStatePayload() {
   return {
     config: glassConfig,
     recent,
+    // 最近一次 scene 挂载的结果：面板据此显示「为什么没画出来」。
+    engineStatus,
     presets: Object.keys(glass.PRESETS),
     fits: [...glass.FITS],
     limits: glass.LIMITS,
@@ -623,6 +625,40 @@ async function dropLegacyEngineStill() {
   return true;
 }
 
+// ------------------------------------------------------------------ scene status
+
+/**
+ * 渲染模块报回来的最近一次 scene 挂载结果。
+ *
+ * 渲染进程的 console 不进宿主的日志，所以一条挂不上的壁纸在界面上就是「什么都
+ * 没有」，唯一能看到的是它每 2 秒重试一次时留下的 `reg query` 失败。这条上报
+ * 是失败唯一的出口：面板读它显示原因，同时落一份文件供排障。
+ */
+let engineStatus = null;
+
+function setEngineStatus(payload = {}) {
+  const status = {
+    ok: payload.ok === true,
+    stage: String(payload.stage ?? "").slice(0, 40),
+    id: String(payload.id ?? "").slice(0, 20),
+    message: String(payload.message ?? "").slice(0, 400),
+    bytes: Math.max(0, Number(payload.bytes) || 0),
+    at: Date.now(),
+  };
+  engineStatus = status;
+  void persistEngineStatus(status);
+  return { ok: true };
+}
+
+async function persistEngineStatus(status) {
+  try {
+    const dataDir = await pi.plugin.getDataPath();
+    writeFileSync(join(dataDir, "engine-status.json"), JSON.stringify(status, null, 1), "utf8");
+  } catch {
+    /* 落盘只是给排障留的副本，写不了不影响上报本身 */
+  }
+}
+
 /** 渲染模块要的那一份：只有它能用的字段，不含面板用的元数据。 */
 function getEngineWallpaperState() {
   const source = glassConfig.engine;
@@ -894,6 +930,8 @@ module.exports = {
   getEngineWallpaperState,
   // 场景容器的字节：渲染模块分块取，主进程只读盘，不缓存。
   getEnginePkgChunk: enginePkgChunk,
+  // 渲染模块报回来的挂载结果（失败的唯一出口）。
+  setEngineStatus,
   _wallpaperProblem: wallpaperProblem,
   _ownsWallpaper: ownsWallpaper,
   _getMotionConfig: () => motionConfig,

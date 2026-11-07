@@ -62,6 +62,8 @@ const state = {
   engineExpanded: false,
   // 上一次算出的三行容量（列数 × 3）；宽度变化时用它决定要不要重渲染。
   engineCapacity: 0,
+  // 渲染模块报回来的最近一次 scene 挂载结果（成功或失败），没有就是 null。
+  engineStatus: null,
   appearance: { base: "dark", theme: "dark", pluginTheme: null },
   preference: "system",
   appliedBase: "dark",
@@ -550,10 +552,21 @@ function setGlassConfig(patch, debounceMs = 80) {
   scheduleSync(debounceMs);
 }
 
+/** 挂载结果变了才重渲染列表：轮询每几秒回来一次，卡片不该跟着重建。 */
+function statusSignature(status) {
+  return status ? `${status.ok}|${status.stage}|${status.id}|${status.at}` : "";
+}
+
 function adoptGlassState(result) {
   if (!result) return;
   if (result.config) state.glass = normalizeGlass(result.config);
   if (Array.isArray(result.recent)) state.recent = normalizeRecent(result.recent);
+  let statusChanged = false;
+  if ("engineStatus" in result) {
+    const next = result.engineStatus || null;
+    statusChanged = statusSignature(state.engineStatus) !== statusSignature(next);
+    state.engineStatus = next;
+  }
   // 第一次拿到真实设置时决定停在哪一面：正在用 Wallpaper Engine 壁纸就停在那一面，
   // 之后由用户自己切，面板不再自作主张。
   if (!state.backdropTabSettled) {
@@ -561,6 +574,8 @@ function adoptGlassState(result) {
     state.backdropTabSettled = true;
   }
   renderGlass();
+  // 失败原因写在列表下方那一行，所以列表得跟着刷新。
+  if (statusChanged && state.engineList) renderEngineGrid();
 }
 
 // ---------------------------------------------------------------------- sync
@@ -843,13 +858,23 @@ function renderEngineGrid() {
     </div>`;
   }).join("");
 
-  // 一句说明顶替三十张卡片上的重复标注：场景由内置引擎画，脚本效果缺。
+  // 列表下方那一行：挂载失败时先说失败，否则说脚本效果的缺口。
   const noteEl = elements.engineNote;
   if (noteEl) {
-    const hasScene = visible.some((item) => item.kind === "scene" && item.supported);
-    noteEl.hidden = !hasScene;
-    if (hasScene) {
-      noteEl.textContent = "场景壁纸由内置引擎渲染，壁纸自带的脚本效果在宿主的 CSP 下不生效。";
+    const status = state.engineStatus;
+    const failed = Boolean(status && status.ok === false && status.id && status.id === currentId);
+    if (failed) {
+      noteEl.hidden = false;
+      noteEl.dataset.failed = "true";
+      // 阶段写在前头：一眼能分出是取字节失败，还是引擎画不出来。
+      noteEl.textContent = `这张场景壁纸没有画出来（${status.stage || "未知阶段"}）：${status.message || "没有更多信息"}`;
+    } else {
+      const hasScene = visible.some((item) => item.kind === "scene" && item.supported);
+      noteEl.hidden = !hasScene;
+      noteEl.dataset.failed = "false";
+      if (hasScene) {
+        noteEl.textContent = "场景壁纸由内置引擎渲染，壁纸自带的脚本效果在宿主的 CSP 下不生效。";
+      }
     }
   }
 }

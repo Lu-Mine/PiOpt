@@ -476,6 +476,11 @@ label.settings-row { cursor: pointer; }
   line-height: var(--leading-body);
 }
 
+/* 挂载失败的那一句：它要说清原因，所以用告警色而不是提示色。 */
+.wallpaper-engine-note[data-failed="true"] {
+  color: var(--ds-danger, #e06c75);
+}
+
 /*
  * 删除图标浮在照片上，配色不跟随界面表面色：深色主题半透明黑底白叉，浅色
  * 主题在文件末尾换成白底深叉。两种主题下它都只出现在照片上，所以底不与

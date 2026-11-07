@@ -1078,3 +1078,27 @@ test("a square cover left over from the old still fallback is dropped on load", 
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test("a reported scene failure reaches the panel payload", async () => {
+  const host = makePi();
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const applied = feature.setEngineStatus({
+      ok: false,
+      stage: "mount",
+      id: "123",
+      message: "no WebGL2 context",
+    });
+    assert.equal(applied.ok, true);
+
+    // 面板读的就是这份 payload：失败原因必须原样过去，否则界面上还是「什么都没有」。
+    const payload = await feature.onPanelInvoke(glassChannel("getState"), {});
+    assert.equal(payload.engineStatus.ok, false);
+    assert.equal(payload.engineStatus.stage, "mount");
+    assert.equal(payload.engineStatus.id, "123");
+    assert.equal(payload.engineStatus.message, "no WebGL2 context");
+  } finally {
+    delete global.pi;
+  }
+});

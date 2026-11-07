@@ -61,6 +61,9 @@ const RENDERER_METHODS = Object.freeze({
   // A scene's container travels as bytes in 8 MB chunks: the renderer module cannot
   // reach localhost (CSP `connect-src 'self'`) and the engine wants bytes, not a URL.
   enginePkg: (args = {}) => FEATURES.appearance.getEnginePkgChunk(args),
+  // The renderer reports how a scene mount went: its console never reaches the
+  // host's logs, so this is the only way a failure can be seen at all.
+  reportEngineStatus: (args = {}) => FEATURES.appearance.setEngineStatus(args),
 });
 
 async function onRendererCall(method, args = {}) {
