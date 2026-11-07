@@ -842,7 +842,14 @@ async function onGlass(channel, payload) {
     case "appearance.glass.apply": {
       // The wallpaper is owned by save/clear: a whole-config write from the
       // panel must not drop an image the user just uploaded.
-      const merged = { ...glassConfig, ...(payload.config ?? {}), wallpaper: glassConfig.wallpaper };
+      const merged = {
+        ...glassConfig,
+        ...(payload.config ?? {}),
+        // 图片与 Wallpaper Engine 壁纸都只由各自的通道改：整体写配置的表单不该能
+        // 把用户选的那张冲掉——面板少认一种类型时，丢的就是正在用的那张。
+        wallpaper: glassConfig.wallpaper,
+        engine: glassConfig.engine,
+      };
       return { ok: true, ...(await persistGlass(merged)) };
     }
     case "appearance.glass.saveWallpaper":

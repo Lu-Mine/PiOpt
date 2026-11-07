@@ -22,7 +22,9 @@ const DEFAULT_CONFIG = {
 const MOTION_LIMITS = { intensity: [0.5, 1.5], speed: [0.4, 2] };
 // ---------------------------------------------------------------- glass model
 
-const ENGINE_KINDS = ["video"];
+// 两种都由渲染模块画：video 用 <video>，scene 用 WebGL2 引擎。少认一种的后果
+// 不是「显示不对」，是下一次写回时把用户选的壁纸悄悄抹掉——重启后就「不使用」。
+const ENGINE_KINDS = ["video", "scene"];
 const DEFAULT_ENGINE = { id: "", title: "", kind: "", file: "" };
 const DEFAULT_GLASS = {
   enabled: false,
@@ -142,7 +144,8 @@ function normalizeEngine(input) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const id = /^\d{1,20}$/.test(String(source.id ?? "").trim()) ? String(source.id).trim() : "";
   const kind = ENGINE_KINDS.includes(source.kind) ? source.kind : "";
-  if (!id || kind !== "video") return { ...DEFAULT_ENGINE };
+  // 这里只做形状校验：scene 的 file 是 scene.pkg，主进程还有一层扩展名白名单。
+  if (!id || (kind !== "video" && kind !== "scene")) return { ...DEFAULT_ENGINE };
   const title = typeof source.title === "string" ? source.title.trim() : "";
   const file = typeof source.file === "string" ? source.file : "";
   if (!file) return { ...DEFAULT_ENGINE };
@@ -415,7 +418,9 @@ function renderGlass() {
 
   // 一个入口两个来源：主行只报「现在生效的是哪一个」。
   const engineName = config.engine.id ? config.engine.title || config.engine.id : "";
-  const backdropName = engineName ? `${engineName} · 动态` : name || "";
+  // 这一行只用两个字；「场景渲染」那种完整说法留给卡片第二行。
+  const engineKind = config.engine.kind === "scene" ? "场景" : "动态";
+  const backdropName = engineName ? `${engineName} · ${engineKind}` : name || "";
   elements.backdropName.textContent = backdropName || "未选择背景";
   elements.backdropName.dataset.empty = String(!backdropName);
 

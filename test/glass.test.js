@@ -1104,3 +1104,33 @@ test("a reported scene failure reaches the panel payload", async () => {
     delete global.pi;
   }
 });
+
+test("a whole-config write from the panel cannot drop the Wallpaper Engine pick", async () => {
+  const { root } = tempEngineRoot(
+    { id: "640", body: { type: "scene", title: "Keep" } },
+    { "scene.pkg": Buffer.from("x") }
+  );
+  const restore = stubEngineRoots(root);
+  const host = makePi();
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const applied = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "640" });
+    assert.equal(applied.config.engine.kind, "scene");
+
+    // 面板发来一份不含 engine 的配置——它少认一种类型时就是这样。壁纸必须留下，
+    // 否则重启后（面板一读就清空、下一次写回把空值存进去）就变成「不使用」。
+    const after = await feature.onPanelInvoke(glassChannel("apply"), {
+      config: { intensity: 1.2, enabled: true },
+    });
+    assert.equal(after.config.engine.kind, "scene");
+    assert.ok(after.config.engine.file.endsWith("scene.pkg"));
+    // 其余字段照旧写进去：保护的是壁纸，不是整份配置。
+    assert.equal(after.config.intensity, 1.2);
+    assert.equal(after.config.enabled, true);
+  } finally {
+    restore();
+    delete global.pi;
+  }
+});
