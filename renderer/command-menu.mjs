@@ -17,6 +17,15 @@ export function prefetchCommands() {
   pending = request;
   return request;
 }
+const HOST_STATE_COMMANDS = new Set(['builtin.session.new', 'builtin.agent.compact', 'builtin.mode.agent', 'builtin.mode.plan', 'builtin.mode.goal']);
+function canExecuteDirectly(item) {
+  return typeof item.id === 'string' && item.id.length > 0 && !item.argumentHint &&
+    ['builtin', 'plugin', 'mcp', 'skill'].includes(item.kind) && !HOST_STATE_COMMANDS.has(item.id);
+}
+async function executeCommand(item) {
+  const result = await window.piDesktop.invoke('pi-desktop/commandPalette/execute', item.id);
+  if (!result?.ok) throw new Error(result?.error?.message || '指令执行失败');
+}
 const GROUPS = { template: '模板', builtin: '内置指令', plugin: '插件指令', extension: '扩展指令', mcp: 'MCP', skill: '技能' };
 const ICONS = {
   template: '<path d="M4 4h16v16H4zM8 8h8M8 12h8"/>',
@@ -94,11 +103,22 @@ export async function openCommandMenu(button, host) {
         for (const hint of [(item.kind === 'skill' || item.kind === 'mcp') && item.title !== item.name ? item.title : '', item.argumentHint]) if (hint) { const element = document.createElement('span'); element.className = 'composer-ac-hint'; element.textContent = hint; row.append(element); }
         if (item.description) { const desc = document.createElement('span'); desc.className = 'composer-ac-desc'; desc.textContent = item.description; row.append(desc); }
         row.addEventListener('mousemove', () => highlight(rows.indexOf(row)));
-        row.addEventListener('click', () => {
+        row.addEventListener('click', async () => {
+          if (row.disabled) return;
+          if (canExecuteDirectly(item)) {
+            row.disabled = true;
+            try {
+              await executeCommand(item);
+              if (menu === openedMenu) closeCommandMenu();
+            } catch (error) {
+              if (menu === openedMenu) { row.disabled = false; footer.textContent = `执行失败：${error.message || error}`; footer.setAttribute('role', 'alert'); }
+            }
+            return;
+          }
           if (editor?.isConnected) { editor.focus(); if (range && editor.contains(range.commonAncestorContainer)) { const currentSelection = window.getSelection(); currentSelection.removeAllRanges(); currentSelection.addRange(range); } }
           const text = `/${item.name.replace(/^\/+/, '')} `;
-          try { Promise.resolve(host.dispatch('composer.insertText', { text })).catch(error => console.warn('[PiOpt] 无法插入指令', error)); } catch (error) { console.warn('[PiOpt] 无法插入指令', error); }
-          closeCommandMenu();
+          try { await host.dispatch('composer.insertText', { text }); if (menu === openedMenu) closeCommandMenu(); }
+          catch (error) { if (menu === openedMenu) { footer.textContent = `无法插入指令：${error.message || error}`; footer.setAttribute('role', 'alert'); } }
         });
         rows.push(row); list.append(row);
       }
