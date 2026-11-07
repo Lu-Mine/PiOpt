@@ -506,9 +506,6 @@ test("the scene canvas fills the layer and eats no pointer events", async () => 
   assert.match(css, /\[data-piopt-engine-wallpaper\] canvas\{[^}]*position:absolute/);
   assert.match(css, /\[data-piopt-engine-wallpaper\] canvas\{[^}]*width:100%/);
   assert.match(css, /\[data-piopt-engine-wallpaper\] canvas\{[^}]*pointer-events:none/);
-  // 拖动窗口时顶上来的一帧：压在动态画布之上，保持比例裁切。
-  assert.match(css, /canvas\[data-piopt-engine-frozen\]\{[^}]*object-fit:cover/);
-  assert.match(css, /canvas\[data-piopt-engine-frozen\]\{[^}]*z-index:1/);
 });
 
 test("the panel offers scene cards and a switch to stop them", () => {

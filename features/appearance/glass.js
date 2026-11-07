@@ -486,19 +486,6 @@ function buildGlassCss(input = {}, options = {}) {
         `${FROSTED_SHELL}{background-color:color-mix(in oklab,var(--ds-bg-composer) var(--pg-overlay-alpha),transparent)!important;background-image:none!important}`,
       ].join("\n")
     : "";
-  // 拖动窗口时先不磨砂。背景一变尺寸，模糊就得整屏重算一遍——静态图要重新
-  // 采样，动态壁纸还要每帧重新出图，那正是拖动时最贵的一步。`data-piopt-resizing`
-  // 由渲染模块在 resize 期间挂到 <html> 上，松手 260ms 后摘掉：这一闪换来跟手。
-  const noBlur = "-webkit-backdrop-filter:none!important;backdrop-filter:none!important";
-  const resizing = surfaces
-    ? [
-        // 变量归零能一次覆盖所有用 var(--pg-blur) 的地方（侧栏、标题栏、面板）。
-        "html[data-piopt-resizing]{--pg-blur:0px;--pg-blur-strong:0px}",
-        `html[data-piopt-resizing] :is(${FROSTED_POPUPS.join(",")}){${noBlur}}`,
-        `html[data-piopt-resizing] :is(${FROSTED_FRAMES.join(",")})::before{${noBlur}}`,
-        `html[data-piopt-resizing] ${FROSTED_SHELL}::before{${noBlur}}`,
-      ].join("\n")
-    : "";
   const wallpaper = wallpaperCssUrl(config.wallpaper);
   // A photo already carries the detail the light field was standing in for, and
   // leaving it out keeps one fewer full-window gradient to recomposite.
@@ -603,7 +590,6 @@ function buildGlassCss(input = {}, options = {}) {
    (No backticks in this block: it lives inside a template literal.) */
 :is(${POPUP_FILL.join(",")}){background-color:color-mix(in oklab,var(--ds-bg-elevated-opaque) var(--pg-overlay-alpha),transparent)!important;border-color:color-mix(in oklab,var(--ds-text-primary) 12%,transparent)}
 ${frosted}
-${resizing}
 ${noBlurFallback}`;
 
   if (Buffer.byteLength(css, "utf8") > CSS_LIMIT_BYTES) {
