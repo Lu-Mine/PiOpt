@@ -26,7 +26,83 @@
   const KNOWN = ["appearance", "behavior", "market", "remote"];
   // Sections inside the appearance view, each with the id it scrolls to.
   const SECTIONS = ["motion", "glass"];
-  let current = "market";
+  // 四个视图各自的可滚动容器，类名并不统一。找不到就退回视图本身。
+  const SCROLLERS = {
+    appearance: ".workspace",
+    behavior: ".workspace",
+    market: ".scroll",
+    remote: ".rm-scroll",
+  };
+  const SCROLL_KEY = "piopt.scroll";
+  // 每个视图停在哪（像素）。用一个 key 存全部：视图的滚动容器不同，但都是同一个
+  // 面板窗口，分开存没有意义。
+  let scrollMemory = {};
+  try {
+    const raw = window.localStorage.getItem(SCROLL_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) scrollMemory = parsed;
+  } catch {
+    /* 读不到就从零开始 */
+  }
+  // 恢复期间不写回：那时的高度还没长齐，写回去的是被裁过的位置。
+  let suppressSaveUntil = 0;
+  // 先把当前置空：第一次 show 也算「换了一个视图」，于是会去恢复它的位置。
+  let current = null;
+
+  function scrollerOf(feature) {
+    const view = views[feature];
+    if (!view) return null;
+    const selector = SCROLLERS[feature];
+    return (selector && view.querySelector(selector)) || view;
+  }
+
+  function rememberScroll(feature, top) {
+    if (!feature || !Number.isFinite(top)) return;
+    if (Date.now() < suppressSaveUntil) return;
+    const value = Math.max(0, Math.round(top));
+    if (scrollMemory[feature] === value) return;
+    scrollMemory[feature] = value;
+    try {
+      window.localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollMemory));
+    } catch {
+      /* private mode：记住这件事可以放弃 */
+    }
+  }
+
+  /**
+   * 把视图滚回上次停的地方。
+   *
+   * 列表和缩略图是面板打开之后才陆续填进来的，内容一变高，浏览器就会把原来的
+   * scrollTop 裁到新的上限——所以这里补两次，只在真的还没到位时才补。
+   */
+  function restoreScroll(feature, attempt = 0) {
+    const target = scrollMemory[feature] || 0;
+    if (target <= 0) return;
+    const scroller = scrollerOf(feature);
+    if (!scroller) return;
+    suppressSaveUntil = Date.now() + 900;
+    scroller.scrollTop = target;
+    if (attempt >= 2) return;
+    window.setTimeout(() => {
+      if (current !== feature) return;
+      if (scroller.scrollTop < target - 2) restoreScroll(feature, attempt + 1);
+    }, attempt === 0 ? 140 : 420);
+  }
+
+  /** 记住视图就等于记住「下次从哪儿打开」：命令跳转读的也是这一份。 */
+  function rememberFeature(feature) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, feature);
+    } catch {
+      /* private mode */
+    }
+    if (!bridge || typeof bridge.invoke !== "function") return;
+    Promise.resolve()
+      .then(() => bridge.invoke("plugin.setSettings", { panelFeature: feature }))
+      .catch(() => {
+        /* 设置写不进去时，localStorage 那一份仍然有效 */
+      });
+  }
 
   // -------------------------------------------------------------- host theme
   // Extracts root-level custom properties (--ds-*, --gray-*, --accent-*, --color-*)
@@ -152,7 +228,14 @@
 
   function show(feature, remember, section) {
     if (!views[feature]) feature = "market";
-    const changed = feature !== current;
+    const previous = current;
+    // 离开之前先把当前位置记下来：滚动事件可能已经过去，而之后 scroller 还在、
+    // current 却不是它了。
+    if (previous && previous !== feature) {
+      const leaving = scrollerOf(previous);
+      if (leaving) rememberScroll(previous, leaving.scrollTop);
+    }
+    const changed = feature !== previous;
     current = feature;
     for (const tab of tabs) {
       tab.setAttribute("aria-selected", String(tab.dataset.feature === feature));
@@ -161,10 +244,10 @@
     placeMarker(feature);
     if (changed) replayEnter(views[feature]);
     start(feature);
+    // 明确的 section 优先（命令点名要开哪一节）；否则回到上次停的地方。
     if (section) scrollToSection(section);
-    if (remember) {
-      try { window.localStorage.setItem(STORAGE_KEY, feature); } catch { /* private mode */ }
-    }
+    else if (changed) restoreScroll(feature);
+    if (remember) rememberFeature(feature);
   }
 
   // The rail opens and closes from the button at its top. The choice is stored
@@ -252,6 +335,20 @@
     tab.addEventListener("click", () => show(tab.dataset.feature, true));
   }
 
+  // 滚动就地记住：值没变就不写，所以不必再加防抖。
+  for (const feature of KNOWN) {
+    const scroller = scrollerOf(feature);
+    if (!scroller) continue;
+    scroller.addEventListener(
+      "scroll",
+      () => {
+        if (current !== feature) return;
+        rememberScroll(feature, scroller.scrollTop);
+      },
+      { passive: true }
+    );
+  }
+
   document.addEventListener("keydown", (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
     if (!["1", "2", "3", "4"].includes(event.key)) return;
@@ -272,7 +369,8 @@
       const feature = target === "motion" || target === "glass" ? "appearance" : target;
       const section = settings && settings.panelSection;
       if (KNOWN.includes(feature) && feature !== current) show(feature, false, section);
-      else if (section) scrollToSection(section);
+      // 已经有精确的滚动位置时不再跳到 section：那会把刚恢复的位置冲掉。
+      else if (section && !scrollMemory[current]) scrollToSection(section);
     })
     .catch(() => { /* keep the remembered view */ });
 })();
