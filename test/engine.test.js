@@ -297,3 +297,31 @@ test("the entry mounts and unmounts the video layer with the rest of the module"
   assert.match(source, /await mountEngineWallpaper\(pi\)/);
   assert.match(source, /unmountEngineWallpaper\(\)/);
 });
+
+test("performance frame rate follows initial focus and focus changes", async () => {
+  const runtime = await import("../renderer/wallpaper-runtime.mjs");
+  const handlers = new Map();
+  global.document = {
+    documentElement: {},
+    hidden: false,
+    hasFocus: () => false,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  global.window = {
+    addEventListener: (name, handler) => handlers.set(name, handler),
+    removeEventListener: (name) => handlers.delete(name),
+  };
+  try {
+    await runtime.mountEngineWallpaper(null);
+    assert.equal(runtime.__internals.targetFps(), 10);
+    handlers.get("focus")({ type: "focus" });
+    assert.equal(runtime.__internals.targetFps(), 30);
+    handlers.get("blur")({ type: "blur" });
+    assert.equal(runtime.__internals.targetFps(), 10);
+  } finally {
+    runtime.unmountEngineWallpaper();
+    delete global.document;
+    delete global.window;
+  }
+});

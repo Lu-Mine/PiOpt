@@ -22,7 +22,7 @@
 // 性能模式走的不是这条路。实测一个 4K 源：解码引擎占 GPU 约 28%，渲染进程
 // 还要拿走三分之一核去缩放上屏；暂停能全部清掉，但动态壁纸也就没了。这里
 // 取中间档——**解码照常（video 仍在播），但只在 canvas 上按目标帧率重绘**：
-// 焦点在窗口时 30fps，失焦时 20fps，窗口最小化时直接暂停。实测 30fps 下
+// 焦点在窗口时 30fps，失焦时 10fps，窗口最小化时直接暂停。实测 30fps 下
 // 渲染进程开销从 33.6% 降到 19.0%，解码那一份省不掉，也不打算假装能省。
 
 export const WALLPAPER_RUNTIME_CSS = [
@@ -42,7 +42,7 @@ const POLL_MS = 2000;
 const ENSURE_DELAY_MS = 180;
 // 限帧档位：看着窗口时 30fps 已经够顺，失焦时再省一档。
 const FPS_FOCUSED = 30;
-const FPS_UNFOCUSED = 20;
+const FPS_UNFOCUSED = 10;
 
 let host = null;
 let container = null;
@@ -375,7 +375,7 @@ export async function mountEngineWallpaper(pi) {
   host = pi;
   currentFit = "cover";
   performanceMode = false;
-  focused = true;
+  focused = typeof document.hasFocus === "function" ? document.hasFocus() : true;
 
   if (!listenersBound) {
     document.addEventListener("visibilitychange", onVisibilityChange);
