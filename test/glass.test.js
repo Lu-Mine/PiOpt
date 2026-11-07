@@ -924,7 +924,7 @@ test("a scene with a scene.pkg is applied, and the renderer gets the container p
   }
 });
 
-test("scene bytes arrive in chunks that reassemble into the file", async () => {
+test("a scene container is prepared once as a loadable data file", async () => {
   const payload = Buffer.alloc(600);
   for (let index = 0; index < payload.length; index += 1) payload[index] = index % 251;
   const { root } = tempEngineRoot(
@@ -932,35 +932,37 @@ test("scene bytes arrive in chunks that reassemble into the file", async () => {
     { "scene.pkg": payload }
   );
   const restore = stubEngineRoots(root);
-  global.pi = makePi().pi;
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "piopt-data-"));
+  const host = makePi();
+  host.pi.plugin.getDataPath = async () => dataDir;
+  global.pi = host.pi;
   const feature = loadFeature();
   try {
-    const first = feature.getEnginePkgChunk({ id: "620", offset: 0, length: 256 });
+    const first = await feature.getEnginePkgFile({ id: "620" });
     assert.equal(first.ok, true);
     assert.equal(first.total, payload.length);
-    assert.equal(first.length, 256);
+    assert.ok(first.path.startsWith(dataDir), "写在自己的数据目录里");
 
-    // 要的比剩下的多，就只给剩下的那一截。
-    const rest = feature.getEnginePkgChunk({ id: "620", offset: 256, length: 4096 });
-    assert.equal(rest.length, payload.length - 256);
+    // 渲染模块读的就是这个全局名；字节必须能原样还原。
+    const text = fs.readFileSync(first.path, "utf8");
+    assert.match(text, /^window\.__pioptScenePkg="[A-Za-z0-9+/=]+";$/m);
+    const encoded = text.slice(text.indexOf('"') + 1, text.lastIndexOf('"'));
+    assert.deepEqual(Buffer.from(encoded, "base64"), payload);
 
-    const joined = Buffer.concat([
-      Buffer.from(first.data, "base64"),
-      Buffer.from(rest.data, "base64"),
-    ]);
-    assert.deepEqual(joined, payload);
-
-    // 正好读到末尾：空块，调用方据此收尾。
-    const past = feature.getEnginePkgChunk({ id: "620", offset: payload.length });
-    assert.equal(past.ok, true);
-    assert.equal(past.length, 0);
+    // 同一张壁纸再要一次不该重写：转一遍 159 MB 的包要两秒多。
+    const before = fs.statSync(first.path).mtimeMs;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const second = await feature.getEnginePkgFile({ id: "620" });
+    assert.equal(second.path, first.path);
+    assert.equal(fs.statSync(first.path).mtimeMs, before);
 
     // 认不出的 id 一律拒绝，别让它变成任意文件读取。
-    assert.equal(feature.getEnginePkgChunk({ id: "999" }).ok, false);
-    assert.equal(feature.getEnginePkgChunk({}).ok, false);
+    assert.equal((await feature.getEnginePkgFile({ id: "999" })).ok, false);
+    assert.equal((await feature.getEnginePkgFile({})).ok, false);
   } finally {
     restore();
     delete global.pi;
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
 

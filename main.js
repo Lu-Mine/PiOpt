@@ -58,9 +58,10 @@ const RENDERER_METHODS = Object.freeze({
   // The video wallpaper layer in the host window: only the clip and the fit mode,
   // so the renderer module never sees the panel's file bookkeeping.
   engineWallpaperState: () => FEATURES.appearance.getEngineWallpaperState(),
-  // A scene's container travels as bytes in 8 MB chunks: the renderer module cannot
-  // reach localhost (CSP `connect-src 'self'`) and the engine wants bytes, not a URL.
-  enginePkg: (args = {}) => FEATURES.appearance.getEnginePkgChunk(args),
+  // A scene's container becomes one data file in the plugin's own data folder: the
+  // renderer brings it in with `<script src>`, the only channel the host does not
+  // cap at 64KB and 10 calls/s.
+  enginePkg: (args = {}) => FEATURES.appearance.getEnginePkgFile(args),
   // The renderer reports how a scene mount went: its console never reaches the
   // host's logs, so this is the only way a failure can be seen at all.
   reportEngineStatus: (args = {}) => FEATURES.appearance.setEngineStatus(args),

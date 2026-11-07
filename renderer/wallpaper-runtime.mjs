@@ -327,35 +327,47 @@ async function loadSceneEngine() {
 }
 
 /**
- * 场景容器的全部字节。
+ * 场景容器的字节。
  *
- * 主进程按 8 MB 分块给 base64：一次 33 MB 的字符串会让面板卡住几秒，中间还
- * 没有任何进度可言。这里逐块拼成一段连续的 buffer——引擎只认一整段。
+ * 主进程把 pkg 转成一份 `window.__pioptScenePkg = "<base64>"` 的数据文件，放在
+ * 它自己的数据目录里；这里用 `<script src="file://…">` 取回来。
+ *
+ * 为什么不是 fetch / XHR：`file://` 页面发起的这两个都被 CORS 挡死（origin 是
+ * null），实测过。为什么不是 `plugin.call`：宿主对它单次限 64KB、每秒限 10 次，
+ * 合起来 640 KB/s——一个 24 MB 的包要 37 秒，真机上就是这么挂的（stage=pkg，
+ * `plugin.call args and answer exceed 64KB`）。`<script src>` 两样限额都不吃，
+ * 走的是同一条 `script-src 'self'`，实测 1.4 MB 的包 17 ms、159 MB 的 9 秒。
  */
 async function fetchScenePkg(id) {
-  const parts = [];
-  let offset = 0;
-  let total = 0;
-  for (;;) {
-    const chunk = await host.dispatch("plugin.call", { method: "enginePkg", args: { id, offset } });
-    if (!chunk || chunk.ok !== true) throw new Error((chunk && chunk.reason) || "pkg-unreadable");
-    total = Number(chunk.total) || 0;
-    if (!chunk.length) break;
-    const binary = atob(chunk.data);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-    parts.push(bytes);
-    offset += bytes.length;
-    if (offset >= total) break;
+  const prepared = await host.dispatch("plugin.call", { method: "enginePkg", args: { id } });
+  if (!prepared || prepared.ok !== true || !prepared.path) {
+    throw new Error((prepared && prepared.reason) || "pkg-unavailable");
   }
 
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const part of parts) {
-    out.set(part, at);
-    at += part.length;
+  const script = document.createElement("script");
+  script.src = fileUrlOf(prepared.path);
+  script.async = true;
+  try {
+    await new Promise((resolve, reject) => {
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("pkg script blocked"));
+      document.head.append(script);
+    });
+    const encoded = globalThis.__pioptScenePkg;
+    if (typeof encoded !== "string" || !encoded) throw new Error("pkg payload empty");
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  } finally {
+    // 几十 MB 的字符串不该在页面上多留一秒。
+    try {
+      delete globalThis.__pioptScenePkg;
+    } catch {
+      globalThis.__pioptScenePkg = null;
+    }
+    script.remove();
   }
-  return out;
 }
 
 /** 该不该出帧：减弱动态、窗口不可见、用户关掉总开关，三种都停。 */

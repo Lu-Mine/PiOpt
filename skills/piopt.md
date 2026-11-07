@@ -272,11 +272,11 @@ about the calls, only about the prefix.
      under the host's `media-src 'self' data: blob: https:` CSP).
    - `scene`: the plugin ships WebWallGL 3.0.1 (MIT, `renderer/vendor/`) and the
      renderer module mounts it on a WebGL2 canvas under `.app-shell`. The plugin
-     process reads the project's `scene.pkg` and hands the bytes over in 8 MB
-     chunks through the `enginePkg` renderer method, because the host's
-     `connect-src 'self'` rules out a local HTTP server. Measured on this
-     machine: 1.4 / 7.1 / 24 MB containers mount in 0.8 / 2.0 / 4.4 s and paint
-     a real frame.
+     process turns the project's `scene.pkg` into one `scene-payload-<id>.js` in its
+     own data folder, and the renderer brings it in with `<script src>`: fetch and
+     XHR on `file://` are blocked by CORS, and `plugin.call` is capped at 64KB and
+     10 calls/s. A `<script src>` is capped by neither — measured 17 ms for a
+     1.4 MB pack and 9 s for a 159 MB one.
    - A scene runs at a fixed 30 fps and pauses while the window is hidden, when
      the system asks for reduced motion, or when the user turns off
      「渲染场景壁纸」. Measured cost (GTX 1660 SUPER, 1600×1000): a light scene

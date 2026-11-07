@@ -150,7 +150,7 @@ Wallpaper Engine 的创意工坊内容放在 `<Steam 库>/steamapps/workshop/con
 | `scene`（带 `scene.pkg`） | 30 | **真的渲染**：随插件分发的 WebWallGL 引擎在 WebGL2 里把 `scene.pkg` 装配成图层画出来 |
 | `web` / `application` / `preset`，以及散装 `scene.json` 工程 | 3 | **不可用**：卡片照常列出并显示封面，但选不了 |
 
-`scene` 这条路要在渲染进程里解析 `scene.pkg`。宿主的 `connect-src 'self'` 连不上本地 HTTP，所以由插件进程读盘、按 8 MB 分块把字节交给渲染模块，再由 WebWallGL 在 WebGL2 里装配。引擎是 MIT 的 [oneincase/webwallgl](https://github.com/oneincase/webwallgl)（3.0.1），自包含的 UMD 构建转成一个 ES module 放在 `renderer/vendor/`，许可证随文件一起。
+`scene` 这条路要在渲染进程里解析 `scene.pkg`。`file://` 下 fetch 与 XHR 都被 CORS 挡死，而宿主的 `plugin.call` 单次限 64KB、每秒限 10 次（合起来 640 KB/s，24 MB 的包要 37 秒），所以插件进程把包转成一份 `scene-payload-<id>.js` 放进自己的数据目录，渲染模块用 `<script src="file://…">` 取——这条通道两样限额都不吃，实测 1.4 MB 的包 17 ms、159 MB 的 9 秒。拿到字节之后才由 WebWallGL 在 WebGL2 里装配。引擎是 MIT 的 [oneincase/webwallgl](https://github.com/oneincase/webwallgl)（3.0.1），自包含的 UMD 构建转成一个 ES module 放在 `renderer/vendor/`，许可证随文件一起。
 
 **一处硬缺口**：宿主的 `script-src` 没有 `'unsafe-eval'`，而壁纸自带的 SceneScript 是引擎用 `new Function` 编译的，所以脚本一定跑不起来——粒子、时钟、鼠标视差这类脚本驱动的效果会缺，静态构图、贴图与原生动画仍在。挂载时显式传 `scripts: false`，让引擎停在 `scene.json` 的快照值上，而不是让每次求值都撞一次 CSP 拒绝。这一面底部有一句说明，只在列表里真的有可渲染的 scene 时出现。
 
@@ -306,7 +306,7 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
 - 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token；文件访问只有两处：自己数据目录里用户选的背景图，以及下面这条里的创意工坊目录；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
-- Wallpaper Engine 支持全程只读：扫描 `<Steam 库>/steamapps/workshop/content/431960/<id>/project.json` 与项目自带的预览图，改动只发生在自己的设置与数据目录里，从不写创意工坊目录、不复制文件、不启动 Wallpaper Engine。选中 `video` 类型时把视频的绝对路径交给宿主窗口里的渲染模块，由一个 `<video>` 用 `file:` 播放（路径不经过网络，也不经过 `plugin-asset:`）；选中 `scene` 类型时**只读地**打开它的 `scene.pkg`，按 8 MB 分块把字节交给渲染模块，字节不落盘、不缓存、也不经过网络——渲染模块拿到的是这台机器上已经装着的那张壁纸。`web` / `application` / `preset` 在这里不可选（前两者分别被 `frame-src` 与"它是 .exe"卡住），方形封面只用于列表缩略图，不复制、不写入数据目录。
+- Wallpaper Engine 支持全程只读：扫描 `<Steam 库>/steamapps/workshop/content/431960/<id>/project.json` 与项目自带的预览图，改动只发生在自己的设置与数据目录里，从不写创意工坊目录、不复制文件、不启动 Wallpaper Engine。选中 `video` 类型时把视频的绝对路径交给宿主窗口里的渲染模块，由一个 `<video>` 用 `file:` 播放（路径不经过网络，也不经过 `plugin-asset:`）；选中 `scene` 类型时**只读地**打开它的 `scene.pkg`，在自己的数据目录里写一份 `scene-payload-<id>.js`（整包的 base64，供渲染模块用 `<script src>` 取），只保留最近一份、换壁纸时覆盖旧的；创意工坊里的原包不动，也不经过网络。`web` / `application` / `preset` 在这里不可选（前两者分别被 `frame-src` 与"它是 .exe"卡住），方形封面只用于列表缩略图，不复制、不写入数据目录。
 - `agent.prompt.inject` 只用于收录 `skills/piopt.md`（按需加载），不会自动往消息里注入内容。
 - `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；它还在 `.app-shell` 里维护壁纸层——`video` 是一个 `<video>` 指向插件进程给出的 `file:` 路径，`scene` 是随插件分发的 WebWallGL 引擎（WebGL2），画的是插件进程分块送来的 `scene.pkg` 字节，两种情况下模块自己都不做文件读写；它另外协调可往返动画的克隆、改写聊天框的模型浮窗。除轮询 `plugin.call` 拿状态外不访问网络，不改动其他插件的界面，卸载时移除自己挂的东西。
 - 远程功能只在开关打开时占用一个局域网端口，服务的是插件自己的远程页面与四类接口（列会话、读一个会话、发指令、中止）；数据全部经 `pi.session.*` 与 `pi.desktop.invoke` 的 `agent/prompt`、`agent/abort` 取用，审批类（`dangerous`）操作一律不开放，设备令牌保存在插件设置里，关闭开关或卸载时端口立即释放。
@@ -361,7 +361,7 @@ PiOpt/
 │  ├─ shell.js              视图切换与按需启动（Alt+1…4）
 │  ├─ entry.mjs             宿主窗口入口按钮、可逆动效协调器与模型浮窗改写（renderer.extension）
 │  ├─ motion-runtime.mjs    宿主窗口可往返动画（展开收缩、弹出退回）的双向对称与打断协调器
-│  ├─ wallpaper-runtime.mjs Wallpaper Engine 壁纸层：视频元素、scene 画布、分块取字节、压暗层与轮询
+│  ├─ wallpaper-runtime.mjs Wallpaper Engine 壁纸层：视频元素、scene 画布、script 取数据文件、压暗层与轮询
 │  ├─ vendor/
 │  │  ├─ webwallgl.mjs      WebWallGL 3.0.1（MIT）：scene.pkg 的 WebGL2 渲染器，UMD 转 ESM
 │  │  └─ LICENSE-webwallgl.txt  上游 MIT 许可证原文

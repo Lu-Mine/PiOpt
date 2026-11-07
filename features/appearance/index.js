@@ -15,10 +15,7 @@
  */
 
 const {
-  closeSync,
-  openSync,
   readFileSync,
-  readSync,
   readdirSync,
   statSync,
   unlinkSync,
@@ -526,58 +523,82 @@ function enginePreviewPayload(id) {
 }
 
 /**
- * 场景容器的一段字节（base64）。
+ * 把场景容器准备成渲染进程能加载的 JS 数据文件，返回它的绝对路径。
  *
- * 为什么分块：本机实测 scene.pkg 从 1.4 MB 到 26 MB，整包 base64 再走一次插件
- * 桥就是 33 MB 的字符串 —— 一次传完既让面板卡住几秒，也没有任何进度可言。
- * 8 MB 一块落在单条消息的舒适区，渲染进程还能边收边报进度。
+ * 为什么不直接把字节传过去：宿主的 `plugin.call` 单次最多 64KB，而且每秒最多
+ * 10 次，合起来 640 KB/s。24 MB 的包要 37 秒、151 MB 的要四分钟——真机上就是
+ * 这么失败的（stage=pkg，`plugin.call args and answer exceed 64KB`）。
  *
- * 为什么给字节而不是给路径：渲染进程的 CSP 是 `connect-src 'self'`，连不上
- * 本地 HTTP；而场景要的是「一份可以解析的字节」，不是一个能加载的 URL。
- * 主进程读盘、渲染进程拼进 WebGL2，是这条路里唯一不必放宽 CSP 的做法。
+ * 为什么 `<script src="file://…">` 可以：它不受 CORS 限制（fetch 与 XHR 都被
+ * 挡），也不吃那两条限额，走的还是同一条 `script-src 'self'`。本机实测 1.4 MB
+ * 的包 17 ms 到货，159 MB 的包 9 秒。代价是数据目录里多一份 4/3 倍的副本，
+ * 所以只留最近那一份。
  */
-const ENGINE_PKG_CHUNK = 8 * 1024 * 1024;
+const ENGINE_PAYLOAD_PREFIX = "scene-payload-";
 
-function enginePkgChunk(payload = {}) {
+function fileMtimeOf(path) {
+  try {
+    const stats = statSync(path);
+    return stats.isFile() ? stats.mtimeMs : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 除了刚写的那一份，其它数据文件都删掉：每份都是整包的 4/3 倍。 */
+function pruneEnginePayloads(dataDir, keep) {
+  let names = [];
+  try {
+    names = readdirSync(dataDir).filter((name) => name.startsWith(ENGINE_PAYLOAD_PREFIX));
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const target = join(dataDir, name);
+    if (target === keep) continue;
+    try {
+      unlinkSync(target);
+    } catch {
+      /* 删不掉就留着，下一次再试 */
+    }
+  }
+}
+
+async function enginePkgFile(payload = {}) {
   const item = engineItemById(payload.id);
   if (!item || item.kind !== "scene" || !item.file) {
     return { ok: false, reason: "unknown-project" };
   }
 
-  const offset = Math.max(0, Math.floor(Number(payload.offset) || 0));
-  const wanted = Math.floor(Number(payload.length) || ENGINE_PKG_CHUNK);
-  const length = Math.min(Math.max(1, wanted), ENGINE_PKG_CHUNK);
-
-  let fd = null;
+  let dataDir = "";
   try {
-    const stats = statSync(item.file);
-    if (!stats.isFile()) return { ok: false, reason: "missing" };
-    // 正好读到末尾：返回空块，渲染进程据此收尾（下一次就不必再问了）。
-    if (offset >= stats.size) {
-      return { ok: true, offset, length: 0, total: stats.size, data: "" };
-    }
-    const take = Math.min(length, stats.size - offset);
-    fd = openSync(item.file, "r");
-    const buffer = Buffer.allocUnsafe(take);
-    const read = readSync(fd, buffer, 0, take, offset);
-    return {
-      ok: true,
-      offset,
-      length: read,
-      total: stats.size,
-      data: buffer.subarray(0, read).toString("base64"),
-    };
+    dataDir = await pi.plugin.getDataPath();
   } catch {
-    return { ok: false, reason: "unreadable" };
-  } finally {
-    if (fd !== null) {
-      try {
-        closeSync(fd);
-      } catch {
-        /* 关不上不影响已经读到的字节 */
-      }
+    return { ok: false, reason: "no-data-dir" };
+  }
+
+  const total = fileSizeOf(item.file);
+  if (!total) return { ok: false, reason: "missing" };
+
+  const target = join(dataDir, `${ENGINE_PAYLOAD_PREFIX}${item.id}.js`);
+  // 同一张壁纸第二次挂载（重试、切走再切回）不该再转一遍 base64。
+  const fresh = fileSizeOf(target) > 0 && fileMtimeOf(target) >= fileMtimeOf(item.file);
+  if (!fresh) {
+    try {
+      const bytes = readFileSync(item.file);
+      // 一次拼好再写：24 MB 的包转出来是 32 MB 的字符串。
+      writeFileSync(
+        target,
+        `window.__pioptScenePkg=${JSON.stringify(bytes.toString("base64"))};\n`,
+        "utf8"
+      );
+    } catch {
+      return { ok: false, reason: "unreadable" };
     }
   }
+
+  pruneEnginePayloads(dataDir, target);
+  return { ok: true, path: target, total };
 }
 
 async function applyEngineWallpaper(payload = {}) {
@@ -928,8 +949,8 @@ module.exports = {
   // Read by main.js for the renderer module: it needs the clip, not the panel's
   // bookkeeping.
   getEngineWallpaperState,
-  // 场景容器的字节：渲染模块分块取，主进程只读盘，不缓存。
-  getEnginePkgChunk: enginePkgChunk,
+  // 场景容器的数据文件：渲染模块用 <script src> 取，主进程只写自己的数据目录。
+  getEnginePkgFile: enginePkgFile,
   // 渲染模块报回来的挂载结果（失败的唯一出口）。
   setEngineStatus,
   _wallpaperProblem: wallpaperProblem,
