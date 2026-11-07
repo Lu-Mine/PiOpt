@@ -728,7 +728,10 @@ function getEngineWallpaperState() {
 
 async function openPanel(section) {
   try {
-    await pi.plugin.setSettings({ panelFeature: "appearance", panelSection: section });
+    // 一次性的跳转意图：面板打开时消费掉，之后它自己记住位置。
+    await pi.plugin.setSettings({
+      panelJump: { feature: "appearance", section: section || "motion", at: Date.now() },
+    });
   } catch {
     /* the panel falls back to its remembered view */
   }

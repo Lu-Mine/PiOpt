@@ -31,11 +31,14 @@ function featureFor(channel) {
 }
 
 async function openPanel(feature) {
-  const target = FEATURES[feature] ? feature : "market";
-  try {
-    await pi.plugin.setSettings({ panelFeature: target });
-  } catch {
-    /* the panel falls back to its remembered view */
+  // 只有明确点名时才写「跳转意图」。不带参数的「打开控制台」不该重置面板的
+  // 位置——这里写下的值会在面板启动时把用户上次待的地方覆盖掉。
+  if (FEATURES[feature]) {
+    try {
+      await pi.plugin.setSettings({ panelJump: { feature, at: Date.now() } });
+    } catch {
+      /* 面板拿不到意图就用它自己记住的位置 */
+    }
   }
   await pi.ui.openPanel({ title: "PiOpt" });
 }
@@ -86,7 +89,8 @@ async function onLoad() {
     id: PANEL_COMMAND,
     title: "PiOpt: 打开控制台",
     keywords: ["piopt", "market", "motion", "控制台", "市场", "动效"],
-    run: () => openPanel("market"),
+    // 「打开控制台」是回到用户上次待的地方，不是把他送回市场首页。
+    run: () => openPanel(),
   });
   await pi.commands.register({
     id: "remote.open",

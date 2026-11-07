@@ -713,7 +713,7 @@ async function onLoad() {
     title: t(locale, 'Pimarket: 打开市场与更新面板', 'Pimarket: open market panel'),
     keywords: ['pimarket', 'market', 'plugin', 'update', '市场', '插件', '更新'],
     run: async () => {
-      await pi.plugin.setSettings({ panelFeature: 'market' });
+      await pi.plugin.setSettings({ panelJump: { feature: 'market', at: Date.now() } });
       await pi.ui.openPanel({ title: 'PiOpt' });
     },
   });
@@ -723,7 +723,7 @@ async function onLoad() {
     title: t(locale, 'Pimarket: 准备全部可用更新', 'Pimarket: prepare all updates'),
     keywords: ['pimarket', 'update', '全部', '更新'],
     run: async () => {
-      await pi.plugin.setSettings({ panelFeature: 'market' });
+      await pi.plugin.setSettings({ panelJump: { feature: 'market', at: Date.now() } });
       await pi.ui.openPanel({ title: 'PiOpt' });
       const summary = await prepareAll();
       const ready = summary.results.filter(item => item.ok);

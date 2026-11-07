@@ -358,19 +358,36 @@
 
   let stored = null;
   try { stored = window.localStorage.getItem(STORAGE_KEY); } catch { stored = null; }
+  // 先按本地记录显示：它是面板自己写的，同步，也不会被别处覆盖。
   show(KNOWN.includes(stored) ? stored : "market", false);
 
   Promise.resolve()
     .then(() => (bridge && typeof bridge.invoke === "function" ? bridge.invoke("plugin.getSettings") : null))
     .then((settings) => {
-      const target = settings && settings.panelFeature;
-      // `motion` and `glass` were view names before the merge; a settings record
-      // written by the older build still lands on the right section.
-      const feature = target === "motion" || target === "glass" ? "appearance" : target;
-      const section = settings && settings.panelSection;
-      if (KNOWN.includes(feature) && feature !== current) show(feature, false, section);
-      // 已经有精确的滚动位置时不再跳到 section：那会把刚恢复的位置冲掉。
-      else if (section && !scrollMemory[current]) scrollToSection(section);
+      // 一次性的跳转意图（命令点名要开哪一页）。用完立刻清掉：留着它，下次打开
+      // 又会被拉走——「每次打开都跑到市场」就是这么来的。
+      const jump = settings && settings.panelJump;
+      if (jump && typeof jump === "object" && Number.isFinite(jump.at)) {
+        const raw = typeof jump.feature === "string" ? jump.feature : "";
+        // `motion` / `glass` 是合并之前的视图名，旧记录仍然要落到对应那一节。
+        const feature = raw === "motion" || raw === "glass" ? "appearance" : raw;
+        const section =
+          typeof jump.section === "string" && SECTIONS.includes(jump.section)
+            ? jump.section
+            : raw === "glass" ? "glass" : "";
+        if (KNOWN.includes(feature)) show(feature, false, section || undefined);
+        if (bridge && typeof bridge.invoke === "function") {
+          Promise.resolve()
+            .then(() => bridge.invoke("plugin.setSettings", { panelJump: null }))
+            .catch(() => { /* 清不掉也不影响这一次 */ });
+        }
+        return;
+      }
+      // 没有跳转意图时，本地没有记录才用设置里那一份兜底。
+      if (KNOWN.includes(stored)) return;
+      const raw = settings && settings.panelFeature;
+      const feature = raw === "motion" || raw === "glass" ? "appearance" : raw;
+      if (KNOWN.includes(feature)) show(feature, false);
     })
     .catch(() => { /* keep the remembered view */ });
 })();
