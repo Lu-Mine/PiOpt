@@ -105,6 +105,8 @@ let sceneEnabled = true;
 let frozenCanvas = null;
 let freezeTimer = null;
 let frozen = false;
+// 一次拖动里来了多少个 resize：拖动结束时报一行，用来说明事件到底有没有到。
+let resizeTicks = 0;
 
 // ---------------------------------------------------------------- file urls
 
@@ -751,14 +753,51 @@ function onResize() {
   const root = typeof document !== "undefined" ? document.documentElement : null;
   const canMark = Boolean(root && typeof root.setAttribute === "function");
   if (canMark) root.setAttribute("data-piopt-resizing", "true");
+  resizeTicks += 1;
   if (freezeTimer !== null) clearTimeout(freezeTimer);
   freezeTimer = setTimeout(() => {
     freezeTimer = null;
+    const ticks = resizeTicks;
+    const wasFrozen = frozen;
+    resizeTicks = 0;
     if (canMark) root.removeAttribute("data-piopt-resizing");
     thawScene();
+    reportResizeBurst(ticks, wasFrozen);
   }, SCENE_FREEZE_DELAY_MS);
   freezeScene();
   if (canvas) resizeCanvas();
+}
+
+/**
+ * 一次拖动结束时报一行。
+ *
+ * 有 scene 时帧率由 startSceneStats 定期报；这里补的是「没有 scene 的那些壁纸」
+ * ——静态图片的背景在拖动时压根不经过渲染模块，只能靠这个数字说明 resize 到底
+ * 来了多少次、冻结有没有真发生。
+ */
+function reportResizeBurst(ticks, wasFrozen) {
+  if (!host || typeof host.dispatch !== "function") return;
+  const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+  Promise.resolve()
+    .then(() =>
+      host.dispatch("plugin.call", {
+        method: "reportEngineStats",
+        args: {
+          id: current.kind || "static",
+          fps: 0,
+          running: false,
+          width: 0,
+          height: 0,
+          dpr: Math.round(dpr * 100) / 100,
+          viewport: `${(typeof innerWidth === "number" && innerWidth) || 0}x${(typeof innerHeight === "number" && innerHeight) || 0}`,
+          resizes: ticks,
+          frozen: wasFrozen,
+        },
+      })
+    )
+    .catch(() => {
+      /* 上报失败不该影响手感 */
+    });
 }
 
 export async function mountEngineWallpaper(pi) {

@@ -693,6 +693,9 @@ function setEngineStats(payload = {}) {
     height: Math.max(0, Number(payload.height) || 0),
     dpr: Math.max(0, Number(payload.dpr) || 0),
     viewport: String(payload.viewport ?? "").slice(0, 20),
+    // 一次拖动里的 resize 次数与冻结是否发生：没有 scene 的壁纸只有这两个数字。
+    resizes: Math.max(0, Math.floor(Number(payload.resizes) || 0)),
+    frozen: payload.frozen === true,
     at: Date.now(),
   };
   void (async () => {
