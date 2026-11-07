@@ -35,7 +35,8 @@
     "setModelPickerGrouping",
     "engineWallpaperState",
     "enginePkg",
-    "reportEngineStatus"
+    "reportEngineStatus",
+    "reportEngineStats"
   ],
   "permissions": [
     "ui.panel",

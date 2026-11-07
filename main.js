@@ -65,6 +65,9 @@ const RENDERER_METHODS = Object.freeze({
   // The renderer reports how a scene mount went: its console never reaches the
   // host's logs, so this is the only way a failure can be seen at all.
   reportEngineStatus: (args = {}) => FEATURES.appearance.setEngineStatus(args),
+  // The real frame rate, every 5s. "It feels slow" needs a number, and the engine's
+  // own counter only exists inside the renderer.
+  reportEngineStats: (args = {}) => FEATURES.appearance.setEngineStats(args),
 });
 
 async function onRendererCall(method, args = {}) {

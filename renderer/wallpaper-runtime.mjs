@@ -62,6 +62,9 @@ const FPS_FOCUSED = 30;
 const FPS_UNFOCUSED = 10;
 // scene 的帧率不给档位：30fps 已经够顺，60fps 实测要贵约六成（见文件头）。
 const SCENE_FPS = 30;
+// 渲染倍率上限。设备像素比更高时不跟：4K 屏 + 200% 会让画布撑到物理最长边
+// 封顶 4096，像素数是这个档的两倍多，而肉眼几乎分不出差别。
+const SCENE_MAX_DPR = 1.5;
 // 引擎随插件分发，所以是相对引入；它是自包含的 ES module，不需要打包器。
 const SCENE_ENGINE_URL = "./vendor/webwallgl.mjs";
 
@@ -133,8 +136,11 @@ function ensureContainer() {
     container.setAttribute(CONTAINER_ATTR, "true");
     container.setAttribute("aria-hidden", "true");
   }
-  // 第一个子节点：和 `.app-shell::before` 同层，但排在它后面绘制。
-  if (container.parentElement !== shell || shell.firstElementChild !== container) {
+  // 只在这一层不在壳里时挂一次。原先还要求它是第一个子节点，于是宿主每往前插
+  // 一个元素，轮询（2 秒一次）就会把这块正在渲染的画布搬一次——那本身就是每
+  // 2 秒一次的重排。层叠不靠位置：容器与 `.app-shell::before` 同为 `z-index:-1`，
+  // 伪元素本来就先画。
+  if (container.parentElement !== shell) {
     shell.prepend(container);
   }
   return container;
@@ -406,6 +412,50 @@ function reportEngineStatus(payload) {
     });
 }
 
+/**
+ * 真实帧率的定期上报。
+ *
+ * 「帧率低」只能靠数字说话：引擎自己知道每帧出了多少（`stats.fps`），但这台
+ * 机器上唯一能读到它的地方是渲染进程的 console——而那不进宿主的日志。所以每
+ * 5 秒把帧率、画布尺寸、设备像素比一起交回插件进程落盘，调性能时才有依据。
+ */
+let statsTimer = null;
+
+function stopSceneStats() {
+  if (statsTimer !== null) {
+    clearInterval(statsTimer);
+    statsTimer = null;
+  }
+}
+
+function startSceneStats(id) {
+  stopSceneStats();
+  statsTimer = setInterval(() => {
+    if (!sceneInstance || !host || typeof host.dispatch !== "function") return;
+    const stats = sceneInstance.stats || {};
+    const canvas = sceneInstance.canvas;
+    const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+    Promise.resolve()
+      .then(() =>
+        host.dispatch("plugin.call", {
+          method: "reportEngineStats",
+          args: {
+            id,
+            fps: Math.round((Number(stats.fps) || 0) * 10) / 10,
+            running: stats.running !== false,
+            width: canvas ? canvas.width : 0,
+            height: canvas ? canvas.height : 0,
+            dpr: Math.round(dpr * 100) / 100,
+            viewport: `${(typeof innerWidth === "number" && innerWidth) || 0}x${(typeof innerHeight === "number" && innerHeight) || 0}`,
+          },
+        })
+      )
+      .catch(() => {
+        /* 同上 */
+      });
+  }, 5000);
+}
+
 // 挂不上就别每 2 秒再试一遍：重试每次都要扫一遍 Steam 目录，日志里会全是
 // reg query 的失败行，而界面还是什么都没有。
 const SCENE_RETRY_MS = 30000;
@@ -456,6 +506,10 @@ async function mountScene(source) {
       },
       fit: fitOf(currentFit),
       fps: SCENE_FPS,
+      renderDpr: Math.min(
+        typeof devicePixelRatio === "number" ? devicePixelRatio : 1,
+        SCENE_MAX_DPR
+      ),
       autoplay: true,
       volume: 0,
       // 宿主 script-src 没有 'unsafe-eval'：开着只会让每次求值都撞一次 CSP。
@@ -476,6 +530,7 @@ async function mountScene(source) {
     current = { kind: "scene", file: source.file, title: source.title || "" };
     syncScene();
     reportEngineStatus({ ok: true, stage: "mounted", id: source.id, bytes: bytes.length });
+    startSceneStats(source.id);
   } catch (error) {
     if (token !== sceneToken) return;
     sceneKey = "";
@@ -513,6 +568,7 @@ function teardownScene() {
   sceneToken += 1;
   sceneKey = "";
   scenePending = null;
+  stopSceneStats();
   if (sceneInstance) {
     try {
       sceneInstance.destroy();

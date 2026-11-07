@@ -680,6 +680,32 @@ async function persistEngineStatus(status) {
   }
 }
 
+/**
+ * 渲染模块每 5 秒报一次的真实帧率。只落盘，不进面板 payload：每 5 秒变一次的值
+ * 会把列表重建一遍，而调性能时看的是这个文件。
+ */
+function setEngineStats(payload = {}) {
+  const stats = {
+    id: String(payload.id ?? "").slice(0, 20),
+    fps: Math.max(0, Number(payload.fps) || 0),
+    running: payload.running !== false,
+    width: Math.max(0, Number(payload.width) || 0),
+    height: Math.max(0, Number(payload.height) || 0),
+    dpr: Math.max(0, Number(payload.dpr) || 0),
+    viewport: String(payload.viewport ?? "").slice(0, 20),
+    at: Date.now(),
+  };
+  void (async () => {
+    try {
+      const dataDir = await pi.plugin.getDataPath();
+      writeFileSync(join(dataDir, "engine-stats.json"), JSON.stringify(stats, null, 1), "utf8");
+    } catch {
+      /* 落盘失败不影响渲染 */
+    }
+  })();
+  return { ok: true };
+}
+
 /** 渲染模块要的那一份：只有它能用的字段，不含面板用的元数据。 */
 function getEngineWallpaperState() {
   const source = glassConfig.engine;
@@ -953,6 +979,8 @@ module.exports = {
   getEnginePkgFile: enginePkgFile,
   // 渲染模块报回来的挂载结果（失败的唯一出口）。
   setEngineStatus,
+  // 渲染模块每 5 秒报一次的真实帧率，只落盘。
+  setEngineStats,
   _wallpaperProblem: wallpaperProblem,
   _ownsWallpaper: ownsWallpaper,
   _getMotionConfig: () => motionConfig,
