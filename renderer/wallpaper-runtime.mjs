@@ -1,26 +1,41 @@
-// PiOpt — Wallpaper Engine 的视频壁纸层。
+// PiOpt — Wallpaper Engine 的动态壁纸层（video 与 scene）。
 //
 // 宿主的主题资源只吃静态图片（4 MB，png/jpg/webp/avif/svg），所以一张
-// Wallpaper Engine 的 video 壁纸不能走 `background-image`。这里换一条路：往
-// `.app-shell` 里插一个原生 `<video>`，铺满窗口、压在内容之下，由 Chromium
-// 自己硬解。
+// Wallpaper Engine 的壁纸不能走 `background-image`。这里有两条路，都在
+// `.app-shell` 里铺满窗口、压在内容之下：
 //
-// 三条边界，都是宿主给的：
+// - video：一个原生 `<video>`，由 Chromium 自己硬解。
+// - scene：随插件分发的 WebWallGL 引擎（WebGL2），把 `scene.pkg` 的字节解析成
+//   图层再画出来。引擎在 `vendor/` 下，是自包含的 UMD 包转成的 ES module。
+//
+// 四条边界，都是宿主给的：
 //
 // 1. 层的位置。`.app-shell::before` 已经是 `z-index:-1`，主题里的玻璃层把它
 //    当作背景。容器用同一个 `-1` 并排在它后面，同层按 DOM 顺序绘制——于是
-//    视频在光场之上、内容之下。容器自己带 `::after` 画 `--pg-scrim`，暗层就
+//    壁纸在光场之上、内容之下。容器自己带 `::after` 画 `--pg-scrim`，暗层就
 //    不必再指望伪元素。
 //
 // 2. 资源。CSP 是 `media-src 'self' data: blob: https:`：没有 `plugin-asset:`，
-//    也不能连本地 HTTP。`file:` 与页面同源，是唯一不把整段视频读进内存的路。
+//    也不能连本地 HTTP（`connect-src 'self'` 堵死了本地服务）。video 走
+//    `file:` URL，与页面同源；scene 走插件桥，主进程读盘、按 8 MB 分块给
+//    base64——引擎要的是一份字节，不是一个能加载的 URL。
 //
-// 3. 状态。渲染模块没有设置变更事件，而这个层必须跟着面板走。所以它轮询
+// 3. 脚本。宿主 `script-src` 没有 `'unsafe-eval'`，所以 scene 壁纸自带的
+//    SceneScript 一定跑不起来（引擎用 `new Function` 编译）。挂载时显式传
+//    `scripts: false`：让引擎停在 scene.json 的快照值上，而不是让每一次求值
+//    都撞一次 CSP 拒绝。代价是粒子、时钟、鼠标视差这些脚本效果会缺。
+//
+// 4. 状态。渲染模块没有设置变更事件，而这个层必须跟着面板走。所以它轮询
 //    `plugin.call`（2 秒一次、窗口隐藏时不跑），并在 `.app-shell` 被 React
 //    重建后把自己挂回去。
 //
-// 性能模式走的不是这条路。实测一个 4K 源：解码引擎占 GPU 约 28%，渲染进程
-// 还要拿走三分之一核去缩放上屏；暂停能全部清掉，但动态壁纸也就没了。这里
+// 性能：scene 是持续出帧的 WebGL2 画布。实测（GTX 1660 SUPER、1600×1000）
+// 30fps 下重粒子壁纸 CPU +9%、GPU +16%，60fps 再贵约六成；轻量壁纸几乎没有
+// 增量。所以这里固定 30fps，并在窗口不可见、系统要求减弱动态、或用户关掉
+// 总开关时立刻 `pause()`。
+//
+// 视频的性能模式走的不是这条路。实测一个 4K 源：解码引擎占 GPU 约 28%，渲染
+// 进程还要拿走三分之一核去缩放上屏；暂停能全部清掉，但动态壁纸也就没了。这里
 // 取中间档——**解码照常（video 仍在播），但只在 canvas 上按目标帧率重绘**：
 // 焦点在窗口时 30fps，失焦时 10fps，窗口最小化时直接暂停。实测 30fps 下
 // 渲染进程开销从 33.6% 降到 19.0%，解码那一份省不掉，也不打算假装能省。
@@ -29,6 +44,8 @@ export const WALLPAPER_RUNTIME_CSS = [
   `[data-piopt-engine-wallpaper]{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none;background:transparent}`,
   `[data-piopt-engine-wallpaper]::after{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(0,0,0,var(--pg-scrim,.2)),rgba(0,0,0,var(--pg-scrim,.2)))}`,
   `[data-piopt-engine-video]{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;background:transparent}`,
+  // scene 的画布由引擎自己建并插进容器；这里只保证它铺满、不吃指针。
+  `[data-piopt-engine-wallpaper] canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;background:transparent}`,
   `[data-piopt-engine-frame]{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none;background:transparent}`,
   `[data-piopt-engine-wallpaper][data-piopt-engine-failed="true"]{display:none}`,
 ].join("\n");
@@ -43,6 +60,10 @@ const ENSURE_DELAY_MS = 180;
 // 限帧档位：看着窗口时 30fps 已经够顺，失焦时再省一档。
 const FPS_FOCUSED = 30;
 const FPS_UNFOCUSED = 10;
+// scene 的帧率不给档位：30fps 已经够顺，60fps 实测要贵约六成（见文件头）。
+const SCENE_FPS = 30;
+// 引擎随插件分发，所以是相对引入；它是自包含的 ES module，不需要打包器。
+const SCENE_ENGINE_URL = "./vendor/webwallgl.mjs";
 
 let host = null;
 let container = null;
@@ -61,6 +82,16 @@ let current = { kind: "", file: "", title: "" };
 let currentFit = "cover";
 // 性能模式：视频仍解码，但只按目标帧率重绘到 canvas 上。
 let performanceMode = false;
+// scene 的状态：引擎第一次用到时才加载；实例代表当前挂着的那个包；token 用来
+// 丢弃「字节还没收完就被换掉」的那一次挂载。
+let sceneEngineModule = null;
+let sceneInstance = null;
+let sceneKey = "";
+let sceneToken = 0;
+// 正在为某个包取字节/挂载：轮询每 2 秒回来一次，没有这道锁，一个 24 MB 的包
+// 会被 65 次并发的全量拉取拖死（实测过）。
+let scenePending = null;
+let sceneEnabled = true;
 
 // ---------------------------------------------------------------- file urls
 
@@ -280,7 +311,139 @@ function syncPlayback() {
   play();
 }
 
-function teardown() {
+// -------------------------------------------------------------------- scene
+
+/**
+ * 引擎是一个 1.1 MB 的自包含 ES module。第一次真正用到时才加载——没有 scene
+ * 壁纸的用户不该为它的解析时间买单。
+ */
+async function loadSceneEngine() {
+  if (sceneEngineModule) return sceneEngineModule;
+  const loaded = await import(SCENE_ENGINE_URL);
+  const engine = loaded && loaded.default ? loaded.default : loaded;
+  if (!engine || typeof engine.mount !== "function") throw new Error("scene engine missing");
+  sceneEngineModule = engine;
+  return engine;
+}
+
+/**
+ * 场景容器的全部字节。
+ *
+ * 主进程按 8 MB 分块给 base64：一次 33 MB 的字符串会让面板卡住几秒，中间还
+ * 没有任何进度可言。这里逐块拼成一段连续的 buffer——引擎只认一整段。
+ */
+async function fetchScenePkg(id) {
+  const parts = [];
+  let offset = 0;
+  let total = 0;
+  for (;;) {
+    const chunk = await host.dispatch("plugin.call", { method: "enginePkg", args: { id, offset } });
+    if (!chunk || chunk.ok !== true) throw new Error((chunk && chunk.reason) || "pkg-unreadable");
+    total = Number(chunk.total) || 0;
+    if (!chunk.length) break;
+    const binary = atob(chunk.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    parts.push(bytes);
+    offset += bytes.length;
+    if (offset >= total) break;
+  }
+
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
+/** 该不该出帧：减弱动态、窗口不可见、用户关掉总开关，三种都停。 */
+function sceneStopped() {
+  return reducedMotion() || document.hidden || !sceneEnabled;
+}
+
+function syncScene() {
+  if (!sceneInstance) return;
+  if (sceneStopped()) {
+    if (!sceneInstance.paused) sceneInstance.pause();
+    return;
+  }
+  if (sceneInstance.paused) sceneInstance.resume();
+}
+
+async function mountScene(source) {
+  const box = ensureContainer();
+  if (!box) return;
+  // 已经挂着这个包：只同步播放状态。一次挂载要几百毫秒到几秒。
+  if (sceneInstance && sceneKey === source.id) {
+    syncScene();
+    return;
+  }
+  // 上一次为同一个包取的字节还没回来（轮询每 2 秒回来一次）：等它，别再来一遍。
+  if (scenePending && scenePending.id === source.id) return;
+
+  const token = (sceneToken += 1);
+  sceneKey = "";
+  scenePending = { id: source.id, token };
+  try {
+    const engine = await loadSceneEngine();
+    const bytes = await fetchScenePkg(source.id);
+    // 收字节的这段时间里用户可能已经换了一张：对不上就整段丢弃。
+    if (token !== sceneToken) return;
+
+    if (sceneInstance) {
+      try {
+        sceneInstance.destroy();
+      } catch {
+        /* 已经拆掉的实例再拆一次不该炸 */
+      }
+      sceneInstance = null;
+    }
+
+    const instance = await engine.mount(box, {
+      source: {
+        key: source.id,
+        async scenePkg() {
+          return bytes;
+        },
+        async project() {
+          return { title: source.title || "", type: "scene", file: "scene.pkg" };
+        },
+      },
+      fit: fitOf(currentFit),
+      fps: SCENE_FPS,
+      autoplay: true,
+      volume: 0,
+      // 宿主 script-src 没有 'unsafe-eval'：开着只会让每次求值都撞一次 CSP。
+      scripts: false,
+    });
+    if (token !== sceneToken) {
+      try {
+        instance.destroy();
+      } catch {
+        /* 同上 */
+      }
+      return;
+    }
+
+    sceneInstance = instance;
+    sceneKey = source.id;
+    current = { kind: "scene", file: source.file, title: source.title || "" };
+    syncScene();
+  } catch (error) {
+    if (token !== sceneToken) return;
+    sceneKey = "";
+    if (container) container.setAttribute("data-piopt-engine-failed", "true");
+    console.warn("[PiOpt] scene 壁纸渲染失败：", source.id, error);
+  } finally {
+    // 只有自己那道锁能解：中途换壁纸时上一次的 finally 不该把新锁清掉。
+    if (scenePending && scenePending.token === token) scenePending = null;
+  }
+}
+
+/** 撤掉视频那一套（含限帧的时间泵），容器留着。 */
+function teardownVideo() {
   stopPump();
   if (video) {
     video.pause();
@@ -294,6 +457,28 @@ function teardown() {
     canvas = null;
     context = null;
   }
+  if (current.kind === "video") current = { kind: "", file: "", title: "" };
+}
+
+/** 撤掉 scene：先让引擎停循环，否则它会继续往一块没人看的画布上出帧。 */
+function teardownScene() {
+  sceneToken += 1;
+  sceneKey = "";
+  scenePending = null;
+  if (sceneInstance) {
+    try {
+      sceneInstance.destroy();
+    } catch {
+      /* 同上 */
+    }
+    sceneInstance = null;
+  }
+  if (current.kind === "scene") current = { kind: "", file: "", title: "" };
+}
+
+function teardown() {
+  teardownVideo();
+  teardownScene();
   if (container) {
     container.remove();
     container = null;
@@ -303,19 +488,7 @@ function teardown() {
 
 // ------------------------------------------------------------------- state
 
-function applyState(state) {
-  // 性能模式只改变绘制节奏，不改变这一层挂什么。
-  performanceMode = state ? state.performance === true : false;
-  const engine = state && state.engine && state.engine.kind === "video" && state.engine.file ? state.engine : null;
-  if (!engine) {
-    teardown();
-    return;
-  }
-
-  const box = ensureContainer();
-  if (!box) return;
-  box.removeAttribute("data-piopt-engine-failed");
-
+function applyVideoLayer(box, source, state) {
   const element = ensureVideo();
   if (element.parentElement !== box) box.prepend(element);
 
@@ -325,12 +498,41 @@ function applyState(state) {
     element.style.objectFit = fit;
   }
 
-  if (current.file !== engine.file) {
-    current = { kind: "video", file: engine.file, title: typeof engine.title === "string" ? engine.title : "" };
-    element.src = fileUrlOf(engine.file);
+  if (current.file !== source.file) {
+    current = { kind: "video", file: source.file, title: typeof source.title === "string" ? source.title : "" };
+    element.src = fileUrlOf(source.file);
     element.load();
   }
   syncPlayback();
+}
+
+function applyState(state) {
+  // 性能模式只改变绘制节奏，不改变这一层挂什么。
+  performanceMode = state ? state.performance === true : false;
+  sceneEnabled = state ? state.sceneEnabled !== false : true;
+
+  const source = state && state.engine ? state.engine : null;
+  const videoSource = source && source.kind === "video" && source.file ? source : null;
+  // 总开关关掉时不挂载，但用户的选择留在设置里等你打开。
+  const sceneSource = sceneEnabled && source && source.kind === "scene" && source.file ? source : null;
+
+  if (!videoSource && !sceneSource) {
+    teardown();
+    return;
+  }
+
+  const box = ensureContainer();
+  if (!box) return;
+  box.removeAttribute("data-piopt-engine-failed");
+
+  if (videoSource) {
+    teardownScene();
+    applyVideoLayer(box, videoSource, state);
+    return;
+  }
+
+  teardownVideo();
+  void mountScene(sceneSource);
 }
 
 async function refresh() {
@@ -358,6 +560,7 @@ function scheduleEnsure() {
 function onVisibilityChange() {
   // 最小化 / 切走：直接暂停，解码归零；回来再按当前档位恢复。
   syncPlayback();
+  syncScene();
   if (!document.hidden) void refresh();
 }
 
@@ -427,6 +630,8 @@ export function unmountEngineWallpaper() {
   performanceMode = false;
   focused = true;
   lastFrameAt = 0;
+  sceneEngineModule = null;
+  sceneEnabled = true;
 }
 
 // Exposed for the test that keeps the layer's contract honest.
@@ -439,14 +644,21 @@ export const __internals = {
   POLL_MS,
   FPS_FOCUSED,
   FPS_UNFOCUSED,
+  SCENE_FPS,
   applyState,
   ensureContainer,
   teardown,
+  teardownScene,
   syncPlayback,
+  syncScene,
+  mountScene,
+  sceneStopped,
   paintFrame,
   frameBox,
   targetFps,
   getCurrent: () => ({ ...current, fit: currentFit }),
   getMode: () => ({ performance: performanceMode, focused, capped: cappedPlayback() }),
   getCanvas: () => canvas,
+  getScene: () => sceneInstance,
+  getSceneKey: () => sceneKey,
 };

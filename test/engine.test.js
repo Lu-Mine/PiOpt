@@ -126,26 +126,103 @@ test("a video project plays from its own folder", () => {
   }
 });
 
-test("a scene project is not selectable, but its square cover still serves the list", () => {
+test("a scene project with a scene.pkg is selectable, and its square cover still serves the list", () => {
   const root = tempDir("piopt-engine-");
   const dir = path.join(root, "1002");
   writeProject(dir, { type: "scene", title: "Night", file: "scene.json", preview: "preview.gif" });
   // 真正的封面是本机那种 1:1 方图；内容不重要，只验证它只被当作缩略图来源。
   fs.writeFileSync(path.join(dir, "preview.gif"), "gif bytes");
+  // project.json 声明的是 scene.json——真实库里 351 个声明 scene.json 的条目
+  // 盘上只有 scene.pkg，所以入口必须能回退到标准名。
+  fs.writeFileSync(path.join(dir, "scene.pkg"), "pkg bytes");
 
   try {
     const item = engine.describeProject(dir, "1002");
-    // Wallpaper Engine 自己才画得出来：这里既没有 kind，也没有可播的文件。
-    assert.equal(item.kind, "");
-    assert.equal(item.supported, false);
-    assert.equal(item.reason, "engine-only");
-    assert.equal(item.file, "");
+    assert.equal(item.kind, "scene");
+    assert.equal(item.supported, true);
+    assert.equal(item.reason, "");
+    // scene 的 file 是场景容器，不是可播放的媒体文件。
+    assert.equal(item.file, path.join(dir, "scene.pkg"));
 
     // 封面仍然可读——但那是给列表卡片用的方图，不是壁纸画面。
     assert.equal(item.preview.mime, "image/gif");
     const cover = engine.previewOf(item);
     assert.equal(cover.mime, "image/gif");
     assert.equal(Buffer.from(cover.data, "base64").toString(), "gif bytes");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a scene project without a container is refused with its own reason", () => {
+  const root = tempDir("piopt-engine-");
+  const dir = path.join(root, "1007");
+  // 散装 scene.json 工程：这条路径不替它把包拼出来。
+  writeProject(dir, { type: "scene", title: "Loose", file: "scene.json" });
+  fs.writeFileSync(path.join(dir, "scene.json"), "{}");
+
+  try {
+    const item = engine.describeProject(dir, "1007");
+    assert.equal(item.kind, "scene");
+    assert.equal(item.supported, false);
+    assert.equal(item.reason, "scene-no-pkg");
+    assert.equal(item.file, "");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a container named by project.json wins over the standard name", () => {
+  const root = tempDir("piopt-engine-");
+  const dir = path.join(root, "1008");
+  writeProject(dir, { type: "scene", title: "Named", file: "custom.pkg" });
+  fs.writeFileSync(path.join(dir, "custom.pkg"), "custom");
+  fs.writeFileSync(path.join(dir, "scene.pkg"), "standard");
+
+  try {
+    assert.equal(engine.describeProject(dir, "1008").file, path.join(dir, "custom.pkg"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a lone *.pkg under any name is found, but two of them are not guessed", () => {
+  const root = tempDir("piopt-engine-");
+  const one = path.join(root, "1009");
+  writeProject(one, { type: "scene", title: "One" });
+  fs.writeFileSync(path.join(one, "whatever.pkg"), "x");
+
+  const two = path.join(root, "1010");
+  writeProject(two, { type: "scene", title: "Two" });
+  fs.writeFileSync(path.join(two, "a.pkg"), "x");
+  fs.writeFileSync(path.join(two, "b.pkg"), "y");
+
+  try {
+    assert.equal(engine.describeProject(one, "1009").file, path.join(one, "whatever.pkg"));
+    assert.equal(engine.describeProject(two, "1010").reason, "scene-no-pkg");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("web and application projects stay refused: neither can be drawn in this window", () => {
+  const root = tempDir("piopt-engine-");
+  const web = path.join(root, "1011");
+  writeProject(web, { type: "web", title: "Page", file: "index.html" });
+  fs.writeFileSync(path.join(web, "index.html"), "<html></html>");
+
+  const app = path.join(root, "1012");
+  writeProject(app, { type: "application", title: "App", file: "app.exe" });
+  fs.writeFileSync(path.join(app, "app.exe"), "MZ");
+
+  try {
+    for (const [dir, id] of [[web, "1011"], [app, "1012"]]) {
+      const item = engine.describeProject(dir, id);
+      assert.equal(item.kind, "");
+      assert.equal(item.supported, false);
+      assert.equal(item.reason, "engine-only");
+      assert.equal(item.file, "");
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -163,13 +240,14 @@ test("a missing or oversized cover changes nothing: the project stays unplayable
   try {
     const missing = engine.describeProject(bare, "1003");
     assert.equal(missing.supported, false);
-    assert.equal(missing.reason, "engine-only");
+    // 没有容器就没有可画的东西——封面的有无不该改变这个结论。
+    assert.equal(missing.reason, "scene-no-pkg");
     assert.equal(missing.preview, null);
 
     // 超过 4 MB 的封面不进内存，也不影响结论。
     const oversized = engine.describeProject(heavy, "1004");
     assert.equal(oversized.supported, false);
-    assert.equal(oversized.reason, "engine-only");
+    assert.equal(oversized.reason, "scene-no-pkg");
     assert.equal(oversized.preview, null);
     assert.equal(engine.previewOf(oversized), null);
   } finally {
@@ -368,7 +446,71 @@ test("wallpaper pauses while hidden regardless of performance mode and resumes w
   }
 });
 
-test("performance description explains frame rates and unconditional hidden pause", () => {
+test("performance description explains the focus-dependent frame rates", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "index.html"), "utf8");
-  assert.match(html, /聚焦时按 30 FPS 重绘，失焦时降至 10 FPS；窗口隐藏时始终暂停播放/);
+  assert.match(html, /聚焦时按 30 FPS 重绘，失焦时降至 10 FPS<\/span>/);
+});
+
+// ------------------------------------------------------------- the scene layer
+
+test("a scene stops on a hidden window, on reduced motion, or when the switch is off", async () => {
+  const runtime = await import("../renderer/wallpaper-runtime.mjs");
+  const { sceneStopped, SCENE_FPS } = runtime.__internals;
+
+  // 帧率不给档位：30fps 是实测出来的折中（60fps 要贵约六成）。
+  assert.equal(SCENE_FPS, 30);
+
+  const doc = {
+    documentElement: {}, hidden: false, hasFocus: () => true,
+    addEventListener() {}, removeEventListener() {}, querySelector: () => null,
+  };
+  global.document = doc;
+  global.window = { addEventListener() {}, removeEventListener() {} };
+  global.matchMedia = () => ({ matches: false });
+  try {
+    const state = (sceneEnabled) => ({
+      engine: { id: "42", title: "Sakura", kind: "scene", file: "C:/we/scene.pkg" },
+      fit: "cover",
+      sceneEnabled,
+    });
+
+    runtime.__internals.applyState(state(true));
+    assert.equal(sceneStopped(), false);
+
+    doc.hidden = true;
+    assert.equal(sceneStopped(), true);
+    doc.hidden = false;
+
+    // 系统要求减弱动态时同样不出帧。
+    global.matchMedia = () => ({ matches: true });
+    assert.equal(sceneStopped(), true);
+    global.matchMedia = () => ({ matches: false });
+
+    // 用户关掉总开关：选择还在，只是不出帧。
+    runtime.__internals.applyState(state(false));
+    assert.equal(sceneStopped(), true);
+    runtime.__internals.applyState(state(true));
+    assert.equal(sceneStopped(), false);
+  } finally {
+    runtime.unmountEngineWallpaper();
+    delete global.document;
+    delete global.window;
+    delete global.matchMedia;
+  }
+});
+
+test("the scene canvas fills the layer and eats no pointer events", async () => {
+  const runtime = await import("../renderer/wallpaper-runtime.mjs");
+  const css = runtime.WALLPAPER_RUNTIME_CSS;
+  // 画布是引擎自己建的，所以这条规则要落在容器下面的 canvas 上。
+  assert.match(css, /\[data-piopt-engine-wallpaper\] canvas\{[^}]*position:absolute/);
+  assert.match(css, /\[data-piopt-engine-wallpaper\] canvas\{[^}]*width:100%/);
+  assert.match(css, /\[data-piopt-engine-wallpaper\] canvas\{[^}]*pointer-events:none/);
+});
+
+test("the panel offers scene cards and a switch to stop them", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "index.html"), "utf8");
+  assert.match(html, /id="glass-scene"/);
+  assert.match(html, /渲染场景壁纸/);
+  assert.match(html, /id="glass-engine-note"/);
 });

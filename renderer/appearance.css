@@ -468,6 +468,14 @@ label.settings-row { cursor: pointer; }
   line-height: var(--leading-body);
 }
 
+/* 顶替每张卡片上的重复标注：场景由内置引擎渲染，脚本效果缺。 */
+.wallpaper-engine-note {
+  margin: 8px 0 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-body);
+}
+
 /*
  * 删除图标浮在照片上，配色不跟随界面表面色：深色主题半透明黑底白叉，浅色
  * 主题在文件末尾换成白底深叉。两种主题下它都只出现在照片上，所以底不与

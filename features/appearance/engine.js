@@ -8,9 +8,11 @@
  * 写着类型与入口文件。这里只做三件事：找到这些目录、读出每个项目的类型、
  * 指出哪一种能在这个窗口里真的播放。
  *
- * 只有 `video`（mp4 / webm）能播：渲染进程原生 `<video>` 解码。其余类型
- * （`scene` / `web` / `application` / `preset`）由 Wallpaper Engine 自己的
- * 渲染器绘制，插件里无法复刻——它们在这里一律不可选。
+ * `video`（mp4 / webm）交给渲染进程的 `<video>` 解码；`scene` 交给随插件分发
+ * 的 WebWallGL 引擎，读 `scene.pkg` 的字节在 WebGL2 里画。`web` / `application`
+ * / `preset` 由 Wallpaper Engine 自己的渲染器绘制，插件复刻不了，一律不可选：
+ * 网页壁纸要一个 iframe，而宿主 CSP 的 `frame-src` 只放行 `pi-genui:`；
+ * application 是 .exe，依赖 Wallpaper Engine 的注入环境。
  *
  * 项目自带的 `preview.gif` / `preview.jpg` 是创意工坊列表用的**方形封面**
  * （本机 42 张全是 1:1，192–1024 px），只够当列表里那张卡片的缩略图，绝不是
@@ -225,6 +227,49 @@ function previewFileOf(dir, project) {
   return null;
 }
 
+// 场景容器的候选顺序。真实库里绝大多数是根目录的 scene.pkg；另外两种是
+// Wallpaper Engine 自己写过的布局，按同样顺序回退。
+const SCENE_PKG_FILES = Object.freeze(["scene.pkg", "scenes/scene.pkg", "gifscene.pkg"]);
+
+/**
+ * 一张 scene 壁纸的场景容器。
+ *
+ * 找的顺序：`project.json` 里声明的 `*.pkg`（作者可以改名）→ 三种标准布局
+ * → 根目录里唯一的 `*.pkg`。都没有就返回空串：散装 `scene.json` 工程没有包，
+ * 这条路径不负责把它拼出来。
+ */
+function scenePkgOf(dir, project) {
+  const names = [];
+  const declared = project && typeof project.file === "string" ? project.file.trim() : "";
+  if (declared && /\.pkg$/i.test(declared) && !declared.includes("\0")) {
+    // 声明里带子目录（scenes/x.pkg）是合法的，但只接受向下的路径。
+    if (!declared.split(/[\\/]/).some((segment) => segment === ".." || segment === ".")) {
+      names.push(declared);
+    }
+  }
+  names.push(...SCENE_PKG_FILES);
+
+  for (const name of names) {
+    const file = join(dir, name);
+    try {
+      if (statSync(file).isFile()) return file;
+    } catch {
+      /* 不存在就试下一个 */
+    }
+  }
+
+  // 兜底：作者用了别的名字，而目录里只有一个包。
+  try {
+    const pkgs = readdirSync(dir).filter((name) => /\.pkg$/i.test(name));
+    if (pkgs.length === 1) {
+      const file = join(dir, pkgs[0]);
+      if (statSync(file).isFile()) return file;
+    }
+  } catch {
+    /* 读不了目录就当作没有 */
+  }
+  return "";
+}
 /**
  * 一个创意工坊目录能做什么。
  *
@@ -266,7 +311,25 @@ function describeProject(dir, id = "") {
     };
   }
 
-  // scene / web / application / preset：只有 Wallpaper Engine 自己画得出来。
+  // scene：能渲染的前提是找到场景容器。scene.pkg 是贴图、shader 与
+  // scene.json 打在一起的包，渲染进程里的引擎只吃这份字节。找不到包
+  // （散装 scene.json 工程）就如实标成不可用，而不是拿封面图凑数。
+  if (type === "scene") {
+    const pkg = scenePkgOf(dir, project);
+    return {
+      id: folderId,
+      title,
+      type,
+      kind: "scene",
+      supported: Boolean(pkg),
+      reason: pkg ? "" : "scene-no-pkg",
+      // scene 时这里放的是场景容器，不是可播放的媒体文件。
+      file: pkg,
+      preview,
+    };
+  }
+
+  // web / application / preset：由 Wallpaper Engine 自己的渲染器绘制，插件复刻不了。
   return {
     id: folderId,
     title,
@@ -340,6 +403,7 @@ module.exports = {
   parseLibraryFolders,
   discoverWorkshopRoots,
   readProject,
+  scenePkgOf,
   describeProject,
   scanWorkshop,
   scanAll,

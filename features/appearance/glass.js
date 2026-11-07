@@ -42,8 +42,12 @@ const WALLPAPER_MAX_BYTES = 4 * 1024 * 1024;
 // `<video>`，因为宿主的主题资源只吃静态图片（4 MB、png/jpg/webp/avif/svg）。
 // `engine` 记住这张壁纸的来源；只有 video 能在这里播放，其余类型属于
 // Wallpaper Engine 自己，不进这个字段。
-const ENGINE_KINDS = Object.freeze(["video"]);
+// 两种壁纸都由渲染进程画：video 交给原生 `<video>`，scene 交给随插件分发的
+// WebWallGL 引擎（WebGL2）。其余类型（web / application / preset）不在这里。
+const ENGINE_KINDS = Object.freeze(["video", "scene"]);
 const ENGINE_VIDEO_EXTENSIONS = Object.freeze(["mp4", "webm"]);
+// scene 的入口是场景容器（贴图 + shader + scene.json 打在一起），不是媒体文件。
+const ENGINE_SCENE_EXTENSIONS = Object.freeze(["pkg"]);
 const EMPTY_ENGINE = Object.freeze({ id: "", title: "", kind: "", file: "" });
 
 const FITS = Object.freeze(["fill", "contain", "cover", "none"]);
@@ -79,6 +83,9 @@ const DEFAULT_CONFIG = Object.freeze({
   // <video>：一个 4K 源会一直占着解码引擎和合成器（实测：GPU 视频解码 28%，
   // 渲染进程三分之一核）。这个开关只改变重绘节奏，壁纸本身和填充方式都不变。
   performance: false,
+  // scene 壁纸是一块持续出帧的 WebGL2 画布：默认开（用户选它就是要看），但这
+  // 是一个随时可关的总开关 —— 关掉后保留选择，只是不再渲染。
+  sceneEnabled: true,
 });
 
 const RECENT_MAX = 8;
@@ -161,31 +168,52 @@ function isSupportedWallpaper(value) {
   return WALLPAPER_EXTENSIONS.includes(extension);
 }
 
-function isSupportedEngineVideo(value) {
+/**
+ * 引擎壁纸的入口文件：绝对路径 + 扩展名白名单。
+ *
+ * 绝对路径是硬要求（宿主按文件系统解析，相对路径会静默退化成「没有」），
+ * `.`/`..` 段也一并拒掉——那是宿主 upsert 时会拒绝的形状。
+ */
+function isSupportedEngineFile(value, extensions) {
   const path = typeof value === "string" ? value.trim() : "";
   if (!path) return false;
   if (!/^([a-zA-Z]:[\\/]|[\\/])/.test(path)) return false;
   if (path.includes("\0")) return false;
   if (path.split(/[\\/]/).some((segment) => segment === "." || segment === "..")) return false;
   const extension = (/\.[a-z0-9]+$/i.exec(path)?.[0].slice(1) ?? "").toLowerCase();
-  return ENGINE_VIDEO_EXTENSIONS.includes(extension);
+  return extensions.includes(extension);
+}
+
+function isSupportedEngineVideo(value) {
+  return isSupportedEngineFile(value, ENGINE_VIDEO_EXTENSIONS);
+}
+
+/** scene 的入口是 `scene.pkg`（场景容器），不是可以直接播放的媒体文件。 */
+function isSupportedScenePkg(value) {
+  return isSupportedEngineFile(value, ENGINE_SCENE_EXTENSIONS);
 }
 
 /**
  * The Wallpaper Engine source behind the current backdrop.
  *
- * Only `kind: "video"` survives: it carries the clip the renderer module plays.
- * Every other type belongs to Wallpaper Engine's own renderer, so it never
- * reaches here; an entry that lost its clip collapses to empty rather than
- * leaving a dangling reference for `themes.upsert` to choke on.
+ * Two kinds survive, and both are drawn by the renderer module: `video` carries
+ * the clip a `<video>` plays, `scene` carries the `scene.pkg` container the
+ * WebWallGL engine parses. `file` holds whichever of the two applies, so the
+ * shape stays one for both. Every other type belongs to Wallpaper Engine's own
+ * renderer and never reaches here; an entry that lost its file collapses to
+ * empty rather than leaving a dangling reference for `themes.upsert` to choke on.
  */
 function normalizeEngine(input) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const id = /^\d{1,20}$/.test(String(source.id ?? "").trim()) ? String(source.id).trim() : "";
   const kind = ENGINE_KINDS.includes(source.kind) ? source.kind : "";
-  if (!id || kind !== "video") return { ...EMPTY_ENGINE };
+  if (!id || (kind !== "video" && kind !== "scene")) return { ...EMPTY_ENGINE };
 
-  const file = isSupportedEngineVideo(source.file) ? String(source.file).trim() : "";
+  const accepted = isSupportedEngineFile(
+    source.file,
+    kind === "scene" ? ENGINE_SCENE_EXTENSIONS : ENGINE_VIDEO_EXTENSIONS,
+  );
+  const file = accepted ? String(source.file).trim() : "";
   if (!file) return { ...EMPTY_ENGINE };
   const title = typeof source.title === "string" ? source.title.trim().slice(0, 120) : "";
   return { id, title, kind, file };
@@ -195,6 +223,12 @@ function normalizeEngine(input) {
 function hasEngineVideo(config) {
   const engine = config && config.engine ? config.engine : EMPTY_ENGINE;
   return engine.kind === "video" && Boolean(engine.file);
+}
+
+/** Whether the backdrop is a scene the renderer module has to draw. */
+function hasEngineScene(config) {
+  const engine = config && config.engine ? config.engine : EMPTY_ENGINE;
+  return engine.kind === "scene" && Boolean(engine.file);
 }
 
 /**
@@ -235,6 +269,8 @@ function normalizeGlassConfig(input = {}) {
     engine: normalizeEngine(source.engine),
     // 视频壁纸降开销：只在用户主动要求时才限帧。
     performance: source.performance === true,
+    // scene 渲染默认开，只有显式 false 才关。
+    sceneEnabled: source.sceneEnabled !== false,
   };
 }
 
@@ -265,7 +301,7 @@ function glassTokens(input = {}) {
     // 100% keeps the pane exactly as the host paints it, so a user who never
     // picks a wallpaper sees no change at all.
     // 视频壁纸同样算“有东西在背后”，否则主画布会盖住它。
-    canvas: config.wallpaper || hasEngineVideo(config) ? firmUp(preset.canvas) : 100,
+    canvas: config.wallpaper || hasEngineVideo(config) || hasEngineScene(config) ? firmUp(preset.canvas) : 100,
   };
 }
 
@@ -406,11 +442,10 @@ const POPUP_FILL = Object.freeze([
 function buildGlassCss(input = {}, options = {}) {
   const config = normalizeGlassConfig(input);
   const surfaces = config.enabled;
-  const engineVideo = hasEngineVideo(config);
-  // Nothing to paint when the user wants solid surfaces and no backdrop: an
-  // engine clip counts as a backdrop even though the image layer stays empty,
-  // because the variables (--pg-*) still have to exist for the video layer.
-  if (!surfaces && !config.wallpaper && !engineVideo) return "";
+  // 引擎渲染的两种壁纸（video / scene）都算「有东西在背后」：图片层留空，
+  // 但 --pg-* 变量仍要存在，否则那一层既没有暗化也没有配色。
+  const engineLayer = hasEngineVideo(config) || hasEngineScene(config);
+  if (!surfaces && !config.wallpaper && !engineLayer) return "";
 
   const tokens = glassTokens(config);
   // The switch only decides whether the surfaces are frosted. A photo must survive
@@ -461,7 +496,7 @@ function buildGlassCss(input = {}, options = {}) {
   // this pseudo element, and it carries its own scrim — so the image layer here
   // paints nothing at all. Without that, the light field would only add a second
   // full-window gradient nobody can see.
-  const backdrop = engineVideo ? "none" : wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
+  const backdrop = engineLayer ? "none" : wallpaper ? `${scrim},url("${wallpaper}")` : LIGHT_FIELD;
 
   // Every "chrome" surface — the window title bar, the conversation top bar, the
   // work panel's tab header and the window controls — paints this exact string.
@@ -486,7 +521,7 @@ function buildGlassCss(input = {}, options = {}) {
         "}",
       ].join("\n")
     : "";
-  const sizing = wallpaper && !engineVideo ? fitDeclarations(config.fit) : "";
+  const sizing = wallpaper && !engineLayer ? fitDeclarations(config.fit) : "";
 
   const css = `${CSS_MARKER}
 :root{--pg-blur:${tokens.blur}px;--pg-blur-strong:${tokens.blurStrong}px;--pg-saturate:${tokens.saturate};--pg-sidebar-alpha:${tokens.sidebar}%;--pg-chrome-alpha:${tokens.chrome}%;--pg-overlay-alpha:${tokens.overlay}%;--pg-canvas-alpha:${tokens.canvas}%;--pg-glow:${tokens.glow}%;--pg-scrim:${tokens.scrim}}
@@ -569,6 +604,7 @@ module.exports = {
   DEFAULT_CONFIG,
   ENGINE_KINDS,
   ENGINE_VIDEO_EXTENSIONS,
+  ENGINE_SCENE_EXTENSIONS,
   EMPTY_ENGINE,
   FITS,
   FROSTED_FRAMES,
@@ -585,7 +621,10 @@ module.exports = {
   fitDeclarations,
   glassTokens,
   hasEngineVideo,
+  hasEngineScene,
+  isSupportedEngineFile,
   isSupportedEngineVideo,
+  isSupportedScenePkg,
   isSupportedWallpaper,
   normalizeEngine,
   normalizeGlassConfig,

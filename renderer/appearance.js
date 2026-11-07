@@ -161,6 +161,8 @@ function normalizeGlass(input) {
     recent: Array.isArray(source.recent) ? source.recent : state.glass.recent,
     engine: normalizeEngine(source.engine),
     performance: source.performance === true,
+    // scene 渲染默认开；面板不改这个默认值，只如实回传。
+    sceneEnabled: source.sceneEnabled !== false,
   };
 }
 
@@ -386,6 +388,8 @@ function renderGlass() {
   const config = state.glass;
   elements.glassToggle.checked = config.enabled;
   elements.glassPerformance.checked = config.performance;
+  // scene 的渲染开关：默认开，只有显式关掉才不挂载。
+  elements.glassScene.checked = config.sceneEnabled !== false;
 
   // 模糊强度属于磨砂玻璃开关。背景图那一段不再收起：没有图时它仍然要能点
   // 「不使用」和最近使用。
@@ -437,11 +441,13 @@ async function selectBackdropTab(tab) {
   if (state.backdropTab === next) return;
   state.backdropTab = next;
   renderBackdropTabs();
-  if (next === "engine") {
-    // 第一次打开这一面才去扫：别的操作不该让它去碰 Steam 目录。
-    if (state.engineList === null) await scanEngine();
-    // 这一面现在可见了：按真实列数重算三行容量。
-    else renderEngineGrid();
+  if (next !== "engine") return;
+  // 列表在初始化时就扫好了。切过来只补两件当时做不了的事：按这一面真实的
+  // 列数重算三行容量，以及把缩略图填上。
+  if (state.engineList === null) await scanEngine();
+  else {
+    renderEngineGrid();
+    void fillEngineThumbs();
   }
 }
 
@@ -740,12 +746,14 @@ async function clearWallpaper() {
 
 // --------------------------------------------------------- wallpaper engine
 
-const ENGINE_KIND_COPY = { video: "动态" };
+const ENGINE_KIND_COPY = { video: "动态", scene: "场景渲染" };
 const ENGINE_TYPE_COPY = { video: "视频", scene: "场景", web: "网页", application: "程序", preset: "预设" };
 const ENGINE_REASON_COPY = {
   // 封面图是创意工坊列表用的方图，不是壁纸画面，所以没有"静帧预览"这条路。
   "engine-only": "需 Wallpaper Engine 渲染",
   "video-unplayable": "视频格式不支持",
+  // 散装 scene.json 工程没有场景容器，内置引擎只吃 scene.pkg。
+  "scene-no-pkg": "没有 scene.pkg",
   "unknown-project": "壁纸已不存在",
 };
 
@@ -757,8 +765,8 @@ function engineMeta(item) {
 
 function engineNote(item) {
   if (!item.supported) return ENGINE_REASON_COPY[item.reason] || "不可用";
-  // 能选中的只有 video：它真的会动。
-  return "动态播放";
+  // scene 由内置引擎画。脚本效果的缺口写在列表下方那一句说明里，不在这里重复。
+  return item.kind === "scene" ? "场景渲染" : "动态播放";
 }
 
 /*
@@ -810,6 +818,7 @@ function renderEngineGrid() {
   if (!items.length) {
     elements.engineHead.textContent = "本机壁纸";
     grid.innerHTML = `<p class="wallpaper-engine-empty">${escapeHtml(state.engineListMessage || "没有找到 Wallpaper Engine 壁纸")}</p>`;
+    if (elements.engineNote) elements.engineNote.hidden = true;
     return;
   }
 
@@ -833,6 +842,16 @@ function renderEngineGrid() {
       </button>
     </div>`;
   }).join("");
+
+  // 一句说明顶替三十张卡片上的重复标注：场景由内置引擎画，脚本效果缺。
+  const noteEl = elements.engineNote;
+  if (noteEl) {
+    const hasScene = visible.some((item) => item.kind === "scene" && item.supported);
+    noteEl.hidden = !hasScene;
+    if (hasScene) {
+      noteEl.textContent = "场景壁纸由内置引擎渲染，壁纸自带的脚本效果在宿主的 CSP 下不生效。";
+    }
+  }
 }
 
 function paintEngineThumb(id, thumb) {
@@ -848,6 +867,8 @@ let engineThumbFilling = false;
 // 缩略图一次画一张：扫描结果可能几十条，全部并行解码会把面板卡住。
 async function fillEngineThumbs() {
   if (engineThumbFilling) return;
+  // 这一面看不见时不解码：几十张 GIF 的首帧不该在没人看的时候花掉。
+  if (state.backdropTab !== "engine") return;
   engineThumbFilling = true;
   try {
     for (const item of [...(state.engineList || [])]) {
@@ -903,7 +924,13 @@ async function useEngineItem(id) {
       toast(result.message || "无法使用这张壁纸", true);
       return;
     }
-    toast(`已启用动态壁纸：${item.title}`);
+    // scene 还要等渲染模块下一次轮询（最多 2 秒）去取几十 MB 的字节：把这段
+    // 等待说出来，否则用户会以为点了没反应。
+    if (item.kind === "scene") {
+      toast(`正在准备场景壁纸：${item.title}，大文件需要几秒`);
+    } else {
+      toast(`已启用动态壁纸：${item.title}`);
+    }
   } catch (error) {
     toast(error.message || "无法使用这张壁纸", true);
   } finally {
@@ -991,6 +1018,10 @@ function bindEvents() {
   elements.glassPerformance.addEventListener("change", () =>
     setGlassConfig({ performance: elements.glassPerformance.checked }, 0)
   );
+  // 关掉只是不再出帧，选择留着；立刻生效，不必等下一次轮询。
+  elements.glassScene.addEventListener("change", () =>
+    setGlassConfig({ sceneEnabled: elements.glassScene.checked }, 0)
+  );
   elements.glassIntensity.addEventListener("input", () => {
     paintRange(elements.glassIntensity);
     setGlassConfig({ intensity: Number(elements.glassIntensity.value) / 100 });
@@ -1060,6 +1091,7 @@ async function initialize() {
     followReduced: byId("follow-reduced"),
     glassToggle: byId("glass-toggle"),
     glassPerformance: byId("glass-performance"),
+    glassScene: byId("glass-scene"),
     glassEnabledSub: byId("glass-enabled-sub"),
     glassFitButtons: Array.from(document.querySelectorAll("[data-glass-fit]")),
     glassIntensity: byId("glass-intensity"),
@@ -1077,6 +1109,7 @@ async function initialize() {
     engineHead: byId("glass-engine-head"),
     engineMore: byId("glass-engine-more"),
     engineGrid: byId("glass-engine-grid"),
+    engineNote: byId("glass-engine-note"),
     confirm: byId("confirm"),
     confirmTitle: byId("confirm-title"),
     confirmText: byId("confirm-text"),
@@ -1105,6 +1138,9 @@ async function initialize() {
   } finally {
     setBusy(false);
   }
+  // 网格不等切换：先把卡片扫出来，免得切到「Wallpaper Engine」那一面时才现扫。
+  // 缩略图仍然只在那一面真的可见时才解码（见 fillEngineThumbs）。
+  void scanEngine();
 }
 
 window.PiOptAppearance = { boot: initialize };

@@ -84,6 +84,7 @@ test("glass is off by default, so nothing is injected until it is asked for", ()
     recent: [],
     engine: { id: "", title: "", kind: "", file: "" },
     performance: false,
+    sceneEnabled: true,
   });
   assert.equal(glass.buildGlassCss(config), "");
   assert.equal(glass.buildGlassCss(undefined), "");
@@ -296,6 +297,7 @@ test("apply writes the setting and rebuilds the one theme", async () => {
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
       performance: false,
+      sceneEnabled: true,
     });
     // One theme, rebuilt once from both halves: the material never injects a
     // stylesheet of its own, it changes the one the motion rules live in.
@@ -313,6 +315,7 @@ test("apply writes the setting and rebuilds the one theme", async () => {
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
       performance: false,
+      sceneEnabled: true,
     });
   } finally {
     delete global.pi;
@@ -353,6 +356,7 @@ test("reads the stored setting instead of trusting the panel", async () => {
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
       performance: false,
+      sceneEnabled: true,
     });
     assert.deepEqual(state.presets, ["light", "standard", "deep"]);
   } finally {
@@ -378,6 +382,7 @@ test("reset returns to the shipped default but keeps the user's photo", async ()
       recent: [],
       engine: { id: "", title: "", kind: "", file: "" },
       performance: false,
+      sceneEnabled: true,
     });
     assert.equal(host.store[glass.SETTINGS_KEY].enabled, false);
     // The photo is the user's own file, not part of the recipe.
@@ -884,6 +889,7 @@ test("picking an engine clip stores the clip and drops the photo", async () => {
       engine: { id: "555", title: "Sky", kind: "video", file: path.join(dir, "clip.mp4") },
       fit: "fill",
       performance: false,
+      sceneEnabled: true,
     });
   } finally {
     restore();
@@ -891,7 +897,97 @@ test("picking an engine clip stores the clip and drops the photo", async () => {
   }
 });
 
-test("a scene wallpaper is refused with the reason Wallpaper Engine owns it", async () => {
+test("a scene with a scene.pkg is applied, and the renderer gets the container path", async () => {
+  const { root, dir } = tempEngineRoot(
+    { id: "610", body: { type: "scene", title: "Sakura", file: "scene.json" } },
+    { "scene.pkg": Buffer.from("pkg bytes") }
+  );
+  const restore = stubEngineRoots(root);
+  const host = makePi();
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    const applied = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "610" });
+    assert.equal(applied.ok, true);
+    assert.equal(applied.config.engine.kind, "scene");
+    assert.equal(applied.config.engine.file, path.join(dir, "scene.pkg"));
+
+    // 渲染模块拿到的就是这份路径，外加 scene 的总开关。
+    const state = feature.getEngineWallpaperState();
+    assert.equal(state.engine.kind, "scene");
+    assert.equal(state.engine.file, path.join(dir, "scene.pkg"));
+    assert.equal(state.sceneEnabled, true);
+  } finally {
+    restore();
+    delete global.pi;
+  }
+});
+
+test("scene bytes arrive in chunks that reassemble into the file", async () => {
+  const payload = Buffer.alloc(600);
+  for (let index = 0; index < payload.length; index += 1) payload[index] = index % 251;
+  const { root } = tempEngineRoot(
+    { id: "620", body: { type: "scene", title: "Chunky" } },
+    { "scene.pkg": payload }
+  );
+  const restore = stubEngineRoots(root);
+  global.pi = makePi().pi;
+  const feature = loadFeature();
+  try {
+    const first = feature.getEnginePkgChunk({ id: "620", offset: 0, length: 256 });
+    assert.equal(first.ok, true);
+    assert.equal(first.total, payload.length);
+    assert.equal(first.length, 256);
+
+    // 要的比剩下的多，就只给剩下的那一截。
+    const rest = feature.getEnginePkgChunk({ id: "620", offset: 256, length: 4096 });
+    assert.equal(rest.length, payload.length - 256);
+
+    const joined = Buffer.concat([
+      Buffer.from(first.data, "base64"),
+      Buffer.from(rest.data, "base64"),
+    ]);
+    assert.deepEqual(joined, payload);
+
+    // 正好读到末尾：空块，调用方据此收尾。
+    const past = feature.getEnginePkgChunk({ id: "620", offset: payload.length });
+    assert.equal(past.ok, true);
+    assert.equal(past.length, 0);
+
+    // 认不出的 id 一律拒绝，别让它变成任意文件读取。
+    assert.equal(feature.getEnginePkgChunk({ id: "999" }).ok, false);
+    assert.equal(feature.getEnginePkgChunk({}).ok, false);
+  } finally {
+    restore();
+    delete global.pi;
+  }
+});
+
+test("the scene switch stops the renderer without forgetting the pick", async () => {
+  const { root, dir } = tempEngineRoot(
+    { id: "630", body: { type: "scene", title: "Switch" } },
+    { "scene.pkg": Buffer.from("x") }
+  );
+  const restore = stubEngineRoots(root);
+  const host = makePi();
+  host.pi.ui.showToast = async () => {};
+  global.pi = host.pi;
+  const feature = loadFeature();
+  try {
+    await feature.onPanelInvoke(glassChannel("engineApply"), { id: "630" });
+    const off = await feature.onPanelInvoke(glassChannel("apply"), { config: { sceneEnabled: false } });
+    assert.equal(off.config.sceneEnabled, false);
+    // 关掉的是渲染，不是这张壁纸：选择还在，打开开关就回来。
+    assert.equal(off.config.engine.kind, "scene");
+    assert.equal(off.config.engine.file, path.join(dir, "scene.pkg"));
+  } finally {
+    restore();
+    delete global.pi;
+  }
+});
+
+test("a scene without a scene.pkg is refused with its own reason", async () => {
   const { root } = tempEngineRoot(
     { id: "600", body: { type: "scene", title: "Night", file: "scene.json" } },
     { "preview.gif": Buffer.from("gif bytes") }
@@ -904,7 +1000,7 @@ test("a scene wallpaper is refused with the reason Wallpaper Engine owns it", as
   try {
     const result = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "600" });
     assert.equal(result.ok, false);
-    assert.equal(result.reason, "engine-only");
+    assert.equal(result.reason, "scene-no-pkg");
     // 什么都没存：方形封面不是壁纸画面，不该被写成背景。
     assert.equal(host.store[glass.SETTINGS_KEY], undefined);
   } finally {
@@ -927,7 +1023,7 @@ test("a cover request is refused with the project's own reason", async () => {
 
     const apply = await feature.onPanelInvoke(glassChannel("engineApply"), { id: "700" });
     assert.equal(apply.ok, false);
-    assert.equal(apply.reason, "engine-only");
+    assert.equal(apply.reason, "scene-no-pkg");
   } finally {
     restore();
     delete global.pi;

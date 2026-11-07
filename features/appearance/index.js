@@ -14,12 +14,22 @@
  * survived a reload can still be holding the old ones.
  */
 
-const { readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } = require("node:fs");
+const {
+  closeSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} = require("node:fs");
 const { basename, join } = require("node:path");
 
 const motion = require("./motion.js");
 const glass = require("./glass.js");
-// Wallpaper Engine 的壁纸库：只有 video 类型能在这里真的播放，其余退回预览图。
+// Wallpaper Engine 的壁纸库：video 交给原生 <video>，scene 交给随插件分发的
+// WebWallGL 引擎；其余类型（web / application / preset）这里画不出来。
 const engine = require("./engine.js");
 
 // One command per half: they open the same view on a different section, which is
@@ -439,15 +449,16 @@ async function saveWallpaperBytes(name, base64, thumb = "") {
  *
  * - video（mp4 / webm）：真的播放。文件留在创意工坊目录里，渲染模块用
  *   `file:` URL 播它；设置里只记 id、标题与路径。
- * - scene / web / application / preset：由 Wallpaper Engine 自己的渲染器绘制，
- *   插件复刻不了，一律不可选。项目自带的 `preview.gif` / `preview.jpg` 是创意
+ * - web / application / preset：由 Wallpaper Engine 自己的渲染器绘制，插件
+ *   复刻不了，一律不可选。项目自带的 `preview.gif` / `preview.jpg` 是创意
  *   工坊列表用的**方形封面**（本机 42 张全是 1:1、192–1024 px），只够当列表
  *   卡片的缩略图——拿它铺窗口会是一张被裁切的方图，所以没有“静帧兜底”。
  */
 const ENGINE_ERRORS = Object.freeze({
   "no-workshop": "没找到 Wallpaper Engine 的创意工坊目录：Steam 里装过至少一张壁纸才会出现。",
-  "engine-only": "这类壁纸要由 Wallpaper Engine 本机渲染，这里只能播放 video 类。",
+  "engine-only": "这类壁纸要由 Wallpaper Engine 本机绘制：网页壁纸需要 iframe，application 是独立的 .exe。",
   "video-unplayable": "这个视频不是 mp4 / webm，或者文件已经不在了。",
+  "scene-no-pkg": "这张 scene 壁纸没有 scene.pkg（散装工程），没有可以渲染的包。",
   "unknown-project": "这个壁纸已经不在了，重新扫一次试试。",
 });
 
@@ -461,6 +472,16 @@ function engineItemById(id) {
   const target = String(id ?? "").trim();
   if (!target) return null;
   return engineItems().find((item) => item.id === target) || null;
+}
+
+/** 一个文件有多大，读不到就是 0（只用来给面板一句提示）。 */
+function fileSizeOf(path) {
+  try {
+    const stats = statSync(path);
+    return stats.isFile() ? stats.size : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function engineRefuse(reason) {
@@ -488,6 +509,8 @@ function engineScanPayload() {
       reason: item.reason,
       // 方形封面只用来画列表缩略图。
       hasPreview: Boolean(item.preview),
+      // scene 的容器大小：面板据此提示「这张很重」，video 不需要。
+      bytes: item.kind === "scene" && item.file ? fileSizeOf(item.file) : 0,
     })),
   };
 }
@@ -500,17 +523,73 @@ function enginePreviewPayload(id) {
   return { ok: true, mime: preview.mime, data: preview.data };
 }
 
+/**
+ * 场景容器的一段字节（base64）。
+ *
+ * 为什么分块：本机实测 scene.pkg 从 1.4 MB 到 26 MB，整包 base64 再走一次插件
+ * 桥就是 33 MB 的字符串 —— 一次传完既让面板卡住几秒，也没有任何进度可言。
+ * 8 MB 一块落在单条消息的舒适区，渲染进程还能边收边报进度。
+ *
+ * 为什么给字节而不是给路径：渲染进程的 CSP 是 `connect-src 'self'`，连不上
+ * 本地 HTTP；而场景要的是「一份可以解析的字节」，不是一个能加载的 URL。
+ * 主进程读盘、渲染进程拼进 WebGL2，是这条路里唯一不必放宽 CSP 的做法。
+ */
+const ENGINE_PKG_CHUNK = 8 * 1024 * 1024;
+
+function enginePkgChunk(payload = {}) {
+  const item = engineItemById(payload.id);
+  if (!item || item.kind !== "scene" || !item.file) {
+    return { ok: false, reason: "unknown-project" };
+  }
+
+  const offset = Math.max(0, Math.floor(Number(payload.offset) || 0));
+  const wanted = Math.floor(Number(payload.length) || ENGINE_PKG_CHUNK);
+  const length = Math.min(Math.max(1, wanted), ENGINE_PKG_CHUNK);
+
+  let fd = null;
+  try {
+    const stats = statSync(item.file);
+    if (!stats.isFile()) return { ok: false, reason: "missing" };
+    // 正好读到末尾：返回空块，渲染进程据此收尾（下一次就不必再问了）。
+    if (offset >= stats.size) {
+      return { ok: true, offset, length: 0, total: stats.size, data: "" };
+    }
+    const take = Math.min(length, stats.size - offset);
+    fd = openSync(item.file, "r");
+    const buffer = Buffer.allocUnsafe(take);
+    const read = readSync(fd, buffer, 0, take, offset);
+    return {
+      ok: true,
+      offset,
+      length: read,
+      total: stats.size,
+      data: buffer.subarray(0, read).toString("base64"),
+    };
+  } catch {
+    return { ok: false, reason: "unreadable" };
+  } finally {
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        /* 关不上不影响已经读到的字节 */
+      }
+    }
+  }
+}
+
 async function applyEngineWallpaper(payload = {}) {
   const item = engineItemById(payload.id);
   if (!item) return engineRefuse("unknown-project");
-  if (item.kind !== "video") return engineRefuse("engine-only");
+  // 只有这两种由渲染进程画；web / application / preset 仍是 engine-only。
+  if (item.kind !== "video" && item.kind !== "scene") return engineRefuse("engine-only");
   if (!item.supported) return engineRefuse(item.reason || "video-unplayable");
 
   const next = {
     ...glassConfig,
-    // 视频层自己铺满窗口，图片层必须让位，否则会在它下面留一张旧图。
+    // 引擎渲染层自己铺满窗口，图片层必须让位，否则会在它下面留一张旧图。
     wallpaper: "",
-    engine: { id: item.id, title: item.title, kind: "video", file: item.file },
+    engine: { id: item.id, title: item.title, kind: item.kind, file: item.file },
   };
   return { ok: true, ...(await persistGlass(next)) };
 }
@@ -552,11 +631,14 @@ function getEngineWallpaperState() {
       id: source.id,
       title: source.title,
       kind: source.kind,
-      file: source.kind === "video" ? source.file : "",
+      // video 是媒体文件，scene 是 scene.pkg —— 两种都由渲染模块自己取用。
+      file: source.kind === "video" || source.kind === "scene" ? source.file : "",
     },
     fit: glassConfig.fit,
     // 视频层要不要限帧：渲染模块不会自己读设置，只能从这里拿。
     performance: glassConfig.performance,
+    // scene 的总开关。关掉后渲染模块不挂载，但用户的选择还留着。
+    sceneEnabled: glassConfig.sceneEnabled,
   };
 }
 // ------------------------------------------------------------------ lifecycle
@@ -810,6 +892,8 @@ module.exports = {
   // Read by main.js for the renderer module: it needs the clip, not the panel's
   // bookkeeping.
   getEngineWallpaperState,
+  // 场景容器的字节：渲染模块分块取，主进程只读盘，不缓存。
+  getEnginePkgChunk: enginePkgChunk,
   _wallpaperProblem: wallpaperProblem,
   _ownsWallpaper: ownsWallpaper,
   _getMotionConfig: () => motionConfig,

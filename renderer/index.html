@@ -272,10 +272,22 @@
                   <label class="settings-row switch-row" for="glass-performance">
                     <span class="settings-row-copy">
                       <span class="settings-row-title">性能模式</span>
-                      <span class="settings-row-detail">聚焦时按 30 FPS 重绘，失焦时降至 10 FPS；窗口隐藏时始终暂停播放</span>
+                      <span class="settings-row-detail">聚焦时按 30 FPS 重绘，失焦时降至 10 FPS</span>
                     </span>
                     <span class="settings-row-control">
                       <input id="glass-performance" type="checkbox" />
+                      <span class="switch" aria-hidden="true"><span></span></span>
+                    </span>
+                  </label>
+
+                  <!-- 场景壁纸是一块持续出帧的 WebGL2 画布：这个开关只停渲染，不丢选择。 -->
+                  <label class="settings-row switch-row" for="glass-scene">
+                    <span class="settings-row-copy">
+                      <span class="settings-row-title">渲染场景壁纸</span>
+                      <span class="settings-row-detail">关掉后保留这张壁纸，只是不再出帧</span>
+                    </span>
+                    <span class="settings-row-control">
+                      <input id="glass-scene" type="checkbox" />
                       <span class="switch" aria-hidden="true"><span></span></span>
                     </span>
                   </label>
@@ -286,6 +298,8 @@
                       <button type="button" class="wallpaper-more" id="glass-engine-more" hidden>显示全部</button>
                     </div>
                     <div class="wallpaper-grid" id="glass-engine-grid"></div>
+                    <!-- 场景壁纸由内置引擎画，壁纸自带的脚本在宿主的 CSP 下跑不起来。 -->
+                    <p class="wallpaper-engine-note" id="glass-engine-note" hidden></p>
                   </div>
                 </div>
               </div>

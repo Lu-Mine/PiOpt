@@ -147,11 +147,18 @@ Wallpaper Engine 的创意工坊内容放在 `<Steam 库>/steamapps/workshop/con
 | 类型 | 作者库里 40 张的分布 | 这个窗口怎么画 |
 |---|---|---|
 | `video`（mp4 / webm） | 7 | **真的播放**：渲染模块往 `.app-shell` 插一个原生 `<video>`，`file:` URL、`muted`、`loop`，由 Chromium 硬解 |
-| `scene` / `web` / `application` / `preset` | 33 | **不可用**：卡片照常列出并显示封面，但选不了，也不做任何背景 |
+| `scene`（带 `scene.pkg`） | 30 | **真的渲染**：随插件分发的 WebWallGL 引擎在 WebGL2 里把 `scene.pkg` 装配成图层画出来 |
+| `web` / `application` / `preset`，以及散装 `scene.json` 工程 | 3 | **不可用**：卡片照常列出并显示封面，但选不了 |
 
-`scene` 那类没法在这里动起来：它由 Wallpaper Engine 自己的 DirectX 场景渲染器绘制 `scene.pkg`，插件复刻不了。`web` 那类被宿主的 CSP 拦住——`frame-src pi-genui:` 只允许宿主自己的生成式 UI 协议，iframe 加载不了本地网页。所以只有 video 卡片写「动态播放」，其余写「需 Wallpaper Engine 渲染」并置灰。
+`scene` 这条路要在渲染进程里解析 `scene.pkg`。宿主的 `connect-src 'self'` 连不上本地 HTTP，所以由插件进程读盘、按 8 MB 分块把字节交给渲染模块，再由 WebWallGL 在 WebGL2 里装配。引擎是 MIT 的 [oneincase/webwallgl](https://github.com/oneincase/webwallgl)（3.0.1），自包含的 UMD 构建转成一个 ES module 放在 `renderer/vendor/`，许可证随文件一起。
 
-这一面就在「背景」那一行的 tab 里：收起时最多三行卡片，具体张数跟着面板宽度走（读网格自己的列数 × 3，窗口或面板被拖宽就重算），标题右侧的「显示全部（N）」切到全部、再点「收起」回来——按钮只在列表超过三行时出现。第一次切到这一面才去扫 Steam 目录，之后每次重新打开面板都会重扫。
+**一处硬缺口**：宿主的 `script-src` 没有 `'unsafe-eval'`，而壁纸自带的 SceneScript 是引擎用 `new Function` 编译的，所以脚本一定跑不起来——粒子、时钟、鼠标视差这类脚本驱动的效果会缺，静态构图、贴图与原生动画仍在。挂载时显式传 `scripts: false`，让引擎停在 `scene.json` 的快照值上，而不是让每次求值都撞一次 CSP 拒绝。这一面底部有一句说明，只在列表里真的有可渲染的 scene 时出现。
+
+`web` 那类被宿主的 CSP 拦住：`frame-src pi-genui:` 只允许宿主自己的生成式 UI 协议，iframe 加载不了 blob / data / 本地网页。`application` 是独立的 `.exe`，依赖 Wallpaper Engine 的注入环境。所以只有 video 与 scene 卡片可选，其余写「需 Wallpaper Engine 渲染」并置灰。
+
+**开销**（同一块 GTX 1660 SUPER、1600×1000 窗口、30 fps）：轻量场景几乎不额外占用（GPU +1%），重粒子场景 CPU +8%、GPU +16%；同一张壁纸跑 60 fps 要贵约六成，所以这里固定 30 fps，不跟设备刷新率走。窗口不可见、系统要求减弱动态、或用户关掉「渲染场景壁纸」总开关时立刻暂停——关掉只停出帧，选择留着。
+
+这一面就在「背景」那一行的 tab 里：收起时最多三行卡片，具体张数跟着面板宽度走（读网格自己的列数 × 3，窗口或面板被拖宽就重算），标题右侧的「显示全部（N）」切到全部、再点「收起」回来——按钮只在列表超过三行时出现。列表在面板打开时就扫描并渲染，**不必先切到这一面**；缩略图与三行容量要等这一面真的可见才算——几十张 GIF 的首帧不该在没人看的时候花掉。
 
 项目自带的 `preview.gif` / `preview.jpg` **不是壁纸画面**：它是创意工坊列表用的方形封面（本机 42 张全是 1:1、192–1024 px），只用来画列表里那张卡片的缩略图。拿它铺窗口会是一张被裁切的方图，所以这里没有「静帧兜底」；旧版本误把它写进数据目录的，加载时会清掉（`wallpaper.engine-<id>.jpg`）。
 
@@ -299,9 +306,9 @@ PI-Desktop 左下角那排按钮里，PiOpt 的入口排在第二个（插件）
 - 下载只允许 `https`，主机硬编码为 `cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`，每一次重定向都按同一白名单复核；单包上限 50 MB。
 - 内置文件是 HTML 的响应按 `SERVER_HTML` 丢弃，绝不当作包。
 - 外观（动效 + 材质）只注册一个运行时主题：CSS 里只有动效规则与玻璃层（背景填充、渐变、`backdrop-filter`），不含颜色 token；文件访问只有两处：自己数据目录里用户选的背景图，以及下面这条里的创意工坊目录；`ui.theme` 只用于这一个 `PiOpt Appearance` 主题（基底随设定切换）。
-- Wallpaper Engine 支持全程只读：扫描 `<Steam 库>/steamapps/workshop/content/431960/<id>/project.json` 与项目自带的预览图，改动只发生在自己的设置与数据目录里，从不写创意工坊目录、不复制视频、不启动 Wallpaper Engine。选中 `video` 类型时把视频的绝对路径交给宿主窗口里的渲染模块，由一个 `<video>` 用 `file:` 播放（路径不经过网络，也不经过 `plugin-asset:`）；其余类型在这里不可选——它们只能由 Wallpaper Engine 本机渲染，方形封面只用于列表缩略图，不复制、不写入数据目录。
+- Wallpaper Engine 支持全程只读：扫描 `<Steam 库>/steamapps/workshop/content/431960/<id>/project.json` 与项目自带的预览图，改动只发生在自己的设置与数据目录里，从不写创意工坊目录、不复制文件、不启动 Wallpaper Engine。选中 `video` 类型时把视频的绝对路径交给宿主窗口里的渲染模块，由一个 `<video>` 用 `file:` 播放（路径不经过网络，也不经过 `plugin-asset:`）；选中 `scene` 类型时**只读地**打开它的 `scene.pkg`，按 8 MB 分块把字节交给渲染模块，字节不落盘、不缓存、也不经过网络——渲染模块拿到的是这台机器上已经装着的那张壁纸。`web` / `application` / `preset` 在这里不可选（前两者分别被 `frame-src` 与"它是 .exe"卡住），方形封面只用于列表缩略图，不复制、不写入数据目录。
 - `agent.prompt.inject` 只用于收录 `skills/piopt.md`（按需加载），不会自动往消息里注入内容。
-- `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；它还在 `.app-shell` 里维护视频壁纸那一层（一个 `<video>` 指向插件进程给出的 `file:` 路径，模块自己不做文件读写）、协调可往返动画的克隆、改写聊天框的模型浮窗。除轮询 `plugin.call` 拿状态外不访问网络，不改动其他插件的界面，卸载时移除自己挂的东西。
+- `renderer.extension` 只用于一个渲染模块：在宿主窗口左下角的按钮栏里挂一个入口按钮，点击经 `plugin.call` 交回插件进程打开面板；它还在 `.app-shell` 里维护壁纸层——`video` 是一个 `<video>` 指向插件进程给出的 `file:` 路径，`scene` 是随插件分发的 WebWallGL 引擎（WebGL2），画的是插件进程分块送来的 `scene.pkg` 字节，两种情况下模块自己都不做文件读写；它另外协调可往返动画的克隆、改写聊天框的模型浮窗。除轮询 `plugin.call` 拿状态外不访问网络，不改动其他插件的界面，卸载时移除自己挂的东西。
 - 远程功能只在开关打开时占用一个局域网端口，服务的是插件自己的远程页面与四类接口（列会话、读一个会话、发指令、中止）；数据全部经 `pi.session.*` 与 `pi.desktop.invoke` 的 `agent/prompt`、`agent/abort` 取用，审批类（`dangerous`）操作一律不开放，设备令牌保存在插件设置里，关闭开关或卸载时端口立即释放。
 
 ### 主题互斥
@@ -326,7 +333,7 @@ PiOpt/
 │  │  ├─ index.js           生命周期、两条命令、面板 RPC、唯一的主题注册
 │  │  ├─ motion.js          动效 token、主题 CSS 生成器（含「完全禁用」）
 │  │  ├─ glass.js           玻璃 token、最近使用与玻璃 CSS 生成器
-│  │  └─ engine.js          Wallpaper Engine 壁纸库：Steam 库定位、project.json 与预览图
+│  │  └─ engine.js          Wallpaper Engine 壁纸库：Steam 库定位、project.json、预览图与 scene.pkg
 │  ├─ behavior/             行为：聊天框模型浮窗始终展开与排列方式
 │  │  ├─ index.js           设置的唯一所有者、面板 RPC、宿主窗口的读取入口
 │  │  └─ model-picker.js    `default` / `provider` / `vendor` / `name` 四种排列方式的形状与默认值
@@ -354,7 +361,10 @@ PiOpt/
 │  ├─ shell.js              视图切换与按需启动（Alt+1…4）
 │  ├─ entry.mjs             宿主窗口入口按钮、可逆动效协调器与模型浮窗改写（renderer.extension）
 │  ├─ motion-runtime.mjs    宿主窗口可往返动画（展开收缩、弹出退回）的双向对称与打断协调器
-│  ├─ wallpaper-runtime.mjs Wallpaper Engine 视频壁纸层：视频元素、file: 地址、压暗层与轮询
+│  ├─ wallpaper-runtime.mjs Wallpaper Engine 壁纸层：视频元素、scene 画布、分块取字节、压暗层与轮询
+│  ├─ vendor/
+│  │  ├─ webwallgl.mjs      WebWallGL 3.0.1（MIT）：scene.pkg 的 WebGL2 渲染器，UMD 转 ESM
+│  │  └─ LICENSE-webwallgl.txt  上游 MIT 许可证原文
 │  └─ model-picker.mjs      模型浮窗：始终展开、三种排列、品牌图标与能力标记
 ├─ skills/piopt.md          Agent 使用规则
 ├─ tools/

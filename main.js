@@ -58,6 +58,9 @@ const RENDERER_METHODS = Object.freeze({
   // The video wallpaper layer in the host window: only the clip and the fit mode,
   // so the renderer module never sees the panel's file bookkeeping.
   engineWallpaperState: () => FEATURES.appearance.getEngineWallpaperState(),
+  // A scene's container travels as bytes in 8 MB chunks: the renderer module cannot
+  // reach localhost (CSP `connect-src 'self'`) and the engine wants bytes, not a URL.
+  enginePkg: (args = {}) => FEATURES.appearance.getEnginePkgChunk(args),
 });
 
 async function onRendererCall(method, args = {}) {

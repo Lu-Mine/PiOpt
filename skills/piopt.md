@@ -265,22 +265,43 @@ about the calls, only about the prefix.
    `appearance.glass.getState`, because a dead reference makes `themes.upsert`
    fail and takes the motion layer with it. Resetting the material keeps the
    photo: it is the user's own file, not part of the recipe.
-7. Wallpaper Engine: only the `video` type (mp4 / webm) actually plays. The
-   renderer module puts one `<video>` under `.app-shell` and points it at the
-   clip's absolute path; the host's own Chromium decodes it (measured: a 4K
-   H.264 clip plays from a `file://` page under the host's
-   `media-src 'self' data: blob: https:` CSP). `scene` / `web` / `application`
-   cannot be reproduced here — a scene is drawn by Wallpaper Engine's own
-   DirectX runtime from `scene.pkg`, and the host's CSP (`frame-src pi-genui:`)
-   forbids loading a local web wallpaper in an iframe. They are listed with their
-   square cover but cannot be selected here, and the cards say so — the cover is
-   a 1:1 shop thumbnail, never the wallpaper itself, so do not treat it as a
-   still frame. Never promise that a scene wallpaper will animate here, and do not
-   suggest running Wallpaper Engine as a workaround for a plugin panel.
+7. Wallpaper Engine: two of the five types actually render here.
+   - `video` (mp4 / webm): the renderer module puts one `<video>` under
+     `.app-shell` and points it at the clip's absolute path; the host's own
+     Chromium decodes it (measured: a 4K H.264 clip plays from a `file://` page
+     under the host's `media-src 'self' data: blob: https:` CSP).
+   - `scene`: the plugin ships WebWallGL 3.0.1 (MIT, `renderer/vendor/`) and the
+     renderer module mounts it on a WebGL2 canvas under `.app-shell`. The plugin
+     process reads the project's `scene.pkg` and hands the bytes over in 8 MB
+     chunks through the `enginePkg` renderer method, because the host's
+     `connect-src 'self'` rules out a local HTTP server. Measured on this
+     machine: 1.4 / 7.1 / 24 MB containers mount in 0.8 / 2.0 / 4.4 s and paint
+     a real frame.
+   - A scene runs at a fixed 30 fps and pauses while the window is hidden, when
+     the system asks for reduced motion, or when the user turns off
+     「渲染场景壁纸」. Measured cost (GTX 1660 SUPER, 1600×1000): a light scene
+     adds ~1% GPU, a particle-heavy one ~8% CPU and ~16% GPU; 60 fps costs about
+     60% more. Do not promise otherwise, and do not raise the frame rate.
+   - `SceneScript` never runs: the host's `script-src` has no `'unsafe-eval'`
+     and the engine compiles those scripts with `new Function`. Particles, clocks
+     and pointer parallax that come from scripts are therefore missing, while the
+     static composition, textures and native animations are not. Say this when
+     asked why a scene looks "less alive" than inside Wallpaper Engine.
+   - `web` and `application` are still unavailable: `frame-src pi-genui:`
+     forbids loading a local page in an iframe, and an application wallpaper is a
+     separate `.exe` that needs Wallpaper Engine's injection. A scene without a
+     `scene.pkg` (a loose `scene.json` project) is refused as well. Those cards
+     are listed with their square cover, cannot be selected, and say
+     「需 Wallpaper Engine 渲染」.
+   - The square cover is a 1:1 shop thumbnail, never the wallpaper itself: do not
+     treat it as a still frame.
+   Never suggest running Wallpaper Engine as a workaround for a plugin panel.
+
    The list is read from `<Steam library>/steamapps/workshop/content/431960`,
    found through the Steam registry value and `libraryfolders.vdf`, read-only;
-   the panel rescans every time that tab is opened, so a newly subscribed
-   wallpaper shows up without a restart. It sits in the same 背景 row as the
-   photos: one screen shows at most 3 rows of cards (columns × 3, read from the
-   grid so it follows the panel width), 显示全部（N） expands to all of them and
-   收起 collapses back.
+   `scene.pkg` is opened read-only and its bytes are never cached or written
+   anywhere. The panel scans and renders the list as soon as it opens — not on
+   first switch to that tab — but decodes thumbnails only once that side is
+   actually visible. It sits in the same 背景 row as the photos: one screen shows
+   at most 3 rows of cards (columns × 3, read from the grid so it follows the
+   panel width), 显示全部（N） expands to all of them and 收起 collapses back.
