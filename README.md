@@ -1,6 +1,11 @@
 # PiOpt
 
-PI-Desktop 的控制台插件：一个插件，四个功能。
+**PiOpt 是专为 [PI-Desktop](https://github.com/vastsa/PI-Desktop) 开发的控制台插件。**
+
+**许可证：**[MIT License](https://opensource.org/license/mit)（项目清单声明；第三方组件遵循各自附带的许可证）。
+
+> [!WARNING]
+> **本项目完全由 Vibe Coding 开发，不保证可用、安全或适用于任何特定用途。使用风险及由此产生的一切后果由使用者自行承担。**
 
 版本规则与提交规范见 [VERSIONING.md](VERSIONING.md)。
 
