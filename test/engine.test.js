@@ -325,3 +325,50 @@ test("performance frame rate follows initial focus and focus changes", async () 
     delete global.window;
   }
 });
+
+test("wallpaper pauses while hidden regardless of performance mode and resumes when visible", async () => {
+  const runtime = await import("../renderer/wallpaper-runtime.mjs");
+  const handlers = new Map();
+  const element = (kind) => ({
+    style: {}, parentElement: null, clientWidth: 100, clientHeight: 100,
+    paused: true,
+    setAttribute() {}, removeAttribute() {}, addEventListener() {}, load() {}, remove() {},
+    prepend(child) { child.parentElement = this; },
+    append(child) { child.parentElement = this; },
+    getContext() { return {}; },
+    play() { this.paused = false; },
+    pause() { this.paused = true; },
+  });
+  const shell = element("shell");
+  let video;
+  global.document = {
+    documentElement: {}, body: {}, hidden: false, hasFocus: () => true,
+    querySelector: () => shell,
+    createElement(kind) { const result = element(kind); if (kind === "video") video = result; return result; },
+    addEventListener: (name, handler) => handlers.set(name, handler),
+    removeEventListener: (name) => handlers.delete(name),
+  };
+  global.window = { addEventListener() {}, removeEventListener() {} };
+  try {
+    await runtime.mountEngineWallpaper(null);
+    for (const performance of [false, true]) {
+      runtime.__internals.applyState({ performance, engine: { kind: "video", file: "C:/wallpaper.mp4" } });
+      assert.equal(video.paused, false);
+      document.hidden = true;
+      handlers.get("visibilitychange")();
+      assert.equal(video.paused, true);
+      document.hidden = false;
+      handlers.get("visibilitychange")();
+      assert.equal(video.paused, false);
+    }
+  } finally {
+    runtime.unmountEngineWallpaper();
+    delete global.document;
+    delete global.window;
+  }
+});
+
+test("performance description explains frame rates and unconditional hidden pause", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "index.html"), "utf8");
+  assert.match(html, /聚焦时按 30 FPS 重绘，失焦时降至 10 FPS；窗口隐藏时始终暂停播放/);
+});
