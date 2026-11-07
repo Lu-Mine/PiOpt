@@ -1,0 +1,58 @@
+name: 发布插件包
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已发布的版本标签
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出版本源码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+          path: plugin
+      - name: 校验版本号
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          node -e 'const m = require("./plugin/manifest.json"); if (`v${m.version}` !== process.env.TAG) { throw new Error(`标签 ${process.env.TAG} 与清单版本 ${m.version} 不一致`); }'
+      - name: 检出官方插件开发工具
+        uses: actions/checkout@v4
+        with:
+          repository: vastsa/PI-Desktop
+          ref: 5caa0c227b27720ac877861d05a53ec2b9c9963d
+          path: pi-desktop
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+          run_install: false
+      - name: 构建官方打包器
+        working-directory: pi-desktop
+        run: |
+          pnpm install --frozen-lockfile --filter @pi-desktop/plugin-devkit... --ignore-scripts
+          pnpm --filter @pi-desktop/plugin-sdk build
+          pnpm --filter @pi-desktop/plugin-devkit build
+      - name: 测试插件
+        working-directory: plugin
+        run: node --test test/*.test.js
+      - name: 校验并打包
+        run: node pi-desktop/packages/plugin-devkit/dist/cli.js pack "$GITHUB_WORKSPACE/plugin" --out "$RUNNER_TEMP/piopt-dist"
+      - name: 上传至 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: gh release upload "$TAG" "$RUNNER_TEMP"/piopt-dist/*.piplug --repo "$GITHUB_REPOSITORY" --clobber
