@@ -1104,3 +1104,12 @@ test("a reported scene failure reaches the panel payload", async () => {
     delete global.pi;
   }
 });
+
+test("frosted surfaces drop their blur while the window is being resized", () => {
+  const css = glass.buildGlassCss({ enabled: true });
+  // 拖动窗口时背景每变一次尺寸，模糊就要整屏重算一遍：这段窗口里先关掉。
+  assert.match(css, /html\[data-piopt-resizing\]\{--pg-blur:0px;--pg-blur-strong:0px\}/);
+  assert.match(css, /html\[data-piopt-resizing\][^{]*\{[^}]*backdrop-filter:none/);
+  // 磨砂关着时不该留下这些规则：那时本来就没有模糊要省。
+  assert.doesNotMatch(glass.buildGlassCss({ enabled: false }), /data-piopt-resizing/);
+});

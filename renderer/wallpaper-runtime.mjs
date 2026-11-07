@@ -46,6 +46,9 @@ export const WALLPAPER_RUNTIME_CSS = [
   `[data-piopt-engine-video]{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;background:transparent}`,
   // scene 的画布由引擎自己建并插进容器；这里只保证它铺满、不吃指针。
   `[data-piopt-engine-wallpaper] canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;background:transparent}`,
+  // 拖动窗口时顶上来的那一帧快照：铺满、保持比例裁切，并且压在动态画布之上。
+  `[data-piopt-engine-wallpaper] canvas[data-piopt-engine-frozen]{object-fit:cover;z-index:1;opacity:0}`,
+  `[data-piopt-engine-wallpaper] canvas[data-piopt-engine-frozen][data-active="true"]{opacity:1}`,
   `[data-piopt-engine-frame]{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none;background:transparent}`,
   `[data-piopt-engine-wallpaper][data-piopt-engine-failed="true"]{display:none}`,
 ].join("\n");
@@ -65,6 +68,9 @@ const SCENE_FPS = 30;
 // 渲染倍率上限。设备像素比更高时不跟：4K 屏 + 200% 会让画布撑到物理最长边
 // 封顶 4096，像素数是这个档的两倍多，而肉眼几乎分不出差别。
 const SCENE_MAX_DPR = 1.5;
+// 拖动窗口时先冻住：抓一帧贴在容器里、动态画布暂停，停手 260ms 后再解冻。
+// 这段窗口足够盖住「一直按着边缘拖」的整个过程，而肉眼只觉得它很跟手。
+const SCENE_FREEZE_DELAY_MS = 260;
 // 引擎随插件分发，所以是相对引入；它是自包含的 ES module，不需要打包器。
 const SCENE_ENGINE_URL = "./vendor/webwallgl.mjs";
 
@@ -95,6 +101,10 @@ let sceneToken = 0;
 // 会被 65 次并发的全量拉取拖死（实测过）。
 let scenePending = null;
 let sceneEnabled = true;
+// 拖动窗口期间的静态快照：冻结时不再出帧，只让这一帧用 CSS 跟上尺寸。
+let frozenCanvas = null;
+let freezeTimer = null;
+let frozen = false;
 
 // ---------------------------------------------------------------- file urls
 
@@ -376,9 +386,9 @@ async function fetchScenePkg(id) {
   }
 }
 
-/** 该不该出帧：减弱动态、窗口不可见、用户关掉总开关，三种都停。 */
+/** 该不该出帧：减弱动态、窗口不可见、用户关掉总开关、正在拖窗口，四种都停。 */
 function sceneStopped() {
-  return reducedMotion() || document.hidden || !sceneEnabled;
+  return reducedMotion() || document.hidden || !sceneEnabled || frozen;
 }
 
 function syncScene() {
@@ -388,6 +398,51 @@ function syncScene() {
     return;
   }
   if (sceneInstance.paused) sceneInstance.resume();
+}
+
+// ------------------------------------------------------------- dragging freeze
+
+function ensureFrozenCanvas() {
+  if (frozenCanvas) return frozenCanvas;
+  frozenCanvas = document.createElement("canvas");
+  frozenCanvas.setAttribute("data-piopt-engine-frozen", "true");
+  frozenCanvas.setAttribute("aria-hidden", "true");
+  return frozenCanvas;
+}
+
+/**
+ * 把当前这一帧抓下来顶上去，让引擎先停手。
+ *
+ * 引擎建上下文时开了 `preserveDrawingBuffer`，所以随时 `drawImage` 都拿得到
+ * 上一帧，不必抢在出帧的那一刻。抓到的是一张普通 2D 画布，改尺寸时由 CSS
+ * 负责缩放——不再触发引擎重画。
+ */
+function freezeScene() {
+  if (frozen || !sceneInstance) return;
+  const source = sceneInstance.canvas;
+  if (!source || !source.width || !source.height) return;
+  const layer = ensureFrozenCanvas();
+  if (layer.width !== source.width) layer.width = source.width;
+  if (layer.height !== source.height) layer.height = source.height;
+  const painter = typeof layer.getContext === "function" ? layer.getContext("2d") : null;
+  if (!painter) return;
+  try {
+    painter.drawImage(source, 0, 0);
+  } catch {
+    // 读不出来（上下文丢了、画布被污染）：宁可不冻结，也别把画面弄黑。
+    return;
+  }
+  if (container && layer.parentElement !== container) container.append(layer);
+  layer.setAttribute("data-active", "true");
+  if (!sceneInstance.paused) sceneInstance.pause();
+  frozen = true;
+}
+
+function thawScene() {
+  if (!frozen) return;
+  frozen = false;
+  if (frozenCanvas) frozenCanvas.removeAttribute("data-active");
+  syncScene();
 }
 
 /**
@@ -569,6 +624,17 @@ function teardownScene() {
   sceneKey = "";
   scenePending = null;
   stopSceneStats();
+  frozen = false;
+  if (freezeTimer !== null) {
+    clearTimeout(freezeTimer);
+    freezeTimer = null;
+  }
+  if (frozenCanvas) {
+    frozenCanvas.remove();
+    frozenCanvas = null;
+  }
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  if (root && typeof root.removeAttribute === "function") root.removeAttribute("data-piopt-resizing");
   if (sceneInstance) {
     try {
       sceneInstance.destroy();
@@ -673,7 +739,25 @@ function onFocusChange(event) {
   // 帧率目标下一帧生效，不必重启重绘链。
 }
 
+/**
+ * 窗口正在改变尺寸：两类壁纸都要跟手。
+ *
+ * 拖动边缘时每来一个 resize 事件，scene 引擎都会按新尺寸重画，玻璃层还要整屏
+ * 重算模糊——那是拖动时最贵的一步。所以这段窗口里：动态壁纸冻成一帧静态图
+ * （缩放交给 CSS），静态图片壁纸那边把磨砂关掉（见 glass.js 里的
+ * `html[data-piopt-resizing]`）。停手 260ms 后一起恢复。
+ */
 function onResize() {
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  const canMark = Boolean(root && typeof root.setAttribute === "function");
+  if (canMark) root.setAttribute("data-piopt-resizing", "true");
+  if (freezeTimer !== null) clearTimeout(freezeTimer);
+  freezeTimer = setTimeout(() => {
+    freezeTimer = null;
+    if (canMark) root.removeAttribute("data-piopt-resizing");
+    thawScene();
+  }, SCENE_FREEZE_DELAY_MS);
+  freezeScene();
   if (canvas) resizeCanvas();
 }
 
