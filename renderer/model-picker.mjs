@@ -129,22 +129,26 @@ export const MODEL_PICKER_CSS = [
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}:focus-visible{outline:2px solid color-mix(in oklab,var(--ds-focus) 55%,transparent);outline-offset:1px}`,
   /* 搜索框仍要能让输入框收缩。 */
   `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-search input{flex:1 1 auto;min-width:0}`,
-  /* 图标与名称贴在一起；认不出品牌时用供应商首字母色块补位。 */
+  /* 图标与名称贴在一起；认不出品牌时用供应商首字母色块补位。
+     行内每一段文字都给足一整行的高度：宿主那档行高（--leading-compact，1.3）
+     比这些字体实际占的高度还小一两像素，而这些方块又都是 overflow:hidden 的，
+     差的那一截正好把字母的上下沿切掉 —— 每个条目都显得「少了一点」。 */
   `.${VIEW_CLASS} .composer-model-option-main{align-items:center}`,
-  `.piopt-mp-lead{display:flex;align-items:center;gap:6px;min-width:0}`,
+  `.piopt-mp-lead{display:flex;align-items:center;gap:6px;min-width:0;line-height:1.45}`,
+  `.composer-model-menu .composer-model-label{line-height:1.45}`,
   `.piopt-mp-lead .composer-model-label{flex:0 1 auto;min-width:0}`,
   `.piopt-mp-logo{flex:none;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:inherit}`,
   `.piopt-mp-logo svg{width:14px;height:14px;display:block}`,
-  `.piopt-mp-logo-letter{border-radius:4px;background:color-mix(in oklab,var(--piopt-logo) 22%,transparent);color:var(--piopt-logo);font-size:9px;font-weight:600;line-height:1}`,
+  `.piopt-mp-logo-letter{border-radius:4px;background:color-mix(in oklab,var(--piopt-logo) 22%,transparent);color:var(--piopt-logo);font-size:9px;font-weight:600;line-height:14px}`,
   /* 来源：平铺列表没有分组抬头写着供应商，所以每一行都在名称后面跟一枚淡色小字。
      它跟着名称走、宽度不够就省略，不另起一行 —— 每行两行字会让整份列表又高又挤，
      剩下的空间也会被挤压成看不出层级的一团。 */
-  `.piopt-mp-source{flex:0 1 auto;min-width:0;max-width:42%;color:var(--ds-text-faint);font-size:var(--text-2xs);line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
-  /* 选中标记：默认还是宿主那枚对勾。换成圆角框时把勾藏掉，改用一圈 2px 内描边
-     框住这整行 —— 描边画在行里，圆角由宿主自己给，行高、内边距与滚动位置一律不动。
-     勾位（composer-model-check-slot）留在原处，行宽不因此跳动。 */
+  `.piopt-mp-source{flex:0 1 auto;min-width:0;max-width:42%;color:var(--ds-text-faint);font-size:var(--text-2xs);line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
+  /* 选中标记：默认还是宿主那枚对勾。换成圆角框时改用一圈 2px 内描边框住这整行 ——
+     描边画在行里，圆角由宿主自己给，行高、内边距与滚动位置一律不动。勾位整块撤掉：
+     那时它既不画勾，留着也只是一段空白，把每一行的行尾都顶出一块空当。 */
   `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"]{box-shadow:inset 0 0 0 2px color-mix(in oklab,var(--ds-accent) 64%,transparent)}`,
-  `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"] ${CHECK_SLOT_SELECTOR} svg{display:none}`,
+  `.composer-model-menu[${MARKER_ATTR}="frame"] ${CHECK_SLOT_SELECTOR}{display:none}`,
   /* 方向键的高亮抄在自建行上：宿主那个类只管它自己那几行，这里同款即可。 */
   `.${VIEW_CLASS} .composer-model-option.kb-active{background:var(--ds-bg-hover)}`,
   /* 推理强度的刻度：中文开关打开时，还没写回原文属性的刻度先不显示 —— 那一排本来

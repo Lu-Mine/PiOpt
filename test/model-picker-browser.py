@@ -32,6 +32,8 @@ HOST = """
 [hidden]{display:none!important}
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;background:var(--ds-bg-primary);color:var(--ds-text-primary)}
+/* 真实界面字体：行高够不够，要看这些字体的实际字形高度。 */
+body{font-family:"Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;font-size:12px;line-height:1.3}
 :root{--text-2xs:10px}
 .composer-model-menu{position:fixed;top:0;left:0;padding:5px;border-radius:var(--radius-xl);background:var(--ds-bg-elevated-opaque);width:min(240px,100vw - 24px);max-height:min(520px,100vh - 92px);overflow-y:auto}
 .composer-model-thinking-menu{width:min(320px,100vw - 24px);padding:6px}
@@ -261,6 +263,14 @@ with tempfile.TemporaryDirectory() as serve:
                 sources: rows.map((row) => (source(row) ? source(row).textContent.trim() : '')),
                 heights,
                 sourceTop: rows.map(sourceTop),
+                clipped: rows.map((row) => {
+                  const label = row.querySelector('.composer-model-label');
+                  const src = source(row);
+                  return {
+                    label: label.scrollHeight - label.clientHeight,
+                    source: src.scrollHeight - src.clientHeight,
+                  };
+                }),
                 widths: rows.map((row) => Math.round(row.querySelector('.composer-model-label').getBoundingClientRect().width)),
                 overlaps: rows.map((row) => {
                   const label = row.querySelector('.composer-model-label').getBoundingClientRect();
@@ -458,6 +468,8 @@ assert default_view["wraps"] == ["nowrap"] * 4, default_view
 assert all(width >= 30 for width in default_view["widths"]), default_view
 assert default_view["overlaps"] == [0, 0, 0, 0], default_view
 assert all(28 <= height <= 30 for height in default_view["heights"]), default_view
+# 字母完整：名称与来源都留足一整行的高度，没有被 overflow 切掉的部分。
+assert all(item["label"] <= 0 and item["source"] <= 0 for item in default_view["clipped"]), default_view
 assert all(abs(offset) <= 5 for offset in default_view["sourceTop"]), default_view
 # 选中的那一行带勾，且只有它。
 assert default_view["selectedTitle"] == "gpt-5", default_view
@@ -509,11 +521,11 @@ print("PASS model picker: search hands the list back to the host and returns")
 
 print(json.dumps(framed, ensure_ascii=False, indent=2))
 assert framed["marker"] == "frame", framed
-# 框是画在行里的内描边；勾位留着原来的宽度，行宽不因此跳动。
+# 框是画在行里的内描边；勾位整块撤掉，行尾不再留出那 13px 的空白。
 assert "inset" in framed["shadow"], framed
-assert framed["slotWidth"] == 13, framed
-assert framed["tickDisplay"] == "none", framed
-print("PASS model picker: the frame marker keeps the tick slot and its width")
+assert framed["slotDisplay"] == "none", framed
+assert framed["slotWidth"] == 0, framed
+print("PASS model picker: the frame marker leaves no empty tick slot behind")
 
 print(json.dumps(single, ensure_ascii=False, indent=2))
 assert single["titles"] == ["claude-4", "gpt-5"], single

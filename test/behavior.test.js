@@ -490,11 +490,22 @@ test("选中标记换成圆角框时只换画法，不动宿主的节点", () =>
     source,
     /\.composer-model-menu\[\$\{MARKER_ATTR\}="frame"\] \.composer-model-option\[aria-checked="true"\]\{box-shadow:inset 0 0 0 2px color-mix\(in oklab,var\(--ds-accent\) 64%,transparent\)\}/
   );
-  // 勾是被藏掉的，不是被删掉的：勾位留着原来的 13px，行宽不因此跳动。
+  // 勾位整块撤掉：框模式下它不画勾，留着只是一段空白，把行尾顶出一块空当。
   assert.match(
     source,
-    /\[aria-checked="true"\] \$\{CHECK_SLOT_SELECTOR\} svg\{display:none\}/
+    /\.composer-model-menu\[\$\{MARKER_ATTR\}="frame"\] \$\{CHECK_SLOT_SELECTOR\}\{display:none\}/
   );
+});
+
+test("行内文字给足一整行的高度，字母不会被切掉上下沿", () => {
+  const source = read("renderer/model-picker.mjs");
+  // 宿主那档行高是 1.3，比界面字体实际占的高度还小一两像素；这些方块又都是
+  // overflow:hidden 的（要省略号），差的那一截正好削掉字母的上下沿。
+  assert.match(source, /\.composer-model-menu \.composer-model-label\{line-height:1\.45\}/);
+  assert.match(source, /\.piopt-mp-lead\{[^}]*line-height:1\.45/);
+  assert.match(source, /\.piopt-mp-source\{[^}]*line-height:1\.45/);
+  // 首字母色块也按方框高度给行高，否则那一个字同样被裁。
+  assert.match(source, /\.piopt-mp-logo-letter\{[^}]*line-height:14px/);
 });
 
 test("推理强度档位译成中文，原文留在属性里", () => {
