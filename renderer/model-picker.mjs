@@ -1,38 +1,44 @@
 // PiOpt — the chat composer's model popup, rewritten inside the host window.
 //
-// PI-Desktop's popup lists the three most recent models first and folds every
-// other model behind an 「其他模型」 toggle. This module changes exactly that:
-// 「默认 / 供应商 / 厂商 / 名称」切换排列方式：默认是宿主自己的顺序，一个不分组
-// 的平铺列表、一行都不重排；其余三种的分组与组内顺序都按 A–Z。
+// PI-Desktop 0.22 的浮窗改成「左侧来源栏 + 右侧单组分页」：左栏一行一个供应商，
+// 右边一次只渲染那一组，点一下才换一组；分组标题平常也不渲染。原来那种「所有模型
+// 一张列表」的用法就没了。这个模块把那份列表拿回来：
+//
+//   1. 打开浮窗时（内容还藏着），顺着左栏把每一组都点一遍，把每一组的模型连同
+//      徽标、上下文读数、选中态一起读出来，拼成一份完整清单，按左栏的顺序缓存；
+//   2. 左栏与原生分页整体让位，用读到的清单自建一份视图：
+//      · 按默认：左栏顺序原样平铺，一行不重排，也不分组；
+//      · 按供应商 / 按厂商：分组与组内都按 A–Z；
+//      · 按名称：全部模型平铺成一份按显示名称排序的列表；
+//      · 平铺时每行下面另起一行淡色的来源（没有分组抬头，没人写着它属于谁）；
+//   3. 点自建行时先切回它所属的分组，再点那枚原生按钮 —— 选中模型仍然完全由宿主
+//      自己的 React 逻辑完成，节点一个都没被搬动或删除。
+//
 // 另外两项由设置决定：选中行的那枚对勾可以换成圈住整行的圆角边框，推理强度滑杆
 // 上的档位（off / minimal / low …）可以换成中文。
-//
-// 做法：
-//   1. 点一次宿主自己的「其他模型」入口把其余分组放出来，随后把入口藏掉；
-//   2. 原生列表整体让位，用克隆出来的按钮自建一份视图：
-//      · 按默认：宿主顺序原样平铺，一行不重排，也不分组（「最近使用」那一类没有）；
-//      · 按供应商：最近使用过的模型还回各自供应商那一组，分组标题不压底色；
-//      · 按名称：全部模型平铺，同样每行下面另起一行淡色的来源。
-//
-// 克隆按钮的点击一律转交给对应的原生按钮（display:none 不影响 .click()），
-// 所以选中模型走的仍是宿主自己的逻辑，React 的节点树一个都没被搬动或删除 ——
-// 宿主在搜索、方向键高亮、模型异步加载时都会重渲染这棵子树，搬动别人的节点会
-// 让它下一次 insertBefore 找不到参照。
 
 import { ICONS } from "./model-logos/icons.mjs";
 
 const MENU_SELECTOR = ".composer-model-menu";
+const ROOT_SELECTOR = ".composer-menu-root";
+const BODY_SELECTOR = ".composer-model-body";
 const LIST_SELECTOR = ".composer-model-list";
+const PANE_SELECTOR = ".composer-model-pane";
+const RAIL_SELECTOR = ".composer-model-rail";
+const RAIL_ITEM_SELECTOR = ".composer-model-rail-item";
+const RAIL_LABEL_SELECTOR = ".composer-model-rail-label";
+const RAIL_COUNT_SELECTOR = ".composer-model-rail-count";
 const GROUP_SELECTOR = ".composer-model-group";
 const GROUP_LABEL_SELECTOR = ".composer-model-group-label";
 const OPTION_SELECTOR = ".composer-model-option";
-const OPTION_MAIN_SELECTOR = ".composer-model-option-main";
+const OPTION_PROVIDER_SELECTOR = ".composer-model-option-provider";
+const CHECK_SLOT_SELECTOR = ".composer-model-check-slot";
 const META_SELECTOR = ".composer-model-option-meta";
 const LABEL_SELECTOR = ".composer-model-label";
 const SEARCH_SELECTOR = ".composer-model-search";
 const SEARCH_INPUT_SELECTOR = ".composer-model-search input";
 const EMPTY_SELECTOR = ".composer-model-empty";
-const COLLAPSE_CLASS = "composer-menu-entry";
+const READY_ATTR = "data-piopt-mp-ready";
 const VIEW_CLASS = "piopt-mp-view";
 const MODES_CLASS = "piopt-mp-modes";
 const MODE_CLASS = "piopt-mp-mode";
@@ -57,18 +63,20 @@ const LEVELS_ATTR = "data-piopt-mp-levels";
 // 发送键左边那枚思考 chip：档位文字在浮窗外面，要单独盯着。
 const CHIP_SELECTOR = ".composer-model-thinking-chip";
 const CHIP_LEVEL_SELECTOR = ".composer-model-thinking-level";
-const CAPS_STORAGE_KEY = "piopt.modelPicker.capabilities.v1";
-// 宿主把最近用过的模型从分组里剔出来摆在最上面；「默认」排列要它们回到各自的位置，
-// 就得知道宿主那份完整清单。探测出来的顺序按「供应商␟模型 id」整份缓存。
-const ORDER_STORAGE_KEY = "piopt.modelPicker.order.v1";
+// 完整清单（含每行的徽标与上下文读数、选中态）按左栏指纹整份缓存：宿主的分页
+// 一次只给一组，每次打开都全点一遍太贵。
+const ROWS_STORAGE_KEY = "piopt.modelPicker.rows.v1";
 const DEFAULT_GROUPING = "provider";
-// `default` 是宿主自己的顺序：一个平铺列表，行序一行不动，也不分组（「最近使用」
-// 那一类连同标题一起没有）。其余三种都重排。按钮的先后就是这里的先后。
+// `default` 是宿主自己的顺序：一个平铺列表，行序一行不动，也不分组。其余三种都重排。
+// 按钮的先后就是这里的先后。
 const GROUPINGS = ["default", "provider", "vendor", "name"];
-// 探测一次「最近使用」模型的能力要一次搜索 + 一次渲染；最多等这么久，超时就放弃。
-const PROBE_TIMEOUT_MS = 400;
-const CAPS_LIMIT = 200;
+// 点一次左栏、等一下宿主的渲染；最多等这么久，超时就按现状继续。
+const SECTION_TIMEOUT_MS = 400;
 const SYNC_DELAY_MS = 40;
+// 宿主的勾是一枚 lucide check（13px）。读不到时用这一枚顶上，形状与它一致。
+const CHECK_FALLBACK = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="composer-model-check" '
+  + 'aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 
 // 四种排列方式的名字：宿主界面跟随 locale，这里也跟随。
 const COPY = {
@@ -93,13 +101,17 @@ const LEVEL_COPY = {
 // Injected with the entry stylesheet. Every rule is scoped to a menu this module
 // has already touched, so an untouched popup keeps the host's own look.
 export const MODEL_PICKER_CSS = [
-  /* 探测某个模型的能力时把内容藏起来（布局不动，浮窗坐标不抖）。 */
-  `.composer-model-menu:not([data-piopt-mp-ready="true"]):not([data-pm-ghost]){opacity:0!important;visibility:hidden!important;pointer-events:none!important;animation:none!important;transition:none!important}`,
-  `.composer-model-menu[data-piopt-mp-ready="true"]{transform-origin:100% 100%;transition:none!important}`,
+  /* 读各组的时候把内容藏起来（布局不动，浮窗坐标不抖）。 */
+  `.composer-model-menu:not([${READY_ATTR}="true"]):not([data-pm-ghost]){opacity:0!important;visibility:hidden!important;pointer-events:none!important;animation:none!important;transition:none!important}`,
+  `.composer-model-menu[${READY_ATTR}="true"]{transform-origin:100% 100%;transition:none!important}`,
   `.composer-model-menu[${PROBING_ATTR}]{opacity:0!important;visibility:hidden!important;transition:none!important;animation:none!important}`,
   `.composer-model-menu[${PROBING_ATTR}] .composer-menu-root{visibility:hidden}`,
-  /* 「其他模型」是折叠入口，展开后就没用了：藏掉它，收起这条路也一起消失。 */
-  `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-list > .${COLLAPSE_CLASS}{display:none}`,
+  /* 左栏是按分组翻页的入口，自建视图一次列出全部：栏与它的分页一起让位。
+     宿主在有左栏时把菜单放宽到 420px、列表固定 264px 高，这里收回原来的宽度。 */
+  `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-rail{display:none}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-body[data-rail]{display:block}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .composer-model-body[data-rail] .composer-model-list{height:auto;padding-left:0}`,
+  `.composer-model-menu[${EXPANDED_ATTR}].has-rail{width:min(320px,100vw - 24px)}`,
   /* 原生列表让位给自建视图；搜索时反过来（搜索结果由宿主自己筛）。 */
   `.composer-model-menu[${EXPANDED_ATTR}]:not([${SEARCH_ATTR}="true"]) .composer-model-list:has(>.${VIEW_CLASS}) > *:not(.${VIEW_CLASS}){display:none}`,
   `.composer-model-menu[${EXPANDED_ATTR}][${SEARCH_ATTR}="true"] .${VIEW_CLASS}{display:none}`,
@@ -110,7 +122,7 @@ export const MODEL_PICKER_CSS = [
   `.${VIEW_CLASS} .${GROUP_TITLE_CLASS}{display:inline-block;padding:2px 6px;margin:-2px -6px;border-radius:6px}`,
   `@container scroll-state(stuck: top){.${GROUP_TITLE_CLASS}{background:color-mix(in oklab,var(--ds-bg-elevated-opaque) 96%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(20px);backdrop-filter:saturate(1.4) blur(20px);box-shadow:0 1px 2px color-mix(in oklab,#000000 30%,transparent),0 8px 18px -6px color-mix(in oklab,#000000 42%,transparent)}}`,
   /* 搜索框下面单独一条：四种排列方式，点哪个是哪个。 */
-  `.composer-model-menu[${EXPANDED_ATTR}] .${MODES_CLASS}{display:flex;gap:2px;margin:0 3px 5px;padding:2px;border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 6%,transparent)}`,
+  `.composer-model-menu[${EXPANDED_ATTR}] .${MODES_CLASS}{display:flex;gap:2px;margin:0 3px 6px;padding:2px;border-radius:var(--radius-full);background:color-mix(in oklab,var(--ds-text-primary) 6%,transparent)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}{flex:1 1 0;min-width:0;height:20px;padding:0 6px;border:0;border-radius:var(--radius-full);background:transparent;color:var(--ds-text-muted);font:inherit;font-size:var(--text-xs);line-height:1;white-space:nowrap;cursor:pointer;transition:color var(--motion-duration-fast) var(--motion-ease-out),background var(--motion-duration-fast) var(--motion-ease-out)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}:hover{color:var(--ds-text-primary);background:color-mix(in oklab,var(--ds-text-primary) 8%,transparent)}`,
   `.composer-model-menu[${EXPANDED_ATTR}] .${MODE_CLASS}[aria-pressed="true"]{background:color-mix(in oklab,var(--ds-text-primary) 15%,transparent);color:var(--ds-text-primary)}`,
@@ -124,15 +136,17 @@ export const MODEL_PICKER_CSS = [
   `.piopt-mp-logo{flex:none;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;color:inherit}`,
   `.piopt-mp-logo svg{width:14px;height:14px;display:block}`,
   `.piopt-mp-logo-letter{border-radius:4px;background:color-mix(in oklab,var(--piopt-logo) 22%,transparent);color:var(--piopt-logo);font-size:9px;font-weight:600;line-height:1}`,
-  /* 来源那一行：按默认与按名称都是平铺列表，没有分组抬头写着供应商，所以每行都
-     补一行淡色的小字。写在行上就生效，与排列方式无关。 */
-  `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]{flex-wrap:wrap}`,
-  `.${VIEW_CLASS} .composer-model-option-main[${PROVIDER_ATTR}]::after{content:attr(${PROVIDER_ATTR});flex:1 0 100%;color:var(--ds-text-faint);font-size:var(--text-xs);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
-  /* 选中标记：默认还是宿主那枚对勾。换成圆角框时把那枚勾藏掉，改用一圈 2px 内描边
-     框住这整行 —— 描边画在行里，圆角由宿主自己给（选中行是 --radius-sm），
-     行高、内边距与滚动位置一律不动。 */
+  /* 来源：平铺列表没有分组抬头写着供应商，所以每一行都在名称后面跟一枚淡色小字。
+     它跟着名称走、宽度不够就省略，不另起一行 —— 每行两行字会让整份列表又高又挤，
+     剩下的空间也会被挤压成看不出层级的一团。 */
+  `.piopt-mp-source{flex:0 1 auto;min-width:0;max-width:42%;color:var(--ds-text-faint);font-size:var(--text-2xs);line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`,
+  /* 选中标记：默认还是宿主那枚对勾。换成圆角框时把勾藏掉，改用一圈 2px 内描边
+     框住这整行 —— 描边画在行里，圆角由宿主自己给，行高、内边距与滚动位置一律不动。
+     勾位（composer-model-check-slot）留在原处，行宽不因此跳动。 */
   `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"]{box-shadow:inset 0 0 0 2px color-mix(in oklab,var(--ds-accent) 64%,transparent)}`,
-  `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"] .composer-model-check{display:none}`,
+  `.composer-model-menu[${MARKER_ATTR}="frame"] .composer-model-option[aria-checked="true"] ${CHECK_SLOT_SELECTOR} svg{display:none}`,
+  /* 方向键的高亮抄在自建行上：宿主那个类只管它自己那几行，这里同款即可。 */
+  `.${VIEW_CLASS} .composer-model-option.kb-active{background:var(--ds-bg-hover)}`,
   /* 推理强度的刻度：中文开关打开时，还没写回原文属性的刻度先不显示 —— 那一排本来
      就是 aria-hidden 的装饰，藏一帧比露出半帧英文好；译完即刻可见。 */
   `.composer-model-menu[${LEVELS_ATTR}="zh"] .composer-thinking-tick:not([${LEVEL_ATTR}]){visibility:hidden}`,
@@ -150,7 +164,12 @@ let bodyObserver = null;
 let listObserver = null;
 let syncTimer = null;
 let building = false;
+let collecting = false;
 let animateNextView = false;
+// 方向键停在哪个模型上（自建视图里的行走的是自己的高亮）。
+let highlightKey = null;
+// 完整清单：{ signature, check, rows: [{ key, provider, modelId, label, alias, meta, active }] }
+let rowsStore = null;
 
 function findLiveMenu() {
   if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return null;
@@ -205,24 +224,6 @@ function isOurs(record) {
 }
 
 /**
- * 一行原生按钮的模型身份。
- *
- * 最近使用那一组的 title 是「供应商 · 模型 id」，供应商要自己拆出来；供应商分组
- * 里的 title 只有模型 id，供应商就是分组标题。身份用来去重（同一个模型只出现一
- * 次）、把最近使用过的模型还回分类，以及把宿主的键盘高亮映射到自建行上。
- */
-function identityOf(option, groupLabel) {
-  const title = String(option.getAttribute("title") || "");
-  const at = title.indexOf(" · ");
-  const recent = at > 0;
-  const provider = recent ? title.slice(0, at) : groupLabel;
-  const modelId = recent ? title.slice(at + 3) : title;
-  // 分隔符用 US（单元分隔符）而不是 NUL：NUL 在属性值里会被序列化替换掉，
-  // 这个键要先写进 data-piopt-mp-item 再读回来比对。
-  return { provider, modelId, recent, key: `${provider}\u001f${modelId.toLowerCase()}` };
-}
-
-/**
  * A–Z（含数字感知）比较两个名字：分组名与模型名都用它。
  *
  * 拉丁字母在前、中文在后：模型名几乎都是英文，供应商里则可能混着「腾讯混元」这种
@@ -244,37 +245,328 @@ function compareRows(left, right) {
   return left.key < right.key ? -1 : left.key > right.key ? 1 : 0;
 }
 
+// ----------------------------------------------------------------- 读取宿主
+
+function paneOf(list) {
+  return list ? list.querySelector(PANE_SELECTOR) || list : null;
+}
+
 /**
- * 原生列表里的每一个模型，按身份去重后的行。
+ * 一个原生分组里的一行。
  *
- * 顺序就是宿主的顺序（`querySelectorAll` 按文档序），也就是它在设置里排好的那
- * 一份：「默认」排列原样照搬，不重新排序。
+ * 身份是「供应商␟模型 id」：供应商来自分组自己的 aria-label（宿主给的是它显示
+ * 在分组抬头上的那个名字），模型 id 来自按钮的 title。同一个模型只出现一次 ——
+ * 「最近使用」那一组是宿主从各分组里挑出来另画的，它的 provider 只写在行内，
+ * 这一组整组都不收（各分组的清单里本来就有它们）。
  */
-function readRows(list) {
+function toRow(option, provider) {
+  const title = String(option.getAttribute("title") || "").trim();
+  const labelElement = option.querySelector(LABEL_SELECTOR);
+  const label = textOf(labelElement) || title;
+  const modelId = title || label;
+  const meta = option.querySelector(META_SELECTOR);
+  return {
+    key: `${provider}\u001f${modelId.toLowerCase()}`,
+    provider,
+    modelId,
+    label,
+    alias: Boolean(labelElement && labelElement.classList && labelElement.classList.contains("is-alias")),
+    meta: meta ? meta.innerHTML : "",
+    active: option.getAttribute("aria-checked") === "true",
+  };
+}
+
+/** 当前渲染出来的那几个分组里的行（分页一次只有一组）。 */
+function readGroups(list) {
+  const pane = paneOf(list);
   const rows = [];
-  const seen = new Set();
-  for (const option of list.querySelectorAll(OPTION_SELECTOR)) {
-    // 自建视图里的按钮也是 .composer-model-option，不能把它们当成原生行。
-    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
-    const group = closestOf(option, GROUP_SELECTOR);
-    const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
-    const identity = identityOf(option, groupLabel);
-    if (seen.has(identity.key)) continue;
-    seen.add(identity.key);
-    rows.push({
-      option,
-      key: identity.key,
-      provider: identity.provider,
-      modelId: identity.modelId,
-      recent: identity.recent,
-      label: textOf(option.querySelector(LABEL_SELECTOR)) || identity.modelId,
-    });
+  if (!pane) return rows;
+  for (const group of pane.children) {
+    if (!group.classList || !group.classList.contains("composer-model-group")) continue;
+    const options = [...group.querySelectorAll(OPTION_SELECTOR)];
+    if (!options.length) continue;
+    // 「最近使用」那一组的每一行都写着来源，跳过：它的模型在各自分组里都有。
+    if (options.some((option) => option.querySelector(OPTION_PROVIDER_SELECTOR))) continue;
+    const provider = String(group.getAttribute("aria-label") || textOf(group.querySelector(GROUP_LABEL_SELECTOR)) || "").trim();
+    for (const option of options) rows.push(toRow(option, provider));
   }
   return rows;
 }
 
+/** 当前这一组叫什么名字；停在「最近使用」上时是空串。 */
+function currentSectionName(list) {
+  const pane = paneOf(list);
+  if (!pane) return "";
+  for (const group of pane.children) {
+    if (!group.classList || !group.classList.contains("composer-model-group")) continue;
+    if (group.querySelector(OPTION_PROVIDER_SELECTOR)) continue;
+    return String(group.getAttribute("aria-label") || textOf(group.querySelector(GROUP_LABEL_SELECTOR)) || "").trim();
+  }
+  return "";
+}
 
-// ------------------------------------------------------------------- rendering
+function railOf(list) {
+  const body = closestOf(list, BODY_SELECTOR) || (list ? list.parentElement : null);
+  return body ? body.querySelector(RAIL_SELECTOR) : null;
+}
+
+function sectionNameOf(railItem) {
+  return textOf(railItem.querySelector(RAIL_LABEL_SELECTOR))
+    || String(railItem.getAttribute("title") || "").trim();
+}
+
+/**
+ * 左栏里可点的那几格。
+ *
+ * 「最近使用」那一格没有计数（宿主只给供应商分组画 count），它不是一组供应商，
+ * 点它读不到新的模型。宿主哪天不给供应商画数字了，就退回到整条栏。
+ */
+function providerRailItems(rail) {
+  if (!rail) return [];
+  const items = [...rail.querySelectorAll(RAIL_ITEM_SELECTOR)];
+  const providers = items.filter((item) => item.querySelector(RAIL_COUNT_SELECTOR));
+  return providers.length ? providers : items;
+}
+
+/**
+ * 左栏的指纹：分组名 + 每组模型数。
+ *
+ * 加、删模型或供应商，这份指纹就变了，缓存的清单要重读一遍；只是换了顺序的话它
+ * 看不出来，所以每次同步还会拿当前这一组和缓存比一比（见 sectionStale）。
+ */
+function railSignature(list) {
+  const items = providerRailItems(railOf(list));
+  if (!items.length) return "single";
+  return items
+    .map((item) => `${sectionNameOf(item)}:${textOf(item.querySelector(RAIL_COUNT_SELECTOR))}`)
+    .join("|");
+}
+
+/** 宿主那枚勾（13px，带动画路径）。读不到就用自带的那一枚。 */
+function grabCheck(list) {
+  const pane = paneOf(list);
+  if (!pane) return "";
+  for (const slot of pane.querySelectorAll(CHECK_SLOT_SELECTOR)) {
+    const html = slot.innerHTML.trim();
+    if (html) return html;
+  }
+  return "";
+}
+
+/**
+ * 当前这一格画出来的内容：分组名 + 行序。
+ *
+ * 点一次左栏之后它一定会变，用它判断宿主的下一格已经画好了 —— 比读分组名可靠：
+ * 「最近使用」那一格没有供应商名。
+ */
+function paneSignature(list) {
+  const pane = paneOf(list);
+  if (!pane) return "";
+  return [...pane.querySelectorAll(`${GROUP_SELECTOR}, ${OPTION_SELECTOR}`)]
+    .map((node) => (node.classList && node.classList.contains("composer-model-group")
+      ? `g:${node.getAttribute("aria-label") || ""}`
+      : `o:${node.getAttribute("title") || ""}`))
+    .join("|");
+}
+
+/** 用户在搜索框里打字了：这时别去点左栏，换一格会把刚写的查询清掉。 */
+function searching(list) {
+  const menuElement = closestOf(list, MENU_SELECTOR);
+  const input = menuElement ? menuElement.querySelector(SEARCH_INPUT_SELECTOR) : null;
+  return Boolean(input && String(input.value || "").trim());
+}
+
+/**
+ * 等宿主把下一组画出来：DOM 一变就回来，最多等 ms。用 MutationObserver 而不是
+ * 固定的 setTimeout —— 后台窗口会把定时器压到 1s，等待就白等了。
+ */
+function waitFor(predicate, ms = SECTION_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let observer = null;
+    let timer = null;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      resolve(ok);
+    };
+    if (predicate()) {
+      finish(true);
+      return;
+    }
+    if (typeof MutationObserver === "function" && menu) {
+      observer = new MutationObserver(() => {
+        if (predicate()) finish(true);
+      });
+      observer.observe(menu, { childList: true, subtree: true, characterData: true });
+    }
+    timer = window.setTimeout(() => finish(predicate()), ms);
+  });
+}
+
+/** 左栏当前的每一格（含「最近使用」）。宿主可能连整条栏一起重画，所以每次现查。 */
+function railItems(list) {
+  const rail = railOf(list);
+  return rail ? [...rail.querySelectorAll(RAIL_ITEM_SELECTOR)] : [];
+}
+
+/**
+ * 顺着左栏把每一组的模型都读出来。
+ *
+ * 每组点一下、等它渲染、读一遍；读完再把左栏切回原来停着的那一格，用户看到的分页
+ * 位置因此没有变化。手里的节点不能存着用 —— 宿主重画左栏时它们就不在文档里了。
+ */
+async function collectAll(list) {
+  const signature = railSignature(list);
+  const names = providerRailItems(railOf(list)).map(sectionNameOf).filter(Boolean);
+  if (!names.length) {
+    const rows = readGroups(list);
+    return { signature, check: grabCheck(list), rows };
+  }
+  const activeIndex = railItems(list).findIndex((item) => item.classList.contains("active"));
+  const rows = [];
+  const seen = new Set();
+  let check = "";
+  for (const name of names) {
+    // 用户自己开始打字了就别再翻页，别把输入抢走。
+    if (searching(list)) break;
+    const item = railItems(list).find((candidate) => sectionNameOf(candidate) === name
+      && candidate.querySelector(RAIL_COUNT_SELECTOR));
+    if (!item || typeof item.click !== "function") continue;
+    if (!item.classList.contains("active")) {
+      const before = paneSignature(list);
+      item.click();
+      await waitFor(() => paneSignature(list) !== before);
+    }
+    check = check || grabCheck(list);
+    for (const row of readGroups(list)) {
+      if (seen.has(row.key)) continue;
+      seen.add(row.key);
+      rows.push(row);
+    }
+  }
+  if (activeIndex >= 0) {
+    const back = railItems(list)[activeIndex];
+    if (back && !back.classList.contains("active") && typeof back.click === "function") {
+      const before = paneSignature(list);
+      back.click();
+      await waitFor(() => paneSignature(list) !== before);
+    }
+  }
+  return { signature, check, rows };
+}
+
+// ------------------------------------------------------------- 缓存的清单
+
+function normalizeRows(input) {
+  if (!input || typeof input !== "object") return null;
+  if (typeof input.signature !== "string" || !Array.isArray(input.rows)) return null;
+  const rows = [];
+  for (const row of input.rows) {
+    if (!row || typeof row.key !== "string" || typeof row.modelId !== "string") continue;
+    rows.push({
+      key: row.key,
+      provider: String(row.provider || ""),
+      modelId: row.modelId,
+      label: String(row.label || row.modelId),
+      alias: row.alias === true,
+      meta: typeof row.meta === "string" ? row.meta : "",
+      active: row.active === true,
+    });
+  }
+  return { signature: input.signature, check: typeof input.check === "string" ? input.check : "", rows };
+}
+
+function loadRows() {
+  if (rowsStore) return rowsStore;
+  try {
+    const raw = window.localStorage.getItem(ROWS_STORAGE_KEY);
+    rowsStore = raw ? normalizeRows(JSON.parse(raw)) : null;
+  } catch {
+    // 隐私模式或坏数据：这一份就只在内存里。
+    rowsStore = null;
+  }
+  return rowsStore;
+}
+
+function saveRows() {
+  if (!rowsStore) return;
+  try {
+    window.localStorage.setItem(ROWS_STORAGE_KEY, JSON.stringify({
+      signature: rowsStore.signature,
+      check: rowsStore.check,
+      rows: rowsStore.rows.map(({ key, provider, modelId, label, alias, meta, active }) => ({
+        key, provider, modelId, label, alias, meta, active,
+      })),
+    }));
+  } catch {
+    // 存不进去不影响这一次显示。
+  }
+}
+
+/** 当前这一组的行序与缓存对不上（改了顺序、换了模型）时重读一遍。 */
+function sectionStale(list) {
+  if (!rowsStore) return true;
+  const current = readGroups(list);
+  if (!current.length) return false;
+  const provider = current[0].provider;
+  const cached = rowsStore.rows.filter((row) => row.provider === provider).map((row) => row.modelId);
+  if (!cached.length) return true;
+  return cached.join("|") !== current.map((row) => row.modelId).join("|");
+}
+
+function needsCollect(list) {
+  const stored = loadRows();
+  if (!stored || !stored.rows.length) return true;
+  if (stored.signature !== railSignature(list)) return true;
+  return sectionStale(list);
+}
+
+/** 当前选中是哪一行：宿主这会儿画出来的那组是准的，读不到就用缓存里的。 */
+function adoptSelection(list) {
+  if (!rowsStore) return;
+  const pane = paneOf(list);
+  if (!pane) return;
+  for (const option of pane.querySelectorAll(OPTION_SELECTOR)) {
+    if (option.getAttribute("aria-checked") !== "true") continue;
+    const title = String(option.getAttribute("title") || "").trim();
+    if (!title) continue;
+    // 「最近使用」那一行把来源写在行内；供应商分组里则是分组抬头写着它。
+    const providerLabel = option.querySelector(OPTION_PROVIDER_SELECTOR);
+    const group = closestOf(option, GROUP_SELECTOR);
+    const provider = (providerLabel
+      ? textOf(providerLabel)
+      : String((group && group.getAttribute("aria-label")) || "")).trim();
+    const key = `${provider}\u001f${title.toLowerCase()}`;
+    const row = rowsStore.rows.find((item) => item.key === key)
+      || rowsStore.rows.find((item) => item.modelId === title);
+    if (!row || row.active) return;
+    for (const item of rowsStore.rows) item.active = item === row;
+    if (highlightKey === null) highlightKey = row.key;
+    return;
+  }
+}
+
+function selectedKey() {
+  const row = rowsStore ? rowsStore.rows.find((item) => item.active) : null;
+  return row ? row.key : null;
+}
+
+function rowByKey(key) {
+  return rowsStore ? rowsStore.rows.find((row) => row.key === key) : null;
+}
+
+function checkMarkup() {
+  return (rowsStore && rowsStore.check) || CHECK_FALLBACK;
+}
 
 // ---------------------------------------------------------------------- icons
 
@@ -374,344 +666,66 @@ function buildLogo(row) {
   return logo;
 }
 
-// ------------------------------------------------------------- capabilities
-
-/*
- * 「最近使用」那一组只有模型名和来源：宿主把能力徽标（推理 / 视觉）与上下文读数
- * 只画在供应商分组里，而它展开时又把最近用过的模型从分组里剔掉了。所以这些信息
- * 只能来自宿主自己的另一次渲染 —— 搜索时它不过滤最近使用，那些模型会带着完整的
- * meta 出现在各自的分组里。
- *
- * 打开浮窗时如果还有没缓存过的最近使用模型，就把这一次搜索跑掉：内容先藏起来
- * （visibility:hidden，布局不动），跑完再放出来。结果按「供应商␟模型 id」缓存到
- * localStorage，之后每次打开直接用，不再探测。
- */
-
-let capsStore = null;
-let probeRunning = false;
-let probeUnsupported = false;
-
-function caps() {
-  if (capsStore) return capsStore;
-  capsStore = new Map();
-  try {
-    const raw = window.localStorage.getItem(CAPS_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    for (const [key, value] of Object.entries(parsed || {})) {
-      if (typeof value === "string" && value) capsStore.set(key, value);
-    }
-  } catch {
-    // 隐私模式下读不到：这一份就只在内存里。
-  }
-  return capsStore;
-}
-
-function saveCaps() {
-  try {
-    const entries = [...caps().entries()].slice(-CAPS_LIMIT);
-    window.localStorage.setItem(CAPS_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
-  } catch {
-    // 存不进去不影响这一次显示。
-  }
-}
-
-function metaOf(option) {
-  const meta = option.querySelector(META_SELECTOR);
-  return meta && meta.innerHTML.trim() ? meta : null;
-}
-
-/** 原生分组里带完整 meta 的行，顺手都记下来。 */
-function harvestCaps(list) {
-  const store = caps();
-  let changed = false;
-  for (const option of list.querySelectorAll(OPTION_SELECTOR)) {
-    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
-    const group = closestOf(option, GROUP_SELECTOR);
-    const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
-    const identity = identityOf(option, groupLabel);
-    if (identity.recent) continue;
-    const meta = metaOf(option);
-    if (!meta) continue;
-    if (store.get(identity.key) !== meta.outerHTML) {
-      store.set(identity.key, meta.outerHTML);
-      changed = true;
-    }
-  }
-  if (changed) saveCaps();
-}
-
-function missingCapRows(list) {
-  const store = caps();
-  return readRows(list).filter((row) => row.recent && !store.has(row.key));
-}
-
-/*
- * 宿主那份完整清单。
- *
- * 「最近使用」是宿主临时拼出来的一组：那几行被从各自供应商分组里剔掉了，展开后的
- * 原生列表因此拿不到它们原来的位置。宿主对搜索却是另一套渲染 —— 搜索时它不剔除
- * 最近使用过的模型，而且会用供应商名匹配 providerSearchText，所以搜索一个分组名就
- * 能把那一组的全部模型按设置里的顺序列出来。
- *
- * 于是：先按分组名逐个搜一遍，把顺序拼成一份「供应商␟模型 id」的数组缓存起来，
- * 之后每次打开直接用；模型增删或换序（原生行序跟着变）时重新探测一次。
- */
-
-let orderStore = null;
-
-function order() {
-  if (orderStore) return orderStore;
-  orderStore = { signature: "", keys: [] };
-  try {
-    const raw = window.localStorage.getItem(ORDER_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && typeof parsed.signature === "string" && Array.isArray(parsed.keys)) {
-      orderStore = {
-        signature: parsed.signature,
-        keys: parsed.keys.filter((key) => typeof key === "string"),
-      };
-    }
-  } catch {
-    // 读不到就退回宿主当前的行序。
-  }
-  return orderStore;
-}
-
-function saveOrder() {
-  try {
-    window.localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order()));
-  } catch {
-    // 存不进去不影响这一次显示。
-  }
-}
-
-/** 原生行序的指纹：模型增删、换序或最近使用那一组变了，都要重新探测。 */
-function signatureOf(rows) {
-  return rows.map((row) => row.key).join("|");
-}
-
-/** 「最近使用」那个组不是供应商：它的标题下是宿主临时拼的一小撮，跳过它。 */
-function supplierLabels(list) {
-  const labels = [];
-  for (const group of list.querySelectorAll(GROUP_SELECTOR)) {
-    if (closestOf(group, `.${VIEW_CLASS}`)) continue;
-    const label = textOf(group.querySelector(GROUP_LABEL_SELECTOR));
-    if (!label) continue;
-    if (group.querySelector(`${OPTION_SELECTOR}[title*=" · "]`)) continue;
-    if (!labels.includes(label)) labels.push(label);
-  }
-  return labels;
-}
-
-/** 搜索结果里某个分组当前列出的模型，按它们出现的顺序。 */
-function keysInGroup(list, label) {
-  const keys = [];
-  for (const group of list.querySelectorAll(GROUP_SELECTOR)) {
-    if (closestOf(group, `.${VIEW_CLASS}`)) continue;
-    if (textOf(group.querySelector(GROUP_LABEL_SELECTOR)) !== label) continue;
-    for (const option of group.querySelectorAll(OPTION_SELECTOR)) {
-      const identity = identityOf(option, label);
-      if (identity.recent) continue;
-      keys.push(identity.key);
-    }
-  }
-  return [...new Set(keys)];
-}
-
-/** 「默认」排列要不要重新问一次顺序：只有存在最近使用那一组、且缓存过期时才要。 */
-function needsOrder(list) {
-  const rows = readRows(list);
-  if (!rows.some((row) => row.recent)) return false;
-  const entry = order();
-  return entry.signature !== signatureOf(rows) || !entry.keys.length;
-}
-
-/** 给宿主的搜索框喂一个值。React 认的是原生 setter + input 事件。 */
-function setQuery(input, value) {
-  const descriptor = window.HTMLInputElement
-    ? Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")
-    : null;
-  if (descriptor && descriptor.set) descriptor.set.call(input, value);
-  else input.value = value;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function metaHtmlFor(list, key) {
-  for (const option of list.querySelectorAll(OPTION_SELECTOR)) {
-    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
-    const group = closestOf(option, GROUP_SELECTOR);
-    const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
-    const identity = identityOf(option, groupLabel);
-    if (identity.recent || identity.key !== key) continue;
-    const meta = metaOf(option);
-    if (meta) return meta.outerHTML;
-  }
-  return "";
-}
+// ------------------------------------------------------------------- rendering
 
 /**
- * 等宿主的下一帧渲染：DOM 一变就回来，最多等 ms。用 MutationObserver 而不是固定
- * 的 setTimeout —— 后台窗口会把定时器压到 1s，浮窗这时会白着。
- */
-function nextRender(target, ms = 80) {
-  return new Promise((resolve) => {
-    let timer = null;
-    let observer = null;
-    const finish = () => {
-      if (observer) {
-        observer.disconnect();
-        observer = null;
-      }
-      if (timer !== null) {
-        window.clearTimeout(timer);
-        timer = null;
-      }
-      resolve();
-    };
-    if (typeof MutationObserver === "function") {
-      observer = new MutationObserver(finish);
-      observer.observe(target, { childList: true, subtree: true });
-    }
-    timer = window.setTimeout(finish, ms);
-  });
-}
-
-/**
- * 一次性把两样东西从宿主那里问出来，全程在隐藏状态下跑（PROBING_ATTR）：
+ * 一行自建选项。
  *
- *   1. 最近使用那几行的能力标记（徽标 + 上下文）—— 逐个搜模型 id；
- *   2. 宿主那份完整顺序 —— 逐个搜供应商分组名，搜索时它不剔除最近使用过的模型。
- *
- * 用户一开始打字就立刻退出，别把输入抢走；宿主不按搜索重渲染时也只放弃。
- */
-async function probeHidden(list) {
-  if (probeRunning || !menu || !list) return;
-  probeRunning = true;
-  try {
-    const input = menu.querySelector(SEARCH_INPUT_SELECTOR);
-    if (!input || input.value.trim()) return;
-    let owned = "";
-    // 用户自己开始打字了就退出，别把输入抢走；浮窗被换掉也退出。
-    if (input.value !== owned) return;
-    const free = () => menu === findLiveMenu() && input.value === owned;
-
-    if (!probeUnsupported) {
-      const pending = missingCapRows(list);
-      for (let index = 0; index < pending.length; index += 1) {
-        const row = pending[index];
-        if (!free()) return;
-        owned = row.modelId;
-        setQuery(input, owned);
-        const deadline = Date.now() + PROBE_TIMEOUT_MS;
-        let html = metaHtmlFor(list, row.key);
-        while (!html && Date.now() < deadline) {
-          await nextRender(list);
-          html = metaHtmlFor(list, row.key);
-        }
-        if (!html) {
-          // 第一个就没等到：宿主不会为程序化的搜索重渲染，别再耗着。
-          if (index === 0) probeUnsupported = true;
-          break;
-        }
-        caps().set(row.key, html);
-      }
-      saveCaps();
-      if (owned && input.value === owned) {
-        setQuery(input, "");
-        owned = "";
-        await nextRender(list);
-      }
-    }
-
-    // 顺序：只有存在「最近使用」那一组时才需要 —— 没有它，原生行序就是完整顺序。
-    const rows = readRows(list);
-    if (rows.some((row) => row.recent) && order().signature !== signatureOf(rows)) {
-      const keys = [];
-      let complete = rows.length > 0;
-      for (const label of supplierLabels(list)) {
-        if (!free()) return;
-        owned = label;
-        setQuery(input, owned);
-        const deadline = Date.now() + PROBE_TIMEOUT_MS;
-        let found = keysInGroup(list, label);
-        while (!found.length && Date.now() < deadline) {
-          await nextRender(list);
-          found = keysInGroup(list, label);
-        }
-        if (!found.length) {
-          complete = false;
-          break;
-        }
-        keys.push(...found);
-      }
-      if (complete && keys.length) {
-        order().signature = signatureOf(rows);
-        order().keys = keys;
-        saveOrder();
-      }
-    }
-
-    if (owned && input.value === owned) setQuery(input, "");
-    await nextRender(list);
-  } finally {
-    probeRunning = false;
-    if (menu) menu.removeAttribute(PROBING_ATTR);
-    sync();
-  }
-}
-
-/**
- * 一行自建选项。克隆保留宿主的样子（标签、徽标、上下文读数、对勾），只去掉两样
- * 东西：键盘高亮的瞬时类，以及「最近使用」行右侧那枚来源 —— 需求是来源不写在
- * 右边，按名称时它改由下方那行淡字承担。
+ * 结构与宿主那一行一模一样（同样是 `.composer-model-option` 里的 main、meta 与
+ * 勾位），所以宿主的行高、字号、徽标、勾动画全都照旧生效；只有内容来自缓存里的
+ * 那一份 —— 它属于哪一组与当前停在哪儿无关。
  */
 function buildRow(row, showSource) {
-  const item = row.option.cloneNode(true);
-  item.removeAttribute("data-model-index");
-  if (item.classList) item.classList.remove("kb-active");
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "composer-plus-item composer-model-option";
+  item.setAttribute("role", "menuitemradio");
+  item.setAttribute("aria-checked", String(row.active === true));
   item.setAttribute(ITEM_ATTR, row.key);
-  const main = item.querySelector(OPTION_MAIN_SELECTOR);
-  // 宿主只给分组里的选中行挂 active，那枚勾也只在这一路带 composer-model-check；
-  // 「最近使用」那一组的选中行两样都没有，于是选中时上下文读数停在淡色、勾停在
-  // 次要文字色。这里补齐，让四种排列下的选中行共用宿主同一套规则。
-  if (item.getAttribute("aria-checked") === "true") {
-    if (item.classList) item.classList.add("active");
-    const check = item.lastElementChild;
-    if (check && check !== main && check.classList) check.classList.add("composer-model-check");
+  // 宿主的行把模型 id 写在 title 上，这里也留着：它是这一行的身份。
+  item.setAttribute("title", row.modelId);
+  if (row.active) item.classList.add("active");
+
+  const main = document.createElement("span");
+  main.className = "composer-model-option-main";
+
+  const label = document.createElement("span");
+  label.className = row.alias ? "composer-model-label is-alias" : "composer-model-label";
+  label.textContent = row.label;
+  // 图标和名称贴在一起：宿主给 main 的列间距是 8px，直接塞进去会离得太远，
+  // 所以把名称挪进一个自带 6px 间距的 lead 里。
+  const lead = document.createElement("span");
+  lead.className = "piopt-mp-lead";
+  lead.append(buildLogo(row), label);
+  main.append(lead);
+  // 来源紧跟在名称后面：平铺列表里它替代分组抬头，但只占一枚小字的位置，
+  // 不至于把每一条都撑成两行。
+  if (showSource && row.provider) {
+    const source = document.createElement("span");
+    source.className = "piopt-mp-source";
+    source.setAttribute(PROVIDER_ATTR, row.provider);
+    source.textContent = row.provider;
+    main.append(source);
   }
-  if (main) {
-    if (row.recent) {
-      // 最近使用那一组把来源写在右侧；这里换成宿主在同一模型的分组行上画的
-      // 那套 meta（推理 / 视觉徽标 + 上下文读数）。缓存里没有就先空着，探测
-      // 完成后重建这一行。
-      const meta = main.querySelector(META_SELECTOR);
-      const cached = caps().get(row.key);
-      if (cached) {
-        const holder = document.createElement("span");
-        holder.innerHTML = cached;
-        const replacement = holder.firstElementChild;
-        if (replacement && meta) meta.replaceWith(replacement);
-        else if (replacement) main.append(replacement);
-      } else if (meta) {
-        meta.remove();
-      }
-    }
-    if (showSource && row.provider) main.setAttribute(PROVIDER_ATTR, row.provider);
-    // 图标和名称贴在一起：宿主给 main 的列间距是 8px，直接塞进去会离得太远，
-    // 所以把名称挪进一个自带 6px 间距的 lead 里。
-    const label = main.querySelector(LABEL_SELECTOR);
-    if (label) {
-      const lead = document.createElement("span");
-      lead.className = "piopt-mp-lead";
-      label.replaceWith(lead);
-      lead.append(buildLogo(row), label);
-    }
+
+  if (row.meta) {
+    const meta = document.createElement("span");
+    meta.className = "composer-model-option-meta";
+    meta.innerHTML = row.meta;
+    main.append(meta);
   }
+
+  const slot = document.createElement("span");
+  slot.className = "composer-model-check-slot";
+  slot.setAttribute("aria-hidden", "true");
+  if (row.active) slot.innerHTML = checkMarkup();
+
+  item.append(main, slot);
   item.addEventListener("click", (event) => {
     event.preventDefault();
-    // 克隆行只是原生按钮的替身：真正的点击交给隐藏着的原生按钮，选中模型
-    // 仍然完全由宿主的 React 逻辑完成。
-    if (typeof row.option.click === "function") row.option.click();
+    // 自建行只是原生按钮的替身：真正的点击交给原生按钮，选中模型仍然完全由宿主
+    // 自己的 React 逻辑完成。
+    void choose(row.key);
   });
   return item;
 }
@@ -738,17 +752,7 @@ function buildGroup(label, rows, showSource) {
 }
 
 /**
- * 「默认」的行序：宿主那份完整顺序，一个连续列表 —— 不分组，也不按名字重排。
- *
- * 探测到的顺序（`order().keys`）就是设置里排的那一份：最近使用过的模型也在它们原
- * 来的位置上。没有缓存时退回原生行序（那几行会停在宿主摆的最前面），下次打开时
- * 探测补上。没有分组抬头就没人写着来源，所以每一行都补一行淡色的来源。
- */
-/**
  * 分组视图（按供应商 / 按厂商共用）：分组名与组内模型都按 A–Z 排。
- *
- * 宿主原来按自己的顺序排分组、组内也按它自己的顺序；这里统一成字典序，最近使用
- * 过的模型因为已经在 rows 里，跟着落到各自的分组里，不再单独排序插入。
  */
 function groupedView(rows, keyOf) {
   const buckets = new Map();
@@ -771,9 +775,7 @@ function renderView(list) {
   building = true;
   const previous = childByClass(list, VIEW_CLASS);
   if (previous) previous.remove();
-  // 先收一遍宿主已经画出来的能力标记，再建视图：最近使用那几行的 meta 从缓存里取。
-  harvestCaps(list);
-  const rows = readRows(list);
+  const rows = rowsStore ? rowsStore.rows : readGroups(list);
   const view = document.createElement("div");
   view.className = VIEW_CLASS;
   view.setAttribute(LAYOUT_ATTR, grouping);
@@ -788,18 +790,11 @@ function renderView(list) {
     empty.textContent = textOf(list.querySelector(EMPTY_SELECTOR));
     view.append(empty);
   } else if (grouping === "default") {
-    // 宿主那份完整顺序上平铺：不分组、也不按名字重排，只是把最近使用过的那几行
-    // 送回它们本来的位置。顺序里没有的行（刚加的模型）接在末尾，保持原相对次序。
-    const rank = new Map(order().keys.map((key, index) => [key, index]));
-    const placed = rows.slice().sort((left, right) => {
-      const a = rank.has(left.key) ? rank.get(left.key) : Number.MAX_SAFE_INTEGER;
-      const b = rank.has(right.key) ? rank.get(right.key) : Number.MAX_SAFE_INTEGER;
-      return a - b;
-    });
-    for (const row of placed) view.append(buildRow(row, true));
-  } else if (grouping === "name") {
-    rows.sort(compareRows);
+    // 左栏顺序原样平铺：不分组、也不按名字重排。这里没有分组抬头写着供应商，
+    // 所以每一行都补一行淡色的来源。
     for (const row of rows) view.append(buildRow(row, true));
+  } else if (grouping === "name") {
+    for (const row of rows.slice().sort(compareRows)) view.append(buildRow(row, true));
   } else if (grouping === "vendor") {
     for (const group of groupedView(rows, vendorOf)) view.append(group);
   } else {
@@ -809,6 +804,7 @@ function renderView(list) {
   list.append(view);
   if (listObserver) listObserver.takeRecords();
   building = false;
+  if (highlightKey === null) highlightKey = selectedKey();
   syncHighlight(list);
 }
 
@@ -948,7 +944,7 @@ function touchesThinking(record) {
  * 不会被它收走。
  */
 function syncModes(menuElement) {
-  const root = menuElement.querySelector(".composer-menu-root");
+  const root = menuElement.querySelector(ROOT_SELECTOR);
   const search = menuElement.querySelector(SEARCH_SELECTOR);
   if (!root) return null;
   let bar = childByClass(root, MODES_CLASS);
@@ -1029,18 +1025,19 @@ function sync() {
     syncChip();
   }
 
-  // 宿主的折叠入口：点一次把它全部展开，然后它在 CSS 里被藏掉，用户不能再收起。
-  // 点击是异步生效的，这一轮先让原生列表照常显示，展开后的下一轮再建视图，免得
-  // 浮窗先空一下。
-  const collapse = childByClass(list, COLLAPSE_CLASS);
-  if (collapse && collapse.getAttribute("aria-expanded") === "false") {
-    if (typeof collapse.click === "function") collapse.click();
+  // 搜索由宿主自己筛（它会把每个匹配的组都画出来）：一有查询就把视图让开。
+  const input = target.querySelector(SEARCH_INPUT_SELECTOR);
+  const query = input ? String(input.value || "").trim() : "";
+  if (query) {
+    target.setAttribute(SEARCH_ATTR, "true");
     return;
   }
+  target.removeAttribute(SEARCH_ATTR);
 
+  adoptSelection(list);
   renderView(list);
-  if (!target.hasAttribute(PROBING_ATTR) && target.getAttribute("data-piopt-mp-ready") !== "true") {
-    target.setAttribute("data-piopt-mp-ready", "true");
+  if (!target.hasAttribute(PROBING_ATTR) && target.getAttribute(READY_ATTR) !== "true") {
+    target.setAttribute(READY_ATTR, "true");
     // Positioning has already completed while hidden; focus only our own search input.
     target.querySelector(SEARCH_INPUT_SELECTOR)?.focus({ preventScroll: true });
   }
@@ -1057,26 +1054,145 @@ function scheduleSync() {
 /**
  * 把宿主的键盘高亮（`.kb-active`）抄到自建行上。
  *
- * 方向键由宿主处理，它只会在原生按钮上换高亮；自建行是克隆体，所以每次高亮
+ * 方向键由宿主处理，它只会在原生按钮上换高亮；自建行是另一套节点，所以每次高亮
  * 变化都要跟着挪一下，否则按方向键时光标停在看不见的原生行上。
  */
-function syncHighlight(list) {
-  const view = childByClass(list, VIEW_CLASS);
-  if (!view) return;
-  let activeKey = null;
-  for (const option of list.querySelectorAll(`${OPTION_SELECTOR}.kb-active`)) {
-    // 自建行此刻正被同步，只看原生行，否则移除高亮时会被自己的克隆体说服
-    // 「还有人高亮着」。
-    if (closestOf(option, `.${VIEW_CLASS}`)) continue;
-    const group = closestOf(option, GROUP_SELECTOR);
-    const groupLabel = textOf(group ? group.querySelector(GROUP_LABEL_SELECTOR) : null);
-    activeKey = identityOf(option, groupLabel).key;
-    break;
-  }
+function applyHighlight(view) {
   for (const item of view.querySelectorAll(`[${ITEM_ATTR}]`)) {
-    const active = activeKey !== null && item.getAttribute(ITEM_ATTR) === activeKey;
+    const active = item.getAttribute(ITEM_ATTR) === highlightKey;
     if (item.classList) item.classList.toggle("kb-active", active);
     if (active && typeof item.scrollIntoView === "function") item.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function syncHighlight(list) {
+  if (!list) return;
+  const view = childByClass(list, VIEW_CLASS);
+  if (!view) return;
+  const pane = paneOf(list);
+  const native = pane ? pane.querySelector(`${OPTION_SELECTOR}.kb-active`) : null;
+  if (native && !native.querySelector(OPTION_PROVIDER_SELECTOR)) {
+    const group = closestOf(native, GROUP_SELECTOR);
+    const provider = String((group && group.getAttribute("aria-label")) || "").trim();
+    const title = String(native.getAttribute("title") || "").trim();
+    if (title) highlightKey = `${provider}\u001f${title.toLowerCase()}`;
+  }
+  applyHighlight(view);
+}
+
+/**
+ * 方向键与回车。
+ *
+ * 宿主的键盘游标走在它自己那几行上，而字面上它一次只认得当前这一组；自建视图列出
+ * 的却是全部。所以视图显示时由这里接管这四个键，让光标在整份列表上走，回车选中的
+ * 也是光标那一行。搜索时不接管 —— 那时显示的就是宿主自己的结果。
+ */
+function onKeyDown(event) {
+  if (!menu || !event || event.isComposing || event.keyCode === 229) return;
+  if (menu.getAttribute(SEARCH_ATTR) === "true") return;
+  const list = menu.querySelector(LIST_SELECTOR);
+  const view = list ? childByClass(list, VIEW_CLASS) : null;
+  if (!view) return;
+  const input = menu.querySelector(SEARCH_INPUT_SELECTOR);
+  if (!input || event.target !== input) return;
+  const items = [...view.querySelectorAll(`[${ITEM_ATTR}]`)];
+  if (!items.length) return;
+  const keys = items.map((item) => item.getAttribute(ITEM_ATTR));
+  let index = keys.indexOf(highlightKey);
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (index < 0) index = event.key === "ArrowDown" ? -1 : 0;
+    index = (index + (event.key === "ArrowDown" ? 1 : -1) + keys.length) % keys.length;
+  } else if (event.key === "Home") {
+    index = 0;
+  } else if (event.key === "End") {
+    index = keys.length - 1;
+  } else if (event.key === "Enter") {
+    if (index < 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void choose(keys[index]);
+    return;
+  } else {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  highlightKey = keys[index];
+  applyHighlight(view);
+}
+
+/**
+ * 选中一行：先切到它所属的那一组，再点那枚原生按钮。
+ *
+ * 分页一次只渲染一组，所以不在当前组里的按钮此刻并不存在 —— 只能先把左栏切过去，
+ * 等宿主画出来，再交给它自己处理。
+ */
+async function choose(key) {
+  const row = rowByKey(key);
+  const target = menu;
+  const list = target ? target.querySelector(LIST_SELECTOR) : null;
+  if (!row || !list) return false;
+  const rail = railOf(list);
+  const items = providerRailItems(rail);
+  const item = row.provider
+    ? items.find((candidate) => sectionNameOf(candidate) === row.provider)
+    : items.find((candidate) => currentSectionName(list) === row.provider);
+  if (item && !item.classList.contains("active") && typeof item.click === "function") {
+    item.click();
+    await waitFor(() => currentSectionName(list) === row.provider);
+  }
+  const pane = paneOf(list);
+  if (!pane) return false;
+  for (const option of pane.querySelectorAll(OPTION_SELECTOR)) {
+    if (option.querySelector(OPTION_PROVIDER_SELECTOR)) continue;
+    if (String(option.getAttribute("title") || "").trim() !== row.modelId) continue;
+    highlightKey = row.key;
+    if (typeof option.click === "function") option.click();
+    markSelected(row.key);
+    return true;
+  }
+  return false;
+}
+
+/** 选中态换到这一行：只动视图里的三个地方（aria-checked / 底色 / 勾位）。 */
+function markSelected(key) {
+  if (!rowsStore) return;
+  for (const row of rowsStore.rows) row.active = row.key === key;
+  highlightKey = key;
+  saveRows();
+  const list = menu ? menu.querySelector(LIST_SELECTOR) : null;
+  const view = list ? childByClass(list, VIEW_CLASS) : null;
+  if (!view) return;
+  for (const item of view.querySelectorAll(`[${ITEM_ATTR}]`)) {
+    const active = item.getAttribute(ITEM_ATTR) === key;
+    item.setAttribute("aria-checked", String(active));
+    if (item.classList) item.classList.toggle("active", active);
+    const slot = item.querySelector(CHECK_SLOT_SELECTOR);
+    if (slot) slot.innerHTML = active ? checkMarkup() : "";
+  }
+}
+
+/**
+ * 打开浮窗后把完整清单读出来（内容先藏起来），读完才让它露面。
+ *
+ * 宿主的结构变了也不会一直白着：读不到就退回当前这一组，至少能选模型。
+ */
+async function collectHidden(list) {
+  if (collecting || !menu) return;
+  collecting = true;
+  try {
+    const collected = await collectAll(list);
+    const merged = normalizeRows(collected);
+    if (merged && merged.rows.length) {
+      rowsStore = merged;
+      saveRows();
+    }
+  } catch {
+    // 读不到就沿用手上这一份。
+  } finally {
+    collecting = false;
+    if (menu) menu.removeAttribute(PROBING_ATTR);
+    sync();
   }
 }
 
@@ -1095,7 +1211,7 @@ function unbindMenu() {
     const list = menu.querySelector(LIST_SELECTOR);
     const view = list ? childByClass(list, VIEW_CLASS) : null;
     if (view) view.remove();
-    const root = menu.querySelector(".composer-menu-root");
+    const root = menu.querySelector(ROOT_SELECTOR);
     const bar = root ? childByClass(root, MODES_CLASS) : null;
     if (bar) bar.remove();
     menu.removeAttribute(SEARCH_ATTR);
@@ -1104,6 +1220,7 @@ function unbindMenu() {
     menu.removeAttribute(LEVELS_ATTR);
   }
   menu = null;
+  highlightKey = null;
 }
 
 function bindMenu(element) {
@@ -1150,14 +1267,13 @@ function bindMenu(element) {
     });
   }
 
-  // 缺能力标记、或缺宿主那份完整顺序时，先在隐藏状态下把探测跑完，再让人看见内容。
+  // 缺完整清单时先在隐藏状态下把各组读一遍，再让人看见内容。
   const list = element.querySelector(LIST_SELECTOR);
-  const missingCaps = list ? missingCapRows(list) : [];
-  const missingOrder = list ? needsOrder(list) : false;
-  if (missingCaps.length || missingOrder) element.setAttribute(PROBING_ATTR, "true");
+  const read = list ? needsCollect(list) : false;
+  if (read) element.setAttribute(PROBING_ATTR, "true");
 
   sync();
-  if (list && (missingCaps.length || missingOrder)) void probeHidden(list);
+  if (list && read) void collectHidden(list);
   void refreshConfig();
 }
 
@@ -1223,9 +1339,11 @@ function onAttention() {
 
 export function mountModelPicker(bridge) {
   host = bridge;
+  loadRows();
   // 入口模块可能在同一个窗口里被重新挂载（插件重载）；监听器只挂一次。
   if (!bodyObserver) {
     document.addEventListener("input", onDocumentInput, true);
+    document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("focusin", onAttention, true);
     document.addEventListener("visibilitychange", onAttention);
     if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
@@ -1240,6 +1358,7 @@ export function mountModelPicker(bridge) {
 
 export function unmountModelPicker() {
   document.removeEventListener("input", onDocumentInput, true);
+  document.removeEventListener("keydown", onKeyDown, true);
   document.removeEventListener("focusin", onAttention, true);
   document.removeEventListener("visibilitychange", onAttention);
   if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
@@ -1260,6 +1379,9 @@ export function unmountModelPicker() {
 export const __internals = {
   MENU_SELECTOR,
   LIST_SELECTOR,
+  PANE_SELECTOR,
+  RAIL_SELECTOR,
+  RAIL_ITEM_SELECTOR,
   VIEW_CLASS,
   MODES_CLASS,
   MODE_CLASS,
@@ -1270,8 +1392,7 @@ export const __internals = {
   PROVIDER_ATTR,
   MARKER_ATTR,
   LEVEL_ATTR,
-  ORDER_STORAGE_KEY,
-  CAPS_STORAGE_KEY,
+  ROWS_STORAGE_KEY,
   DEFAULT_GROUPING,
   GROUPINGS,
 };

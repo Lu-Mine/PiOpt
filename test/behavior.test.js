@@ -129,6 +129,24 @@ test("a fresh plugin load reads the stored grouping, not the default", async () 
   }
 });
 
+test("file opening is optional, persisted, and blocked when disabled", async () => {
+  const fake = makePi();
+  const feature = loadFeature(fake);
+  const main = require("../main.js");
+  try {
+    await feature.onLoad();
+    assert.equal(feature.getState().config.openSessionOutput, false);
+    await assert.rejects(main.onRendererCall("openSessionOutput", { path: "anything" }), /开启文件右键打开/);
+    await feature.setOptions({ openSessionOutput: true });
+    assert.equal(fake.store.openSessionOutput, true);
+    assert.equal(feature.getState().config.openSessionOutput, true);
+    await feature.onLoad();
+    assert.equal(feature.getState().config.openSessionOutput, true);
+    await feature.setOptions({ openSessionOutput: false });
+    assert.equal(fake.store.openSessionOutput, false);
+  } finally { delete global.pi; }
+});
+
 // -------------------------------------------------------- host-window rewrite
 
 test("the host window asks the behavior feature for the popup state", async () => {
@@ -152,46 +170,47 @@ test("the host window asks the behavior feature for the popup state", async () =
   }
 });
 
-test("the rewrite clones host rows instead of moving them", () => {
+test("the rewrite reads every group instead of cloning the host's rows", () => {
   const source = read("renderer/model-picker.mjs");
   // 宿主自己会重渲染这棵子树；把它的节点搬到别处，下一次 insertBefore 就找不到参照。
-  assert.match(source, /row\.option\.cloneNode\(true\)/);
   assert.doesNotMatch(source, /\.insertBefore\(/);
-  assert.doesNotMatch(source, /row\.option\.remove\(\)/);
-  // 点击克隆行只是转交给原生按钮，选中模型仍走宿主自己的逻辑。
-  assert.match(source, /row\.option\.click\(\)/);
-  // 宿主的折叠入口（其他模型）只点一次，随后被样式藏掉。
-  assert.match(source, /aria-expanded/);
+  assert.doesNotMatch(source, /\.appendChild\(/);
+  // 左栏一格一个供应商，列表里一次只画一组：逐格点开读一遍，读完切回原来那一格。
+  assert.match(source, /const RAIL_ITEM_SELECTOR = "\.composer-model-rail-item";/);
+  assert.match(source, /function providerRailItems\(rail\)/);
+  assert.match(source, /async function collectAll\(list\)/);
+  assert.match(source, /const activeIndex = railItems\(list\)\.findIndex\(\(item\) => item\.classList\.contains\("active"\)\);/);
+  // 点击自建行只是转交给相对应的原生按钮，选中模型仍走宿主自己的逻辑。
+  assert.match(source, /if \(typeof option\.click === "function"\) option\.click\(\);/);
 });
 
-test("最近使用的行不再把来源写在右边", () => {
+test("最近使用那一组整组不收，来源改由行内的小字承担", () => {
   const source = read("renderer/model-picker.mjs");
-  // 最近使用那一组的 meta 就是来源文本：克隆时整块摘掉。
-  assert.match(source, /if \(row\.recent\) \{/);
-  assert.match(source, /meta\.remove\(\)/);
-  // 来源改由下方那行淡字承担（CSS 里用 data-piopt-mp-provider 画），与排列方式无关。
-  assert.match(source, /::after\{content:attr\(\$\{PROVIDER_ATTR\}\)/);
-  assert.match(source, /flex:1 0 100%/);
+  // 那一组的每一行都把来源写在行内，它的模型在各自分组里都有：整组跳过。
+  assert.match(source, /if \(options\.some\(\(option\) => option\.querySelector\(OPTION_PROVIDER_SELECTOR\)\)\) continue;/);
+  // 来源跟在名称后面，宽度不够就省略 —— 每行两行字会让整份列表又高又挤。
+  assert.match(source, /source\.className = "piopt-mp-source";/);
+  assert.match(source, /\.piopt-mp-source\{flex:0 1 auto;min-width:0;max-width:42%/);
+  assert.doesNotMatch(source, /flex:1 0 100%/);
 });
 
-test("最近使用的选中行跟分组里的选中行长一个样", () => {
+test("选中行在四种排列下共用同一套标记", () => {
   const source = read("renderer/model-picker.mjs");
-  // 宿主只给分组里的选中行挂 active，那枚勾也只在这一路带 composer-model-check；
-  // 「最近使用」那一组的选中行两样都没有，于是选中时上下文读数停在淡色、勾停在
-  // 次要文字色。克隆行把这两个类补上，选中态在四种排列下才一致。
-  assert.match(source, /if \(item\.getAttribute\("aria-checked"\) === "true"\)/);
-  assert.match(source, /item\.classList\.add\("active"\)/);
-  assert.match(source, /check\.classList\.add\("composer-model-check"\)/);
+  // 宿主给每一行都画勾位（选中时才有那枚勾），重建出来的行照抄这一套。
+  assert.match(source, /item\.setAttribute\("aria-checked", String\(row\.active === true\)\);/);
+  assert.match(source, /if \(row\.active\) item\.classList\.add\("active"\);/);
+  assert.match(source, /if \(row\.active\) slot\.innerHTML = checkMarkup\(\);/);
+  // 换选一行只改视图里的三处，不整份重建。
+  assert.match(source, /function markSelected\(key\)/);
+  assert.match(source, /const slot = item\.querySelector\(CHECK_SLOT_SELECTOR\);/);
 });
 
-test("分组视图把最近使用的模型并回分组，并按 A–Z 排序", () => {
+test("分组视图把每个模型分回它的组，并按 A–Z 排序", () => {
   const source = read("renderer/model-picker.mjs");
   // 按供应商 / 按厂商共用一份分组视图：分组名排序、组内也排序。
   assert.match(source, /function groupedView\(rows, keyOf\)/);
   assert.match(source, /\.sort\(\(left, right\) => compareNames\(left\[0\], right\[0\]\)\)/);
   assert.match(source, /bucket\.slice\(\)\.sort\(compareRows\)/);
-  // 最近使用过的行已经在 rows 里，不再单独插到某个位置。
-  assert.doesNotMatch(source, /insertSorted/);
   // 按厂商：FAMILIES 的 label 就是分组名，认不出就落到供应商名下。
   assert.match(source, /function vendorOf\(row\)/);
   assert.match(source, /return family \? family\.label : \(row\.provider \|\| row\.label\);/);
@@ -209,46 +228,45 @@ test("分组视图把最近使用的模型并回分组，并按 A–Z 排序", (
   assert.ok(source.includes("@container scroll-state(stuck: top)"));
 });
 
-test("「默认」排列在宿主那份完整顺序上平铺", () => {
+test("「默认」排列按左栏的顺序原样平铺", () => {
   const source = read("renderer/model-picker.mjs");
   const branch = source.slice(source.indexOf('if (grouping === "default") {'));
   const body = branch.slice(0, branch.indexOf("} else if"));
-  // 行序来自探测到的完整顺序：按 key 的排名铺开，最近使用过的行因此回到原位。
-  assert.match(body, /const rank = new Map\(order\(\)\.keys\.map\(\(key, index\) => \[key, index\]\)\);/);
-  assert.match(body, /const placed = rows\.slice\(\)\.sort\(/);
-  assert.match(body, /for \(const row of placed\) view\.append\(buildRow\(row, true\)\);/);
-  // 不分组、也不按名字重排（按名称那一支才 sort compareRows）。
+  // 行序就是逐格读出来的顺序：设置里怎么排就怎么排，一个不分组、也不按名字重排。
+  assert.match(body, /for \(const row of rows\) view\.append\(buildRow\(row, true\)\);/);
   assert.doesNotMatch(body, /buildGroup\(/);
   assert.doesNotMatch(body, /compareRows/);
-  assert.doesNotMatch(body, /composer-model-group-label/);
-  // 平铺之后没有抬头写着供应商，所以每行都补一行来源。
+  assert.doesNotMatch(body, /\.sort\(/);
+  // 平铺之后没有抬头写着供应商，所以每行都补一枚来源。
   assert.match(body, /buildRow\(row, true\)/);
 });
 
-test("最近使用的模型按宿主设置里的顺序归位", () => {
+test("完整清单按左栏逐格读出并缓存", () => {
   const source = read("renderer/model-picker.mjs");
-  // 宿主搜索时不剔除最近使用过的模型，而且供应商名能命中整组，于是逐个分组搜一遍
-  // 就能拼出设置里那份完整顺序，按「供应商␟模型 id」缓存。
-  assert.match(source, /const ORDER_STORAGE_KEY = "piopt\.modelPicker\.order\.v1";/);
-  assert.match(source, /function signatureOf\(rows\)/);
-  assert.match(source, /function supplierLabels\(list\)/);
-  // 跳过「最近使用」那一组：它的行都是「供应商 · 模型 id」。
-  assert.match(source, /\[title\*=" · "\]/);
-  assert.match(source, /function keysInGroup\(list, label\)/);
-  assert.match(source, /function needsOrder\(list\)/);
-  assert.match(source, /async function probeHidden\(list\)/);
-  assert.match(source, /order\(\)\.signature = signatureOf\(rows\);/);
-  assert.match(source, /order\(\)\.keys = keys;/);
-  // 打开浮窗时缺顺序就先在隐藏状态下跑完探测，再让人看见内容。
-  assert.match(source, /if \(list && \(missingCaps\.length \|\| missingOrder\)\) void probeHidden\(list\);/);
+  // 清单按「左栏指纹」整份缓存：宿主的分页一次只给一组，每次打开都全点一遍太贵。
+  assert.match(source, /const ROWS_STORAGE_KEY = "piopt\.modelPicker\.rows\.v1";/);
+  assert.match(source, /function railSignature\(list\)/);
+  assert.match(source, /function needsCollect\(list\)/);
+  assert.match(source, /function sectionStale\(list\)/);
+  // 点一次左栏之后，用它判断宿主的下一格已经画好了（「最近使用」那一格没有组名）。
+  assert.match(source, /function paneSignature\(list\)/);
+  assert.match(source, /await waitFor\(\(\) => paneSignature\(list\) !== before\);/);
+  assert.match(source, /async function collectHidden\(list\)/);
+  assert.match(source, /rowsStore = merged;/);
+  // 用户在打字时不去点左栏：换一格会把他刚写的查询清掉。
+  assert.match(source, /function searching\(list\)/);
+  assert.match(source, /if \(searching\(list\)\) break;/);
+  // 打开浮窗时缺清单就先在隐藏状态下读完，再让人看见内容。
+  assert.match(source, /if \(list && read\) void collectHidden\(list\);/);
 });
 
-test("来源那一行由行上的属性驱动，不再绑在某种排列上", () => {
+test("来源跟着名称走，不另起一行", () => {
   const source = read("renderer/model-picker.mjs");
-  // 按名称时每行都有来源；没有这个属性就不生成伪元素。
-  assert.match(source, /option-main\[\$\{PROVIDER_ATTR\}\]\{flex-wrap:wrap\}/);
-  assert.match(source, /option-main\[\$\{PROVIDER_ATTR\}\]::after\{content:attr\(\$\{PROVIDER_ATTR\}\)/);
-  assert.doesNotMatch(source, /\[LAYOUT_ATTR="name"\] \.composer-model-option-main::after/);
+  assert.match(source, /if \(showSource && row\.provider\) \{/);
+  assert.match(source, /source\.setAttribute\(PROVIDER_ATTR, row\.provider\);/);
+  assert.match(source, /main\.append\(source\);/);
+  // 旧写法把来源铺成第二行（flex:1 0 100% 的伪元素），那正是「又高又挤」的来源。
+  assert.doesNotMatch(source, /option-main\[\$\{PROVIDER_ATTR\}\]/);
 });
 
 test("排列方式在搜索框外面，四个选项点哪个是哪个", () => {
@@ -257,7 +275,7 @@ test("排列方式在搜索框外面，四个选项点哪个是哪个", () => {
   assert.match(source, /const MODE_CLASS = "piopt-mp-mode";/);
   assert.match(source, /const MODE_ATTR = "data-piopt-mp-mode";/);
   // 挂在根节点里、紧跟搜索框之后：不再塞进搜索框内部。
-  assert.match(source, /const root = menuElement\.querySelector\("\.composer-menu-root"\)/);
+  assert.match(source, /const root = menuElement\.querySelector\(ROOT_SELECTOR\)/);
   assert.match(source, /search\.after\(bar\)/);
   assert.doesNotMatch(source, /search\.append\(/);
   // 四种模式一轮渲染，点击直接切到那一种。
@@ -278,10 +296,11 @@ test("the injected rules key off the attributes the module writes", () => {
   ]) {
     assert.ok(source.includes(attribute), attribute);
   }
-  // 折叠入口藏在 `.composer-model-list` 的直接子级里，「其他模型」是它的类名。
-  assert.match(
-    source,
-    /\.composer-model-menu\[\$\{EXPANDED_ATTR\}\] \.composer-model-list > \.\$\{COLLAPSE_CLASS\}\{display:none\}/
+  // 左栏与原生分页一起让位：自建视图一次列出全部模型。
+  assert.ok(source.includes("[${EXPANDED_ATTR}] .composer-model-rail{display:none}"), "左栏让位");
+  assert.ok(
+    source.includes("[${EXPANDED_ATTR}] .composer-model-body[data-rail]{display:block}"),
+    "列表拿回整行宽度"
   );
   // 自建视图让位给宿主搜索结果，但不用 revert 抹掉宿主自己的 display。
   assert.ok(source.includes(':not([${SEARCH_ATTR}="true"])'), "自建视图按搜索属性让位");
@@ -311,6 +330,7 @@ test("the panel writes the two popup rewrites through setOptions", async () => {
       translateThinking: true,
       entryActions: false,
       commandButton: false,
+      openSessionOutput: false,
     });
     assert.deepEqual(fake.store[modelPicker.SETTINGS_KEY], { grouping: "vendor", frameSelected: false, translateThinking: true });
   } finally {
@@ -439,25 +459,22 @@ test("the popup picks an icon by model name first, then by provider", () => {
   assert.match(source, /\.piopt-mp-logo\{flex:none;width:14px;height:14px/);
 });
 
-test("最近使用的行补上能力标记，而不是在右边写来源", () => {
+test("每行的徽标与上下文读数都来自宿主自己的分组行", () => {
   const source = read("renderer/model-picker.mjs");
-  // 来源（宿主写在最近使用行右侧的供应商名）被换成缓存下来的 meta。
-  assert.match(source, /const cached = caps\(\)\.get\(row\.key\);/);
-  assert.match(source, /meta\.replaceWith\(replacement\)/);
-  // 数据来自宿主自己的另一次渲染：搜索时它会把这些模型连同徽标与上下文画出来。
-  // 探测入口的名字随实现走（能力标记与完整顺序现在共用一次隐藏搜索）。
-  assert.match(source, /async function probe(?:Caps|Hidden)\(list\)/);
-  assert.match(source, /harvestCaps\(list\)/);
-  // React 受控输入要用原生 setter + input 事件才会更新查询。
-  assert.match(source, /Object\.getOwnPropertyDescriptor\(window\.HTMLInputElement\.prototype, "value"\)/);
-  assert.match(source, /dispatchEvent\(new Event\("input", \{ bubbles: true \}\)\)/);
-  // 探测期间内容藏起来，布局不动；结果按供应商␟模型 id 缓存。
-  assert.match(source, /const CAPS_STORAGE_KEY = "piopt\.modelPicker\.capabilities\.v1";/);
+  // 供应商分组里宿主把徽标（推理 / 视觉）与上下文读写画全了：直接读那一行，
+  // 不必再借一次隐藏搜索把它们问出来。
+  assert.match(source, /const meta = option\.querySelector\(META_SELECTOR\);/);
+  assert.match(source, /meta: meta \? meta\.innerHTML : "",/);
+  // 读到的整份清单按「左栏指纹」缓存，下次打开直接用。
+  assert.match(source, /const ROWS_STORAGE_KEY = "piopt\.modelPicker\.rows\.v1";/);
+  assert.match(source, /function saveRows\(\)/);
+  // 读的过程中内容藏起来，布局不动。
   assert.match(source, /const PROBING_ATTR = "data-piopt-mp-probing";/);
   assert.match(source, /`\.composer-model-menu\[\$\{PROBING_ATTR\}\] \.composer-menu-root\{visibility:hidden\}`/);
-  // 用户在搜的时候别抢输入框；第一个模型就等到不响应就彻底放弃，不再重试。
-  assert.match(source, /const free = \(\) => menu === findLiveMenu\(\) && input\.value === owned;/);
-  assert.match(source, /if \(index === 0\) probeUnsupported = true;/);
+  // 宿主的渲染跟不上也不能一直白着：等一格最多 400ms，超时就按现状继续。
+  assert.match(source, /const SECTION_TIMEOUT_MS = 400;/);
+  assert.match(source, /function waitFor\(predicate, ms = SECTION_TIMEOUT_MS\)/);
+  assert.match(source, /await waitFor\(\(\) => paneSignature\(list\) !== before\);/);
 });
 
 // ------------------------------------------------- 选中标记与推理强度（浮窗侧）
@@ -473,12 +490,11 @@ test("选中标记换成圆角框时只换画法，不动宿主的节点", () =>
     source,
     /\.composer-model-menu\[\$\{MARKER_ATTR\}="frame"\] \.composer-model-option\[aria-checked="true"\]\{box-shadow:inset 0 0 0 2px color-mix\(in oklab,var\(--ds-accent\) 64%,transparent\)\}/
   );
-  // 对勾是被藏掉的，不是被删掉的：宿主的 vdom 里那个 svg 还在。
+  // 勾是被藏掉的，不是被删掉的：勾位留着原来的 13px，行宽不因此跳动。
   assert.match(
     source,
-    /\[aria-checked="true"\] \.composer-model-check\{display:none\}/
+    /\[aria-checked="true"\] \$\{CHECK_SLOT_SELECTOR\} svg\{display:none\}/
   );
-  assert.doesNotMatch(source, /composer-model-check"\)?\.remove/);
 });
 
 test("推理强度档位译成中文，原文留在属性里", () => {
