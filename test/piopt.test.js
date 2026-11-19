@@ -278,7 +278,7 @@ test("the rail opens and closes from a toggle above the tabs", () => {
     ["appearance", "behavior", "market", "remote"]
   );
 
-  const css = read("renderer/base.css");
+  const css = read("renderer/base.css").replace(/\r\n/g, "\n");
   assert.match(css, /body\[data-rail="expanded"\] \.opt-rail \{ width: 176px/);
   assert.match(css, /body\[data-rail="expanded"\] \.rail-label \{\n  display: inline;\n  animation: rail-label-in 120ms[^;]* 100ms both;/);
   assert.match(css, /\.rail-label \{\n  display: none;/);
@@ -316,7 +316,7 @@ test("every rail row has a keyboard shortcut and a shell view", () => {
 });
 
 test("the host's window controls follow the panel's own light/dark tokens", () => {
-  const css = read("renderer/base.css");
+  const css = read("renderer/base.css").replace(/\r\n/g, "\n");
   // The capsule lives in a closed shadow root and paints from these two
   // variables, which the host copies off the page before the panel has picked
   // its palette. Pinning them to our tokens keeps white glyphs off a white

@@ -39,8 +39,18 @@ with sync_playwright() as p:
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.set_content('<html><body></body></html>', wait_until='networkidle')
     page.add_style_tag(content=HOST + ASSETS['css'] + ASSETS['picker'])
-    page.add_script_tag(content='(() => {' + RUNTIME + '\nwindow.motion = {mountMotionRuntime,unmountMotionRuntime,MOTION_RUNTIME_CSS};mountMotionRuntime();})()')
+    page.add_script_tag(content='(() => {' + RUNTIME + '\nwindow.motion = {mountMotionRuntime,unmountMotionRuntime,MOTION_RUNTIME_CSS};window.motionTestSelectors = () => MODAL_LAYER_SELECTORS.join();mountMotionRuntime();})()')
     page.add_style_tag(content=page.evaluate('motion.MOTION_RUNTIME_CSS'))
+
+    # KaTeX uses span.overlay for math glyphs; it must not become a modal.
+    page.evaluate('''() => { document.body.innerHTML = '<span class="overlay" style="height:0.714em;width:0.471em"><svg width="0.471em" height="0.714em"><path d="M0 0L1 1"/></svg></span><div class="overlay"></div>'; }''')
+    for reduced in ('no-preference', 'reduce'):
+        page.emulate_media(reduced_motion=reduced)
+        assert page.locator('span.overlay').evaluate('(e)=>getComputedStyle(e).animationName') == 'none'
+        assert page.locator('div.overlay').evaluate('(e)=>getComputedStyle(e).animationName') == 'pm-fade-in'
+    page.emulate_media(reduced_motion='no-preference')
+    assert page.evaluate('''() => { const s=motionTestSelectors(); return !document.querySelector('span.overlay').matches(s) && document.querySelector('div.overlay').matches(s); }''')
+    page.evaluate('document.body.innerHTML = ""')
 
     # Work panel must beat the later glass animation:none!important rule.
     page.evaluate('''() => {document.body.insertAdjacentHTML('beforeend', '<div class="shell app-chat-shell"><main class="main"><div class="thread-content">Conversation</div></main><aside class="work-panel" style="--work-panel-width:400px"><div class="work-panel-main"><p>Long text stays on the same lines throughout the entire slide.</p></div></aside></div>')}''')

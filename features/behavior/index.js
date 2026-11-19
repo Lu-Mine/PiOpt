@@ -20,6 +20,7 @@ const navEntries = require("./nav-entries.js");
 let picker = { ...modelPicker.DEFAULT_CONFIG };
 let entries = { ...navEntries.DEFAULT_CONFIG };
 let commandButton = false;
+let openSessionOutput = false;
 
 async function readSettings() {
   try {
@@ -35,13 +36,14 @@ async function readConfig() {
     picker: modelPicker.normalizeConfig(settings[modelPicker.SETTINGS_KEY]),
     entries: navEntries.normalizeConfig(settings[navEntries.SETTINGS_KEY]),
     commandButton: settings.commandButton === true,
+    openSessionOutput: settings.openSessionOutput === true,
   };
 }
 
 // 面板要的东西：当前设置，以及可以选哪些排列方式。
 function statePayload() {
   return {
-    config: { ...picker, entryActions: entries.enabled, commandButton },
+    config: { ...picker, entryActions: entries.enabled, commandButton, openSessionOutput },
     groupings: [...modelPicker.GROUPINGS],
   };
 }
@@ -57,6 +59,10 @@ async function setGrouping(input) {
 async function setOptions(patch = {}) {
   const source = patch && typeof patch === "object" ? patch : {};
   const writes = {};
+  if (Object.prototype.hasOwnProperty.call(source, "openSessionOutput")) {
+    openSessionOutput = source.openSessionOutput === true;
+    writes.openSessionOutput = openSessionOutput;
+  }
   if (Object.prototype.hasOwnProperty.call(source, "commandButton")) {
     commandButton = source.commandButton === true;
     writes.commandButton = commandButton;
@@ -68,6 +74,7 @@ async function setOptions(patch = {}) {
   const pickerPatch = { ...source };
   delete pickerPatch.entryActions;
   delete pickerPatch.commandButton;
+  delete pickerPatch.openSessionOutput;
   if (Object.keys(pickerPatch).length > 0) {
     picker = modelPicker.normalizeConfig({ ...picker, ...pickerPatch });
     writes[modelPicker.SETTINGS_KEY] = picker;
@@ -81,6 +88,7 @@ async function onLoad() {
   picker = loaded.picker;
   entries = loaded.entries;
   commandButton = loaded.commandButton;
+  openSessionOutput = loaded.openSessionOutput;
 }
 
 async function onUnload() {
@@ -94,6 +102,7 @@ async function onPanelInvoke(channel, payload = {}) {
       picker = loaded.picker;
       entries = loaded.entries;
       commandButton = loaded.commandButton;
+      openSessionOutput = loaded.openSessionOutput;
       return statePayload();
     }
     case "behavior.modelPicker.setGrouping":

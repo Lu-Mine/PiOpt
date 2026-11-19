@@ -20,6 +20,7 @@ import { COMMAND_BUTTON_CSS, mountCommandButton, unmountCommandButton } from "./
 import { PERMISSION_ICON_CSS, mountPermissionIcons, unmountPermissionIcons } from "./permission-icons.mjs";
 import { mountComposerCompact, unmountComposerCompact } from "./composer-compact.mjs";
 import { COMMAND_ENHANCE_CSS, mountCommandEnhance, unmountCommandEnhance } from "./command-enhance.mjs";
+import { mountOpenOutput, unmountOpenOutput } from "./open-output.mjs";
 import {
   WALLPAPER_RUNTIME_CSS,
   mountEngineWallpaper,
@@ -27,8 +28,11 @@ import {
 } from "./wallpaper-runtime.mjs";
 const ENTRY_ATTR = "data-piopt-entry";
 const ENTRY_CLASS = "piopt-entry";
-const HOST_ACTION_CLASS = "footer-action";
-const CONTAINER_SELECTOR = ".sidebar-footer .footer-actions";
+const HOST_ACTION_CLASS = "sidebar-primary-item";
+const LEGACY_ACTION_CLASS = "footer-action";
+const PRIMARY_CONTAINER_SELECTOR = ".sidebar-primary-nav";
+const LEGACY_CONTAINER_SELECTOR = ".sidebar-footer .footer-actions";
+const CONTAINER_SELECTOR = PRIMARY_CONTAINER_SELECTOR;
 const ANCHOR_SELECTOR = '[data-nav="plugins"]';
 const LABEL = "PiOpt 控制台";
 const STYLE_ATTR = "data-piopt-entry-style";
@@ -40,6 +44,10 @@ const SCAN_DELAY_MS = 120;
 const ICON =
   '<span class="piopt-mark" aria-hidden="true"><i></i><i></i><i></i></span>';
 
+// The host's generic .overlay modal rule also matches KaTeX's arrow overlay.
+// Restore the inline glyph without changing actual dialog backdrops.
+export const KATEX_OVERLAY_CSS = '.katex span.overlay{position:static;inset:auto;z-index:auto;background:transparent;padding:0;display:block;animation:none}';
+
 const STYLE = [
   `[${ENTRY_ATTR}]{border:0;background:transparent;padding:0;margin:0;cursor:pointer;user-select:none;-webkit-user-select:none}`,
   `[${ENTRY_ATTR}] .piopt-mark{width:13px;height:13px;display:grid;grid-template-columns:repeat(3,3px);align-items:end;gap:2px}`,
@@ -49,6 +57,10 @@ const STYLE = [
   `[${ENTRY_ATTR}] .piopt-mark i:nth-child(3){height:9px;opacity:.75}`,
   `[${ENTRY_ATTR}] svg{display:block}`,
   `[${ENTRY_ATTR}][${BUSY_ATTR}="true"]{opacity:.55}`,
+  `[${ENTRY_ATTR}] .piopt-entry-label{display:none}`,
+  `${PRIMARY_CONTAINER_SELECTOR} [${ENTRY_ATTR}]{width:100%;justify-content:flex-start}`,
+  `${PRIMARY_CONTAINER_SELECTOR} [${ENTRY_ATTR}] .piopt-entry-label{display:inline;overflow:hidden;text-overflow:ellipsis}`,
+  KATEX_OVERLAY_CSS,
   MODEL_PICKER_CSS,
   MOTION_RUNTIME_CSS,
   NAV_ENTRIES_CSS,
@@ -83,13 +95,13 @@ async function openConsole(button) {
 function buildButton() {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `${HOST_ACTION_CLASS} ${ENTRY_CLASS}`;
+  button.className = `${HOST_ACTION_CLASS} ${LEGACY_ACTION_CLASS} ${ENTRY_CLASS}`;
   button.setAttribute(ENTRY_ATTR, "true");
   button.setAttribute("data-nav", "piopt");
   button.setAttribute("data-pi-plugin", "local.piopt");
   button.setAttribute("aria-label", LABEL);
   button.title = LABEL;
-  button.innerHTML = ICON;
+  button.innerHTML = `${ICON}<span class="sidebar-primary-label piopt-entry-label">${LABEL}</span>`;
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -104,7 +116,7 @@ function placeButton(container, button, anchor) {
     if (button.previousElementSibling !== anchor) anchor.after(button);
     return;
   }
-  // No anchor means the host changed its footer; keep the entry at the end
+  // No anchor means the host changed its navigation; keep the entry at the end
   // rather than dropping it, and let the next scan try to line it up again.
   if (button.parentElement !== container || button !== container.lastElementChild) {
     container.append(button);
@@ -113,12 +125,13 @@ function placeButton(container, button, anchor) {
 
 function scan() {
   scanTimer = null;
-  const container = document.querySelector(CONTAINER_SELECTOR);
+  const container = document.querySelector(PRIMARY_CONTAINER_SELECTOR) || document.querySelector(LEGACY_CONTAINER_SELECTOR);
   if (!container) return;
 
-  const existing = container.querySelector(`[${ENTRY_ATTR}]`);
+  const existing = document.querySelector(`[${ENTRY_ATTR}]`);
   const anchor = container.querySelector(ANCHOR_SELECTOR);
   if (existing) {
+    if (existing.parentElement !== container) container.append(existing);
     placeButton(container, existing, anchor);
     return;
   }
@@ -161,6 +174,7 @@ export async function onLoad(pi) {
 
   // The popup rewrite and reversible motion coordinator ride along: same window, same lifecycle.
   mountComposerCompact();
+  mountOpenOutput(pi);
   mountMotionRuntime();
   mountCommandEnhance();
   mountPermissionIcons();
@@ -181,6 +195,7 @@ export async function onUnload() {
     scanTimer = null;
   }
   unmountComposerCompact();
+  unmountOpenOutput();
   unmountCommandEnhance();
   document.removeEventListener("visibilitychange", scheduleScan);
   unmountPermissionIcons();

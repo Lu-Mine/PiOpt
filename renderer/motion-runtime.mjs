@@ -55,7 +55,7 @@ const DISCLOSURE_SELECTOR = DISCLOSURE_SELECTORS.join(",");
 
 // Compound modal / drawer / viewer layers portaled to document.body.
 const MODAL_LAYER_SELECTORS = [
-  ".overlay",
+  "div.overlay",
   ".search-overlay",
   ".plugins-modal-backdrop",
   ".plugins-sheet-layer",
@@ -210,7 +210,7 @@ function isGhost(el) {
   if (typeof el.hasAttribute === "function" && el.hasAttribute(GHOST_ATTR)) return true;
   return typeof el.closest === "function" && Boolean(el.closest(`[${GHOST_ATTR}],[${LAYER_ATTR}]`));
 }
-const EXCLUDED_ROUTE_SELECTORS = ".settings-content,.settings-content-enter,.plugins-page";
+const EXCLUDED_ROUTE_SELECTORS = ".settings-content,.settings-content-enter,.settings-panel,.plugins-page,.plugins-panel,.scheduled-frame";
 
 function isExcludedRoute() {
   return typeof document !== "undefined"
@@ -282,8 +282,7 @@ function overlaySignature(el) {
     ...POPOVER_OVERLAY_SELECTORS,
     ...FADE_OVERLAY_SELECTORS,
   ]) {
-    const cls = selector.slice(1);
-    if (el.classList && el.classList.contains(cls)) return cls;
+    if (matches(el, selector)) return selector;
   }
   return el.className || el.tagName;
 }
@@ -292,7 +291,7 @@ function classifyOverlay(el) {
   if (matches(el, ".composer-model-menu,.composer-mode-menu,.composer-permission-menu")) return "model-picker";
   if (matches(el, ".plugins-sheet-layer,.plugins-reviews-layer,.mcpm-overlay,.sklm-overlay")) return "sheet-layer";
   if (matches(el, ".search-overlay")) return "search-layer";
-  if (matches(el, ".overlay,.plugins-modal-backdrop,.composer-image-preview,.generated-image-viewer")) return "dialog-layer";
+  if (matches(el, "div.overlay,.plugins-modal-backdrop,.composer-image-preview,.generated-image-viewer")) return "dialog-layer";
   if (matches(el, MENU_OVERLAY_SELECTORS.join(","))) return "menu";
   if (matches(el, POPOVER_OVERLAY_SELECTORS.join(","))) return "popover";
   if (matches(el, FADE_OVERLAY_SELECTORS.join(","))) return "fade";
@@ -796,7 +795,7 @@ function animateCompoundLayer(root, kind, tokens, fromP, toP, duration, onDone) 
   const isSelfDialog = root.matches(".composer-image-preview,.generated-image-viewer");
   const scrim = isSelfDialog
     ? null
-    : root.matches(".overlay,.search-overlay,.plugins-modal-backdrop,.mcpm-overlay,.sklm-overlay")
+    : root.matches("div.overlay,.search-overlay,.plugins-modal-backdrop,.mcpm-overlay,.sklm-overlay")
       ? root
       : root.querySelector(".plugins-sheet-scrim,.plugins-reviews-scrim");
   const inner = isSelfDialog

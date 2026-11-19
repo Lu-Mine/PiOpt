@@ -204,6 +204,7 @@ test("manifest declares the renderer entry and keeps the whitelists exact", () =
   // the value the user just picked in the console.
   assert.deepEqual(manifest.rendererCallMethods, [
     "openConsole",
+    "openSessionOutput",
     "modelPickerState",
     "setModelPickerGrouping",
     "engineWallpaperState",

@@ -31,7 +31,7 @@ const ICON_SHIFT_X = "--piopt-panel-icon-shift-x";
 const ICON_SHIFT_Y = "--piopt-panel-icon-shift-y";
 
 const MENU_SELECTOR = ".conversation-topbar .ct-actions";
-const NATIVE_NEW_TASK_SELECTOR = '[data-nav="new-task"]';
+const NATIVE_NEW_TASK_SELECTOR = '.conversation-topbar [data-nav="new-task"]';
 const NATIVE_TOGGLE_SELECTOR = '[data-nav="toggle-sidebar"]';
 const LEAD_TOGGLE_SELECTOR = ".conversation-topbar .ct-lead .ct-icon-btn";
 const SIDEBAR_HEADER_SELECTOR = ".sidebar-header";
@@ -77,6 +77,7 @@ let enabled = false;
 let observer = null;
 const rootObservers = new Map();
 const OBSERVED_ROOT_SELECTORS = [
+  ".sidebar-primary-nav",
   ".sidebar-footer",
   ".conversation-topbar",
   ".sidebar-header",

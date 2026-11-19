@@ -15,6 +15,7 @@ const market = require("./features/market/index.js");
 const appearance = require("./features/appearance/index.js");
 const behavior = require("./features/behavior/index.js");
 const remote = require("./features/remote/index.js");
+const { openOutput } = require("./features/open-output.js");
 
 const FEATURES = { market, appearance, behavior, remote };
 const PANEL_COMMAND = "piopt.open";
@@ -56,6 +57,10 @@ async function openConsole() {
 // behavior feature so the setting has a single owner.
 const RENDERER_METHODS = Object.freeze({
   openConsole,
+  openSessionOutput: (args = {}) => {
+    if (!FEATURES.behavior.getState().config.openSessionOutput) throw new Error("请先在 PiOpt 行为设置中开启文件右键打开");
+    return openOutput(args);
+  },
   modelPickerState: () => FEATURES.behavior.getState(),
   setModelPickerGrouping: (args = {}) => FEATURES.behavior.setGrouping(args.grouping),
   // The video wallpaper layer in the host window: only the clip and the fit mode,

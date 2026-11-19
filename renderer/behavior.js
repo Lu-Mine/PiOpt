@@ -15,6 +15,7 @@
     translateThinking: false,
     entryActions: false,
     commandButton: false,
+    openSessionOutput: false,
   };
   const GROUPINGS = ["default", "provider", "vendor", "name"];
 
@@ -33,6 +34,7 @@
       translateThinking: source.translateThinking === true,
       entryActions: source.entryActions === true,
       commandButton: source.commandButton === true,
+      openSessionOutput: source.openSessionOutput === true,
     };
   }
 
@@ -61,10 +63,12 @@
     elements.thinking.checked = config.translateThinking;
     elements.entries.checked = config.entryActions;
     elements.command.checked = config.commandButton;
+    elements.openOutput.checked = config.openSessionOutput;
     elements.frame.disabled = state.busy;
     elements.thinking.disabled = state.busy;
     elements.entries.disabled = state.busy;
     elements.command.disabled = state.busy;
+    elements.openOutput.disabled = state.busy;
     elements.status.textContent = state.error;
     elements.status.hidden = !state.error;
   }
@@ -115,6 +119,9 @@
     elements.command.addEventListener("change", () => {
       void save(`${CHANNEL}.setOptions`, { commandButton: elements.command.checked });
     });
+    elements.openOutput.addEventListener("change", () => {
+      void save(`${CHANNEL}.setOptions`, { openSessionOutput: elements.openOutput.checked });
+    });
   }
 
   async function boot() {
@@ -124,6 +131,7 @@
       thinking: byId("behavior-thinking-zh"),
       entries: byId("behavior-entry-actions"),
       command: byId("behavior-command-button"),
+      openOutput: byId("behavior-open-output"),
       status: byId("behavior-status"),
     });
     bindEvents();
