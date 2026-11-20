@@ -1,17 +1,8 @@
-// PiOpt — host-window entry module (manifest.renderer, renderer.extension).
+// PiOpt - host-window entry module (manifest.renderer, renderer.extension).
 //
-// PI-Desktop has no slot for the sidebar footer, so this module works on the
-// host's own footer the way a stylesheet would: it mounts one button into
-// `.sidebar-footer .footer-actions`, directly after the host's plugin button —
-// the second of the four — and puts it back whenever a re-render drops it.
-//
-// The button wears the host's own `.footer-action` geometry so it lines up with
-// the four it sits between. The click goes through `plugin.call`, so the main
-// process decides how the panel opens; nothing here reaches the panel directly.
-//
-// The same module also owns the chat composer's model popup rewrite
-// (renderer/model-picker.mjs): both are "the host window's own DOM", so they
-// travel together and share one injected stylesheet.
+// The host footer differs between PI-Desktop releases. This module keeps the
+// console entry beside the footer settings control in 0.23 and supports the
+// older footer-actions group without changing the host navigation tree.
 
 import { MODEL_PICKER_CSS, mountModelPicker, unmountModelPicker } from "./model-picker.mjs";
 import { MOTION_RUNTIME_CSS, mountMotionRuntime, unmountMotionRuntime } from "./motion-runtime.mjs";
@@ -26,26 +17,21 @@ import {
   mountEngineWallpaper,
   unmountEngineWallpaper,
 } from "./wallpaper-runtime.mjs";
+
 const ENTRY_ATTR = "data-piopt-entry";
 const ENTRY_CLASS = "piopt-entry";
-const HOST_ACTION_CLASS = "sidebar-primary-item";
+const HOST_ACTION_CLASS = "footer-settings";
 const LEGACY_ACTION_CLASS = "footer-action";
-const PRIMARY_CONTAINER_SELECTOR = ".sidebar-primary-nav";
+const FOOTER_SELECTOR = ".sidebar-footer";
 const LEGACY_CONTAINER_SELECTOR = ".sidebar-footer .footer-actions";
-const CONTAINER_SELECTOR = PRIMARY_CONTAINER_SELECTOR;
-const ANCHOR_SELECTOR = '[data-nav="plugins"]';
+const ANCHOR_SELECTOR = '[data-nav="settings"]';
+const LEGACY_ANCHOR_SELECTOR = '[data-nav="plugins"]';
 const LABEL = "PiOpt 控制台";
 const STYLE_ATTR = "data-piopt-entry-style";
 const BUSY_ATTR = "data-piopt-busy";
 const SCAN_DELAY_MS = 120;
+const ICON = '<span class="piopt-mark" aria-hidden="true"><i></i><i></i><i></i></span>';
 
-// PiOpt's own mark: the three bars that sit beside the product name inside the
-// panel, drawn in the current icon colour so the host's row stays one family.
-const ICON =
-  '<span class="piopt-mark" aria-hidden="true"><i></i><i></i><i></i></span>';
-
-// The host's generic .overlay modal rule also matches KaTeX's arrow overlay.
-// Restore the inline glyph without changing actual dialog backdrops.
 export const KATEX_OVERLAY_CSS = '.katex span.overlay{position:static;inset:auto;z-index:auto;background:transparent;padding:0;display:block;animation:none}';
 
 const STYLE = [
@@ -57,9 +43,7 @@ const STYLE = [
   `[${ENTRY_ATTR}] .piopt-mark i:nth-child(3){height:9px;opacity:.75}`,
   `[${ENTRY_ATTR}] svg{display:block}`,
   `[${ENTRY_ATTR}][${BUSY_ATTR}="true"]{opacity:.55}`,
-  `[${ENTRY_ATTR}] .piopt-entry-label{display:none}`,
-  `${PRIMARY_CONTAINER_SELECTOR} [${ENTRY_ATTR}]{width:100%;justify-content:flex-start}`,
-  `${PRIMARY_CONTAINER_SELECTOR} [${ENTRY_ATTR}] .piopt-entry-label{display:inline;overflow:hidden;text-overflow:ellipsis}`,
+  `.sidebar-footer > [${ENTRY_ATTR}]{width:32px;min-width:32px;flex:0 0 32px;padding:0!important;justify-content:center}`,
   KATEX_OVERLAY_CSS,
   MODEL_PICKER_CSS,
   MOTION_RUNTIME_CSS,
@@ -75,33 +59,28 @@ let observer = null;
 let scanTimer = null;
 let styleDisposer = null;
 
-// ---------------------------------------------------------------- host bridge
-
 async function openConsole(button) {
   if (!host || typeof host.dispatch !== "function") return;
   if (button) button.setAttribute(BUSY_ATTR, "true");
   try {
     await host.dispatch("plugin.call", { method: "openConsole", args: {} });
   } catch (error) {
-    // A refused call leaves the console closed; the command palette still works.
     console.warn("[PiOpt] the footer entry could not open the console", error);
   } finally {
     if (button) button.removeAttribute(BUSY_ATTR);
   }
 }
 
-// ------------------------------------------------------------------- mounting
-
-function buildButton() {
+function buildButton(legacy) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `${HOST_ACTION_CLASS} ${LEGACY_ACTION_CLASS} ${ENTRY_CLASS}`;
+  button.className = `${legacy ? LEGACY_ACTION_CLASS : HOST_ACTION_CLASS} ${ENTRY_CLASS}`;
   button.setAttribute(ENTRY_ATTR, "true");
   button.setAttribute("data-nav", "piopt");
   button.setAttribute("data-pi-plugin", "local.piopt");
   button.setAttribute("aria-label", LABEL);
   button.title = LABEL;
-  button.innerHTML = `${ICON}<span class="sidebar-primary-label piopt-entry-label">${LABEL}</span>`;
+  button.innerHTML = ICON;
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -112,30 +91,27 @@ function buildButton() {
 
 function placeButton(container, button, anchor) {
   if (anchor) {
-    // After the host's own plugin button: the second of the four.
     if (button.previousElementSibling !== anchor) anchor.after(button);
     return;
   }
-  // No anchor means the host changed its navigation; keep the entry at the end
-  // rather than dropping it, and let the next scan try to line it up again.
-  if (button.parentElement !== container || button !== container.lastElementChild) {
-    container.append(button);
-  }
+  if (button.parentElement !== container || button !== container.lastElementChild) container.append(button);
 }
 
 function scan() {
   scanTimer = null;
-  const container = document.querySelector(PRIMARY_CONTAINER_SELECTOR) || document.querySelector(LEGACY_CONTAINER_SELECTOR);
-  if (!container) return;
+  const footer = document.querySelector(FOOTER_SELECTOR);
+  if (!footer) return;
 
-  const existing = document.querySelector(`[${ENTRY_ATTR}]`);
-  const anchor = container.querySelector(ANCHOR_SELECTOR);
-  if (existing) {
-    if (existing.parentElement !== container) container.append(existing);
-    placeButton(container, existing, anchor);
-    return;
-  }
-  placeButton(container, buildButton(), anchor);
+  const legacyContainer = footer.querySelector(LEGACY_CONTAINER_SELECTOR);
+  const container = legacyContainer || footer;
+  const legacy = Boolean(legacyContainer);
+  const anchor = container.querySelector(legacy ? LEGACY_ANCHOR_SELECTOR : ANCHOR_SELECTOR);
+  let button = document.querySelector(`[${ENTRY_ATTR}]`);
+  if (!button) button = buildButton(legacy);
+  button.className = `${legacy ? LEGACY_ACTION_CLASS : HOST_ACTION_CLASS} ${ENTRY_CLASS}`;
+  if (legacy && !button.innerHTML) button.innerHTML = ICON;
+  if (button.parentElement !== container) container.append(button);
+  placeButton(container, button, anchor);
 }
 
 function scheduleScan() {
@@ -156,23 +132,15 @@ function mountStyle(css) {
   };
 }
 
-// ------------------------------------------------------------------ lifecycle
-
 export async function onLoad(pi) {
   host = pi;
   if (!styleDisposer) styleDisposer = mountStyle(STYLE);
-
   scan();
-
   if (typeof MutationObserver === "function" && document.documentElement) {
     observer = new MutationObserver(scheduleScan);
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
-  // The footer only exists while a project shell is mounted, so a scan when the
-  // window wakes up covers the case where it was built while the tab was hidden.
   document.addEventListener("visibilitychange", scheduleScan);
-
-  // The popup rewrite and reversible motion coordinator ride along: same window, same lifecycle.
   mountComposerCompact();
   mountOpenOutput(pi);
   mountMotionRuntime();
@@ -181,7 +149,6 @@ export async function onLoad(pi) {
   await mountNavEntries(pi);
   await mountCommandButton(pi);
   await mountModelPicker(pi);
-  // 视频壁纸跟着面板走：没有设置事件，就靠这个模块自己轮询并挂载。
   await mountEngineWallpaper(pi);
 }
 
@@ -212,11 +179,13 @@ export async function onUnload() {
   host = null;
 }
 
-// Exposed for the test that keeps the host selectors honest.
 export const __internals = {
-  CONTAINER_SELECTOR,
+  FOOTER_SELECTOR,
+  LEGACY_CONTAINER_SELECTOR,
   ANCHOR_SELECTOR,
+  LEGACY_ANCHOR_SELECTOR,
   ENTRY_ATTR,
   HOST_ACTION_CLASS,
+  LEGACY_ACTION_CLASS,
   LABEL,
 };

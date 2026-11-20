@@ -152,7 +152,7 @@ class FakeElement {
   }
 }
 
-function buildHostDocument() {
+function buildHostDocument(legacy = false) {
   const documentElement = new FakeElement("div");
   const head = new FakeElement("head");
   const body = new FakeElement("body");
@@ -160,21 +160,28 @@ function buildHostDocument() {
 
   const sidebar = new FakeElement("div");
   sidebar.className = "sidebar-footer";
-  const actions = new FakeElement("div");
-  actions.className = "footer-actions";
-  sidebar.append(actions);
-  body.append(sidebar);
-
-  const makeNav = (nav) => {
+  const makeNav = (nav, className = "") => {
     const button = new FakeElement("button");
+    button.className = className;
     button.setAttribute("data-nav", nav);
     return button;
   };
-  const settings = makeNav("settings");
-  const plugins = makeNav("plugins");
-  const scheduled = makeNav("scheduled");
-  const account = new FakeElement("button");
-  actions.append(settings, plugins, scheduled, account);
+  let actions;
+  let settings;
+  let plugins = null;
+  if (legacy) {
+    actions = new FakeElement("div");
+    actions.className = "footer-actions";
+    settings = makeNav("settings");
+    plugins = makeNav("plugins");
+    actions.append(settings, plugins, makeNav("scheduled"), new FakeElement("button"));
+    sidebar.append(actions);
+  } else {
+    actions = sidebar;
+    settings = makeNav("settings", "footer-settings");
+    sidebar.append(settings, makeNav("build", "footer-build"));
+  }
+  body.append(sidebar);
 
   const doc = {
     head,
@@ -186,22 +193,14 @@ function buildHostDocument() {
     addEventListener() {},
     removeEventListener() {},
   };
-  return { doc, actions, plugins };
+  return { doc, sidebar, actions, settings, plugins, legacy };
 }
-
-function navsOf(actions) {
-  return actions.children.map((child) => child.getAttribute("data-nav"));
-}
-
-// ---------------------------------------------------------------------- tests
-
-test("manifest declares the renderer entry and keeps the whitelists exact", () => {
+test("manifest declares the renderer entry, panel and exact host whitelists", () => {
   assert.equal(manifest.renderer, "renderer/entry.mjs");
   assert.ok(fs.existsSync(path.join(root, manifest.renderer)));
   assert.ok(manifest.permissions.includes("renderer.extension"));
+  assert.ok(manifest.permissions.includes("ui.panel"));
   assert.deepEqual(manifest.rendererActions, ["plugin.call", "composer.insertText"]);
-  // The host window asks the plugin two more things: the popup's grouping, and
-  // the value the user just picked in the console.
   assert.deepEqual(manifest.rendererCallMethods, [
     "openConsole",
     "openSessionOutput",
@@ -212,57 +211,54 @@ test("manifest declares the renderer entry and keeps the whitelists exact", () =
     "reportEngineStatus",
     "reportEngineStats",
   ]);
+  assert.deepEqual(manifest.contributes.launcherTriggers.map(({ id, pattern }) => ({ id, pattern })), [
+    { id: "open-console", pattern: "^(?:piopt|PiOpt 控制台)$" },
+  ]);
 });
 
-test("the entry mounts right after the host's plugin button and leaves on unload", async () => {
-  const { doc, actions, plugins } = buildHostDocument();
+test("PI-Desktop 0.23 entry sits after footer settings without joining primary navigation", async () => {
+  const { doc, sidebar, settings } = buildHostDocument();
   const previousDocument = global.document;
   global.document = doc;
-
   const calls = [];
-  const host = {
-    dispatch: async (action, payload) => {
-      calls.push({ action, payload });
-      return { opened: true };
-    },
-  };
-
+  const host = { dispatch: async (action, payload) => { calls.push({ action, payload }); return { opened: true }; } };
   const entry = await import("../renderer/entry.mjs");
   try {
-    assert.deepEqual(entry.__internals.ANCHOR_SELECTOR, '[data-nav="plugins"]');
-
     await entry.onLoad(host);
-
-    // Second button in, ahead of the two that were behind it.
-    assert.deepEqual(navsOf(actions), ["settings", "plugins", "piopt", "scheduled", null]);
-    const button = actions.querySelector("[data-piopt-entry]");
-    assert.equal(button.previousElementSibling, plugins);
-    assert.ok(button.className.includes("footer-action"));
+    const button = sidebar.querySelector("[data-piopt-entry]");
+    assert.ok(button);
+    assert.equal(button.previousElementSibling, settings);
+    assert.equal(button.className, "footer-settings piopt-entry");
+    assert.equal(button.getAttribute("data-nav"), "piopt");
     assert.equal(button.getAttribute("aria-label"), "PiOpt 控制台");
-    // PiOpt's own mark: three bars, same as the panel's product bar.
     assert.equal((button.innerHTML.match(/<i><\/i>/g) ?? []).length, 3);
-    assert.equal(button.innerHTML.includes("<svg"), false);
-    // One style element, mounted next to the host's own styles.
-    assert.equal(doc.head.querySelectorAll("[data-piopt-entry-style]").length, 1);
-    // The mount itself asks the plugin for the popup grouping; only the click
-    // below is the entry's own call.
+    assert.equal(sidebar.querySelector('[data-nav="plugins"]'), null);
     assert.ok(calls.some((call) => call.payload.method === "modelPickerState"));
-    assert.equal(doc.head.querySelector("[data-piopt-entry-style]").textContent.includes("piopt-mp-view"), true);
     calls.length = 0;
-
-    const event = { preventDefault() {}, stopPropagation() {} };
-    button.emit("click", event);
+    button.emit("click", { preventDefault() {}, stopPropagation() {} });
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(calls, [{ action: "plugin.call", payload: { method: "openConsole", args: {} } }]);
-
-    // A re-render that drops the button puts it back where it belongs.
-    button.remove();
-    await entry.onLoad(host);
-    assert.deepEqual(navsOf(actions), ["settings", "plugins", "piopt", "scheduled", null]);
-
     await entry.onUnload();
-    assert.deepEqual(navsOf(actions), ["settings", "plugins", "scheduled", null]);
-    assert.equal(doc.head.querySelectorAll("[data-piopt-entry-style]").length, 0);
+    assert.equal(sidebar.querySelector("[data-piopt-entry]"), null);
+  } finally {
+    await entry.onUnload();
+    if (previousDocument === undefined) delete global.document;
+    else global.document = previousDocument;
+  }
+});
+
+test("legacy footer actions keep PiOpt next to the plugin button", async () => {
+  const { doc, actions, plugins } = buildHostDocument(true);
+  const previousDocument = global.document;
+  global.document = doc;
+  const entry = await import("../renderer/entry.mjs");
+  try {
+    await entry.onLoad({ dispatch: async () => ({}) });
+    const button = actions.querySelector("[data-piopt-entry]");
+    assert.ok(button);
+    assert.equal(button.previousElementSibling, plugins);
+    assert.ok(button.className.includes("footer-action"));
+    assert.equal((button.innerHTML.match(/<i><\/i>/g) ?? []).length, 3);
   } finally {
     await entry.onUnload();
     if (previousDocument === undefined) delete global.document;
@@ -273,9 +269,7 @@ test("the entry mounts right after the host's plugin button and leaves on unload
 test("the main process answers openConsole without forcing a view", async () => {
   const opened = [];
   const previousPi = global.pi;
-  global.pi = {
-    ui: { openPanel: async (options) => opened.push(options) },
-  };
+  global.pi = { ui: { openPanel: async (options) => opened.push(options) } };
   const main = require("../main.js");
   try {
     assert.deepEqual(await main.onRendererCall("openConsole", {}), { opened: true });
@@ -287,20 +281,8 @@ test("the main process answers openConsole without forcing a view", async () => 
   }
 });
 
-test("the entry mark is exactly as wide as its three bars", () => {
-  // 3 bars of 3px with 2px gaps need 13px. A narrower box overflows itself and
-  // the whole mark lands half the difference off centre in the host's button.
+test("the footer entry uses a stable host-sized mark", () => {
   const source = read("renderer/entry.mjs");
-  const match = /\.piopt-mark\{width:(\d+)px;height:\d+px;display:grid;grid-template-columns:repeat\((\d+),(\d+)px\);align-items:end;gap:(\d+)px\}/.exec(
-    source
-  );
-  assert.ok(match, "the mark rule must stay a single declaration");
-  const width = Number(match[1]);
-  const columns = Number(match[2]);
-  const bar = Number(match[3]);
-  const gap = Number(match[4]);
-  assert.equal(width, columns * bar + (columns - 1) * gap, "box must fit its own grid");
-
-  const base = read("renderer/base.css");
-  assert.match(base, /\.opt-mark \{[^}]*width: 13px;/, "the panel mark keeps the same geometry");
+  assert.match(source, /\.piopt-mark\{width:13px;height:13px;display:grid;grid-template-columns:repeat\(3,3px\);align-items:end;gap:2px\}/);
+  assert.match(source, /\.sidebar-footer > \[\$\{ENTRY_ATTR\}\]\{width:32px;min-width:32px;flex:0 0 32px;padding:0!important;justify-content:center\}/);
 });

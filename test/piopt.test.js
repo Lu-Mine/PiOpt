@@ -16,6 +16,14 @@ test("manifest declares the merged PiOpt identity and panel", () => {
   assert.ok(manifest.categories.includes("appearance"));
 });
 
+test("launcher trigger exposes PiOpt to the 0.23 exact-match plugin search", () => {
+  assert.deepEqual(manifest.contributes.launcherTriggers, [{
+    id: "open-console",
+    pattern: "^(?:piopt|PiOpt 控制台)$",
+    title: { en: "Open PiOpt console", "zh-CN": "打开 PiOpt 控制台" },
+  }]);
+});
+
 test("manifest keeps every feature command set", () => {
   // One command per feature entry point; motion and glass share the appearance
   // view but keep their own command, so the command palette is unchanged.
