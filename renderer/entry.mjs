@@ -109,7 +109,7 @@ function scan() {
   let button = document.querySelector(`[${ENTRY_ATTR}]`);
   if (!button) button = buildButton(legacy);
   button.className = `${legacy ? LEGACY_ACTION_CLASS : HOST_ACTION_CLASS} ${ENTRY_CLASS}`;
-  if (legacy && !button.innerHTML) button.innerHTML = ICON;
+  if (!button.innerHTML.includes("piopt-mark")) button.innerHTML = ICON;
   if (button.parentElement !== container) container.append(button);
   placeButton(container, button, anchor);
 }
