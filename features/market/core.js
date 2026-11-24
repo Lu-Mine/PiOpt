@@ -12,7 +12,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const PLUGIN_ID = 'local.pimarket';
+// 插件自己的数据目录名。市场刷新的目录缓存和下载的包都落在这里，和清单里
+// `dataDir` 设置描述写的是同一个位置。
+const PLUGIN_ID = 'pi.piopt';
 const DOWNLOADS_DIRNAME = 'downloads';
 const PACKAGE_SUFFIX = '.piplug';
 const MAX_PACKAGE_BYTES = 50 * 1024 * 1024; // the host refuses anything larger

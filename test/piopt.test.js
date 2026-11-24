@@ -10,10 +10,11 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const manifest = JSON.parse(read("manifest.json"));
 
 test("manifest declares the merged PiOpt identity and panel", () => {
-  assert.equal(manifest.id, "local.piopt");
+  assert.equal(manifest.id, "pi.piopt");
   assert.equal(manifest.main, "main.js");
   assert.ok(fs.existsSync(path.join(root, manifest.ui.panel)));
-  assert.ok(manifest.categories.includes("appearance"));
+  // 分类用官方目录的分类表：appearance 不在表里，外观归 themes。
+  assert.deepEqual(manifest.categories, ["productivity", "themes", "developer-tools"]);
 });
 
 test("launcher trigger exposes PiOpt to the 0.23 exact-match plugin search", () => {

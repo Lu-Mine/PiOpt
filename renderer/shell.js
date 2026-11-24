@@ -13,7 +13,7 @@
   const bridge = window.pluginBridge;
   const STORAGE_KEY = "piopt.feature";
   const HOST_THEME_STYLE_ID = "opt-host-theme";
-  const OWN_THEME_PREFIX = "plugin:local.piopt:";
+  const OWN_THEME_PREFIX = "plugin:pi.piopt:";
 
   const tabs = Array.from(document.querySelectorAll("[data-feature]"));
   const views = {

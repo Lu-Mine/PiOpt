@@ -28,7 +28,7 @@ function makePi(settings = {}) {
     calls,
     pi: {
       plugin: {
-        getId: () => "local.piopt",
+        getId: () => "pi.piopt",
         getManifest: () => ({}),
         getSettings: async () => ({ ...store }),
         setSettings: async (patch) => {

@@ -87,7 +87,7 @@
 
 声明权限：`ui.panel`、`renderer.extension`、`ui.theme`、`clipboard.write`、`net.fetch`、`shell.openExternal`、`agent.tool.register`、`agent.prompt.inject`、`desktop.control`、`session.read`。
 
-- **数据目录**：仅写入 `~/.pi-desktop/plugins/data/local.piopt/`。
+- **数据目录**：仅写入 `~/.pi-desktop/plugins/data/pi.piopt/`。
 - **市场边界**：不安装/卸载插件、不改 `registry.json`；下载仅限 `https` 与固定 4 个白名单主机（`cdn.jsdelivr.net`、`raw.githubusercontent.com`、`api.github.com`、`plugins.aiuo.net`），重定向同样复核白名单，单包上限 50 MB，HTML 响应按 `SERVER_HTML` 丢弃。
 - **文件右键打开**：仅允许白名单内非可执行文件，解析真实路径后严格限制在当前会话 scratch 目录或当前项目目录内。
 - **`agent.prompt.inject`**：仅按需收录 `skills/piopt.md`，不自动往对话注入内容。

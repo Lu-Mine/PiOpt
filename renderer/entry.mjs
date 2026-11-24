@@ -77,7 +77,7 @@ function buildButton(legacy) {
   button.className = `${legacy ? LEGACY_ACTION_CLASS : HOST_ACTION_CLASS} ${ENTRY_CLASS}`;
   button.setAttribute(ENTRY_ATTR, "true");
   button.setAttribute("data-nav", "piopt");
-  button.setAttribute("data-pi-plugin", "local.piopt");
+  button.setAttribute("data-pi-plugin", "pi.piopt");
   button.setAttribute("aria-label", LABEL);
   button.title = LABEL;
   button.innerHTML = ICON;

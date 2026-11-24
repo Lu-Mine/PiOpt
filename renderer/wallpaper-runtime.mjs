@@ -65,8 +65,6 @@ const SCENE_FPS = 30;
 // 渲染倍率上限。设备像素比更高时不跟：4K 屏 + 200% 会让画布撑到物理最长边
 // 封顶 4096，像素数是这个档的两倍多，而肉眼几乎分不出差别。
 const SCENE_MAX_DPR = 1.5;
-// 引擎随插件分发，所以是相对引入；它是自包含的 ES module，不需要打包器。
-const SCENE_ENGINE_URL = "./vendor/webwallgl.mjs";
 
 let host = null;
 let container = null;
@@ -322,10 +320,14 @@ function syncPlayback() {
 /**
  * 引擎是一个 1.1 MB 的自包含 ES module。第一次真正用到时才加载——没有 scene
  * 壁纸的用户不该为它的解析时间买单。
+ *
+ * 说明符只能写字面量：插件目录的源码审查把「带表达式的动态加载」判为加载任意
+ * 模块执行（SEC003），整包会被拦下。这里引的是随包分发的固定文件，所以字面量
+ * 就是真实路径，不是把变量藏起来。
  */
 async function loadSceneEngine() {
   if (sceneEngineModule) return sceneEngineModule;
-  const loaded = await import(SCENE_ENGINE_URL);
+  const loaded = await import("./vendor/webwallgl.mjs");
   const engine = loaded && loaded.default ? loaded.default : loaded;
   if (!engine || typeof engine.mount !== "function") throw new Error("scene engine missing");
   sceneEngineModule = engine;

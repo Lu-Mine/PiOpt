@@ -16,7 +16,7 @@ const test = require("node:test");
 const motion = require("../features/appearance/motion.js");
 const feature = require("../features/appearance/index.js");
 
-const PLUGIN_ID = "local.piopt";
+const PLUGIN_ID = "pi.piopt";
 const THEME = `plugin:${PLUGIN_ID}:${motion.THEME_ID}`;
 
 function installHost({
